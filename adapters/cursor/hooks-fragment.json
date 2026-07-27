@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": "${HOME}/.config/focalpoint/adapters/cursor-hooks.sh",
+        "timeout": 5
+      }
+    ],
+    "afterAgentThought": [
+      {
+        "command": "${HOME}/.config/focalpoint/adapters/cursor-hooks.sh",
+        "timeout": 5
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "${HOME}/.config/focalpoint/adapters/cursor-hooks.sh",
+        "timeout": 5
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "${HOME}/.config/focalpoint/adapters/cursor-hooks.sh",
+        "timeout": 5
+      }
+    ],
+    "postToolUseFailure": [
+      {
+        "command": "${HOME}/.config/focalpoint/adapters/cursor-hooks.sh",
+        "timeout": 5
+      }
+    ],
+    "stop": [
+      {
+        "command": "${HOME}/.config/focalpoint/adapters/cursor-hooks.sh",
+        "timeout": 5
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": "${HOME}/.config/focalpoint/adapters/cursor-hooks.sh",
+        "timeout": 5
+      }
+    ]
+  }
+}

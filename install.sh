@@ -1,0 +1,464 @@
+#!/usr/bin/env bash
+# FocalPoint installer.
+#
+# MIT License - see adapters/README.md.
+#
+# One command to get a working FocalPoint install: builds the daemon, wires up
+# the Claude Code adapter, builds the macOS helpers (backlight + menu bar app
+# if present), and installs a launchd user agent so focalpointd starts
+# automatically. Safe to re-run any number of times: every step checks
+# what's already there before touching it.
+#
+#   ./install.sh              interactive (asks to confirm once)
+#   ./install.sh --yes         no prompts
+#   ./install.sh --yes --mock  launchd agent runs `focalpointd --mock-device`
+#                               (for dev machines with no hardware attached)
+
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Paths & options
+# ---------------------------------------------------------------------------
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DAEMON_DIR="$SCRIPT_DIR/daemon"
+ADAPTERS_DIR="$SCRIPT_DIR/adapters"
+APP_DIR="$SCRIPT_DIR/app"
+PACKAGING_DIR="$SCRIPT_DIR/packaging"
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/focalpoint"
+ADAPTER_INSTALL_DIR="$CONFIG_DIR/adapters"
+CLAUDE_DIR="$HOME/.claude"
+CLAUDE_SETTINGS="$CLAUDE_DIR/settings.json"
+CODEX_CONFIG="$HOME/.codex/config.toml"
+CURSOR_DIR="$HOME/.cursor"
+CURSOR_HOOKS="$CURSOR_DIR/hooks.json"
+LOG_DIR="$HOME/Library/Logs/focalpoint"
+LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
+PLIST_LABEL="dev.focalpoint.daemon"
+PLIST_PATH="$LAUNCH_AGENTS_DIR/${PLIST_LABEL}.plist"
+HOOK_MARKER=".config/focalpoint/adapters/hooks.sh"
+# Distinct from HOOK_MARKER above: the "cursor-" prefix means neither marker
+# is a substring of the other's path, so the Claude and Cursor merge/removal
+# passes can never match each other's entries.
+CURSOR_HOOK_MARKER=".config/focalpoint/adapters/cursor-hooks.sh"
+
+ASSUME_YES=0
+USE_MOCK=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --yes|-y) ASSUME_YES=1 ;;
+    --mock) USE_MOCK=1 ;;
+    -h|--help)
+      cat <<EOF
+Usage: ./install.sh [--yes] [--mock] [--help]
+
+  --yes    skip the confirmation prompt
+  --mock   run focalpointd with --mock-device in the launchd agent — use this
+           on a machine with no FocalPoint hardware attached (the default
+           plist runs plain focalpointd, which still serves the socket API
+           with no device present)
+  --help   show this help and exit
+EOF
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $arg (see --help)" >&2
+      exit 1
+      ;;
+  esac
+done
+
+# ---------------------------------------------------------------------------
+# Output helpers
+# ---------------------------------------------------------------------------
+
+if [ -t 1 ]; then
+  C_GREEN=$'\033[0;32m'; C_RED=$'\033[0;31m'; C_YELLOW=$'\033[0;33m'
+  C_BLUE=$'\033[0;34m'; C_BOLD=$'\033[1m'; C_RESET=$'\033[0m'
+else
+  C_GREEN=""; C_RED=""; C_YELLOW=""; C_BLUE=""; C_BOLD=""; C_RESET=""
+fi
+
+ok()   { printf '%s✓%s %s\n' "$C_GREEN" "$C_RESET" "$1"; }
+info() { printf '%s→%s %s\n' "$C_YELLOW" "$C_RESET" "$1"; }
+fail() { printf '%s✗%s %s\n' "$C_RED" "$C_RESET" "$1" >&2; }
+step() { printf '\n%s==>%s %s%s%s\n' "$C_BLUE" "$C_RESET" "$C_BOLD" "$1" "$C_RESET"; }
+
+# ---------------------------------------------------------------------------
+# 1. Preflight
+# ---------------------------------------------------------------------------
+
+step "Preflight checks"
+
+OS="$(uname -s)"
+if [ "$OS" != "Darwin" ]; then
+  fail "this installer supports macOS only (detected: $OS)."
+  echo "  The daemon itself builds fine on Linux (see daemon/README.md)," >&2
+  echo "  but the launchd agent, menu bar app, and backlight helper here" >&2
+  echo "  are all macOS-specific." >&2
+  exit 1
+fi
+ok "macOS"
+
+ARCH="$(uname -m)"
+case "$ARCH" in
+  arm64|x86_64) ok "arch: $ARCH" ;;
+  *)
+    fail "unsupported architecture: $ARCH"
+    exit 1
+    ;;
+esac
+
+MISSING=0
+check_tool() {
+  local tool="$1" hint="$2"
+  if command -v "$tool" >/dev/null 2>&1; then
+    ok "found $tool"
+  else
+    fail "missing $tool — $hint"
+    MISSING=1
+  fi
+}
+check_tool cargo  "install Rust via https://rustup.rs, or 'brew install rust'"
+check_tool jq     "install via 'brew install jq'"
+check_tool swiftc "install the Xcode command line tools: 'xcode-select --install'"
+
+if [ "$MISSING" -ne 0 ]; then
+  fail "install the missing tools above, then re-run ./install.sh"
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# 2. Confirm
+# ---------------------------------------------------------------------------
+
+step "About to install FocalPoint"
+cat <<EOF
+This will, all idempotently:
+  - cargo build --release the focalpointd daemon + focalpoint CLI
+  - symlink both into /opt/homebrew/bin (or ~/.local/bin as a fallback)
+  - install ~/.config/focalpoint/config.toml (only if one isn't already there)
+  - refresh the Claude Code + Codex + Cursor adapter scripts under
+    ~/.config/focalpoint/adapters/
+  - merge FocalPoint's hooks into ~/.claude/settings.json and
+    ~/.cursor/hooks.json (each backed up first; skipped cleanly if already
+    merged)
+  - build the macOS keyboard-backlight helper (non-fatal if it fails)
+  - build + install the FocalPoint.app menu bar app, if this checkout has one
+  - install a launchd user agent so focalpointd starts automatically$( [ "$USE_MOCK" -eq 1 ] && echo " (--mock-device)" )
+EOF
+if [ "$ASSUME_YES" -ne 1 ]; then
+  printf '\nProceed? [y/N] '
+  read -r REPLY
+  case "$REPLY" in
+    [yY]|[yY][eE][sS]) ;;
+    *) echo "Aborted."; exit 0 ;;
+  esac
+fi
+
+# ---------------------------------------------------------------------------
+# 3. Build the daemon
+# ---------------------------------------------------------------------------
+
+step "Building the daemon (cargo build --release)"
+( cd "$DAEMON_DIR" && cargo build --release --quiet )
+RELEASE_DIR="$DAEMON_DIR/target/release"
+ok "built $RELEASE_DIR/{focalpoint,focalpointd}"
+
+# ---------------------------------------------------------------------------
+# 4. Symlink focalpoint + focalpointd
+# ---------------------------------------------------------------------------
+
+step "Installing the focalpoint + focalpointd binaries"
+
+BIN_DIR="/opt/homebrew/bin"
+if [ ! -d "$BIN_DIR" ] || [ ! -w "$BIN_DIR" ]; then
+  BIN_DIR="$HOME/.local/bin"
+  mkdir -p "$BIN_DIR"
+  case ":${PATH}:" in
+    *":$BIN_DIR:"*) ;;
+    *) info "$BIN_DIR isn't on your PATH — add to your shell profile:
+     export PATH=\"$BIN_DIR:\$PATH\"" ;;
+  esac
+fi
+
+for bin in focalpoint focalpointd; do
+  ln -sf "$RELEASE_DIR/$bin" "$BIN_DIR/$bin"
+done
+ok "linked $BIN_DIR/{focalpoint,focalpointd} -> $RELEASE_DIR/"
+
+FOCALPOINT_BIN="$BIN_DIR/focalpoint"
+FOCALPOINTD_BIN="$BIN_DIR/focalpointd"
+
+# ---------------------------------------------------------------------------
+# 5. Config (never clobber a user's existing config)
+# ---------------------------------------------------------------------------
+
+step "Daemon config"
+
+mkdir -p "$CONFIG_DIR"
+if [ -f "$CONFIG_DIR/config.toml" ]; then
+  CONFIG_STATUS="already present — left untouched"
+  ok "$CONFIG_DIR/config.toml $CONFIG_STATUS"
+else
+  cp "$DAEMON_DIR/config.example.toml" "$CONFIG_DIR/config.toml"
+  CONFIG_STATUS="installed from config.example.toml"
+  ok "$CONFIG_DIR/config.toml $CONFIG_STATUS"
+fi
+
+# ---------------------------------------------------------------------------
+# 6. Adapter scripts (always refreshed — these are ours, not user config)
+# ---------------------------------------------------------------------------
+
+step "Adapter scripts"
+
+mkdir -p "$ADAPTER_INSTALL_DIR"
+
+install_script() {
+  local src="$1" dest="$ADAPTER_INSTALL_DIR/$2"
+  cp "$src" "$dest"
+  chmod +x "$dest"
+  ok "refreshed $dest"
+}
+
+install_script "$ADAPTERS_DIR/claude-code/hooks.sh" hooks.sh
+install_script "$ADAPTERS_DIR/claude-code/focus-session.sh" focus-session.sh
+install_script "$ADAPTERS_DIR/claude-code/statusline-usage.sh" statusline-usage.sh
+install_script "$ADAPTERS_DIR/codex-cli/notify.sh" codex-notify.sh
+install_script "$ADAPTERS_DIR/cursor/hooks.sh" cursor-hooks.sh
+install_script "$ADAPTERS_DIR/cursor/focus-cursor.sh" focus-cursor.sh
+
+# ---------------------------------------------------------------------------
+# 7. Merge Claude Code hooks into ~/.claude/settings.json
+# ---------------------------------------------------------------------------
+
+step "Claude Code integration"
+
+mkdir -p "$CLAUDE_DIR"
+if [ ! -f "$CLAUDE_SETTINGS" ]; then
+  echo '{}' > "$CLAUDE_SETTINGS"
+  ok "created $CLAUDE_SETTINGS"
+fi
+
+if jq -e --arg marker "$HOOK_MARKER" \
+     '[.. | select(type == "string") | select(contains($marker))] | length > 0' \
+     "$CLAUDE_SETTINGS" >/dev/null 2>&1; then
+  HOOKS_STATUS="already present — skipped"
+  ok "focalpoint hooks $HOOKS_STATUS"
+else
+  BACKUP="$CLAUDE_SETTINGS.bak-focalpoint-$(date +%Y%m%d%H%M%S)"
+  cp "$CLAUDE_SETTINGS" "$BACKUP"
+  ok "backed up settings.json -> $BACKUP"
+
+  FRAGMENT="$ADAPTERS_DIR/claude-code/settings-fragment.json"
+  MERGED="$(jq -s '
+    .[0] as $orig | .[1] as $frag
+    | $orig
+    | .hooks = (($orig.hooks // {}) as $oh
+        | ($frag.hooks // {}) as $fh
+        | $fh | to_entries | reduce .[] as $e ($oh;
+            .[$e.key] = (($oh[$e.key] // []) + $e.value)))
+  ' "$CLAUDE_SETTINGS" "$FRAGMENT")"
+  printf '%s\n' "$MERGED" > "$CLAUDE_SETTINGS"
+  HOOKS_STATUS="merged into settings.json"
+  ok "focalpoint hooks $HOOKS_STATUS"
+fi
+
+# ---------------------------------------------------------------------------
+# 7b. Merge Cursor hooks into ~/.cursor/hooks.json
+# ---------------------------------------------------------------------------
+
+step "Cursor integration"
+
+mkdir -p "$CURSOR_DIR"
+if [ ! -f "$CURSOR_HOOKS" ]; then
+  echo '{"version": 1}' > "$CURSOR_HOOKS"
+  ok "created $CURSOR_HOOKS"
+fi
+
+if jq -e --arg marker "$CURSOR_HOOK_MARKER" \
+     '[.. | select(type == "string") | select(contains($marker))] | length > 0' \
+     "$CURSOR_HOOKS" >/dev/null 2>&1; then
+  CURSOR_STATUS="already present — skipped"
+  ok "focalpoint cursor hooks $CURSOR_STATUS"
+else
+  BACKUP="$CURSOR_HOOKS.bak-focalpoint-$(date +%Y%m%d%H%M%S)"
+  cp "$CURSOR_HOOKS" "$BACKUP"
+  ok "backed up hooks.json -> $BACKUP"
+
+  # The committed fragment writes the command as ${HOME}/... for readability.
+  # Cursor's expansion of that is undocumented, and user-level hook paths
+  # resolve relative to ~/.cursor, so substitute the resolved absolute path
+  # here rather than trusting either.
+  CURSOR_FRAGMENT="$ADAPTERS_DIR/cursor/hooks-fragment.json"
+  MERGED="$(jq -s --arg cmd "$ADAPTER_INSTALL_DIR/cursor-hooks.sh" '
+    .[0] as $orig | .[1] as $frag
+    | $orig
+    | .version = ($orig.version // $frag.version // 1)
+    | .hooks = (($orig.hooks // {}) as $oh
+        | ($frag.hooks // {} | with_entries(
+            .value |= [ .[] | .command = $cmd ])) as $fh
+        | $fh | to_entries | reduce .[] as $e ($oh;
+            .[$e.key] = (($oh[$e.key] // []) + $e.value)))
+  ' "$CURSOR_HOOKS" "$CURSOR_FRAGMENT")"
+  printf '%s\n' "$MERGED" > "$CURSOR_HOOKS"
+  CURSOR_STATUS="merged into hooks.json"
+  ok "focalpoint cursor hooks $CURSOR_STATUS"
+fi
+
+# ---------------------------------------------------------------------------
+# 8. Codex CLI: print, never auto-edit
+# ---------------------------------------------------------------------------
+
+CODEX_CONFIG_FOUND=0
+if [ -f "$CODEX_CONFIG" ]; then
+  CODEX_CONFIG_FOUND=1
+  if grep -q "codex-notify.sh" "$CODEX_CONFIG" 2>/dev/null; then
+    CODEX_STATUS="notify hook already configured"
+    ok "$CODEX_STATUS"
+  else
+    CODEX_STATUS="config found — add the notify snippet below"
+    info "$CODEX_CONFIG exists but doesn't reference codex-notify.sh yet."
+    info "Add this line at the top level of $CODEX_CONFIG:"
+    cat <<EOF
+
+    notify = ["bash", "$ADAPTER_INSTALL_DIR/codex-notify.sh"]
+
+EOF
+  fi
+else
+  CODEX_STATUS="config.toml not found under ~/.codex — skipped"
+  info "$CODEX_STATUS"
+fi
+
+# ---------------------------------------------------------------------------
+# 9. macOS backlight helper (non-fatal)
+# ---------------------------------------------------------------------------
+
+step "Backlight helper (adapters/mac-virtual)"
+
+if ( cd "$ADAPTERS_DIR/mac-virtual" && ./build.sh >/tmp/focalpoint-backlight-build.log 2>&1 ); then
+  BACKLIGHT_STATUS="built"
+  ok "built focalpoint-backlight"
+else
+  BACKLIGHT_STATUS="build failed (non-fatal)"
+  info "$BACKLIGHT_STATUS — see /tmp/focalpoint-backlight-build.log"
+fi
+
+# ---------------------------------------------------------------------------
+# 10. Menu bar app (only if this checkout has one yet)
+# ---------------------------------------------------------------------------
+
+step "Menu bar app"
+
+if [ -f "$APP_DIR/build.sh" ]; then
+  if ( cd "$APP_DIR" && ./build.sh >/tmp/focalpoint-app-build.log 2>&1 ); then
+    APPS_DIR="/Applications"
+    [ -w "$APPS_DIR" ] || APPS_DIR="$HOME/Applications"
+    mkdir -p "$APPS_DIR"
+    rm -rf "$APPS_DIR/FocalPoint.app"
+    cp -R "$APP_DIR/FocalPoint.app" "$APPS_DIR/FocalPoint.app"
+    APP_STATUS="built + installed to $APPS_DIR/FocalPoint.app"
+    ok "$APP_STATUS"
+    open "$APPS_DIR/FocalPoint.app" && ok "launched FocalPoint.app"
+  else
+    APP_STATUS="build failed (non-fatal) — see /tmp/focalpoint-app-build.log"
+    info "$APP_STATUS"
+  fi
+else
+  APP_STATUS="not present in this checkout — skipping"
+  info "menu bar app $APP_STATUS"
+fi
+
+# ---------------------------------------------------------------------------
+# 11. launchd user agent
+# ---------------------------------------------------------------------------
+
+step "launchd service"
+
+mkdir -p "$LOG_DIR" "$LAUNCH_AGENTS_DIR"
+
+MOCK_ARG_LINE=""
+[ "$USE_MOCK" -eq 1 ] && MOCK_ARG_LINE=$'\t\t<string>--mock-device</string>'
+
+TMP_PLIST="$(mktemp)"
+sed \
+  -e "s#@@FOCALPOINTD_PATH@@#$FOCALPOINTD_BIN#" \
+  -e "s#@@LOG_DIR@@#$LOG_DIR#g" \
+  -e "s#@@MOCK_ARG_LINE@@#$MOCK_ARG_LINE#" \
+  "$PACKAGING_DIR/dev.focalpoint.daemon.plist" > "$TMP_PLIST"
+cp "$TMP_PLIST" "$PLIST_PATH"
+rm -f "$TMP_PLIST"
+ok "wrote $PLIST_PATH$( [ "$USE_MOCK" -eq 1 ] && echo " (--mock-device)" )"
+
+# Stop any manually-started focalpointd (e.g. a dev session) so the launchd copy
+# becomes the one true instance.
+if pkill -x focalpointd 2>/dev/null; then
+  ok "stopped a manually-running focalpointd"
+  sleep 1
+fi
+
+if launchctl print "gui/$UID/$PLIST_LABEL" >/dev/null 2>&1; then
+  launchctl bootout "gui/$UID/$PLIST_LABEL" >/dev/null 2>&1 || true
+  ok "unloaded the previous launchd agent"
+fi
+
+launchctl bootstrap "gui/$UID" "$PLIST_PATH"
+ok "bootstrapped $PLIST_LABEL"
+
+echo ""
+launchctl print "gui/$UID/$PLIST_LABEL" 2>/dev/null | head -n 10 || true
+
+printf '\nwaiting for the daemon to answer'
+PING_OK=0
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if PING_OUT="$("$FOCALPOINT_BIN" ping 2>&1)"; then
+    PING_OK=1
+    break
+  fi
+  printf '.'
+  sleep 1
+done
+echo ""
+
+if [ "$PING_OK" -eq 1 ]; then
+  ok "focalpoint ping: $PING_OUT"
+else
+  fail "focalpoint ping did not succeed after 10s (last: ${PING_OUT:-no output})"
+  fail "check $LOG_DIR/focalpointd.err.log"
+fi
+
+# ---------------------------------------------------------------------------
+# 12. Summary
+# ---------------------------------------------------------------------------
+
+step "Summary"
+cat <<EOF
+  daemon binaries    $BIN_DIR/{focalpoint,focalpointd}
+  config.toml        $CONFIG_STATUS
+  adapter scripts    refreshed in $ADAPTER_INSTALL_DIR
+  Claude Code hooks  $HOOKS_STATUS
+  Cursor hooks       $CURSOR_STATUS
+  Codex CLI          $CODEX_STATUS
+  backlight helper   $BACKLIGHT_STATUS
+  menu bar app       $APP_STATUS
+  launchd agent      $PLIST_LABEL @ $PLIST_PATH$( [ "$USE_MOCK" -eq 1 ] && echo " (mock device)" )
+  focalpoint ping       $( [ "$PING_OK" -eq 1 ] && echo "OK — $PING_OUT" || echo "FAILED — see $LOG_DIR/focalpointd.err.log" )
+EOF
+
+echo ""
+echo "Next steps:"
+echo "  - Restart any running Claude Code sessions so they pick up the new hooks."
+echo "  - Cursor reloads hooks.json on save; restart Cursor if the Hooks tab doesn't list them."
+if [ "$CODEX_CONFIG_FOUND" -eq 0 ]; then
+  echo "  - Using Codex CLI? See adapters/codex-cli/README.md to wire up the notify hook."
+fi
+echo "  - Run 'focalpoint watch' to see live events, or 'focalpoint ping' any time to check status."
+echo "  - Re-run ./install.sh any time — it's safe, everything above is idempotent."
+echo ""
+
+if [ "$PING_OK" -ne 1 ]; then
+  exit 1
+fi

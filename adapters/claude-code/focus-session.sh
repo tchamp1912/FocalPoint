@@ -1,0 +1,276 @@
+#!/bin/bash
+# FocalPoint [session] focus action (PROTOCOL.md §3 "Focus" / §5)
+#
+# The daemon runs this script when a numbered key whose slot has a live
+# session is pressed, with the session exposed via env vars:
+#   FOCALPOINT_SESSION_ID, FOCALPOINT_SESSION_KIND, FOCALPOINT_SESSION_LABEL,
+#   FOCALPOINT_SESSION_CWD, FOCALPOINT_SESSION_TTY, FOCALPOINT_SLOT
+#
+# Goal: bring the terminal window/tab running that session to the front.
+#
+# Matching strategy, in order:
+#   1. EXACT tty match ($FOCALPOINT_SESSION_TTY, e.g. "/dev/ttys003") against
+#      iTerm2's `tty of session` / Terminal's `tty of tab`. This is precise —
+#      no two sessions ever share a tty — and is what claude-code/hooks.sh
+#      supplies via `--meta tty=$(...)`.
+#   2. Falls back to a fuzzy title/tty-string match on the basename of
+#      $FOCALPOINT_SESSION_CWD, for adapters that don't send tty.
+#   3. Falls back to just activating whichever of iTerm2/Terminal is running.
+#
+# HONEST LIMITATION: step 2 was this script's ORIGINAL and only strategy, and
+# it doesn't actually work for Claude Code sessions in practice — Claude Code
+# titles iTerm2/Terminal tabs with a generated task summary (e.g. "Fix drag
+# stutter"), not the cwd, so the cwd's basename may never appear in the title
+# at all (confirmed empirically: none of it showed up in a real session's
+# title). It also can't disambiguate two sessions open in the same repo
+# (common). Step 1 (tty) has neither problem, so treat step 2 as a
+# best-effort fallback for adapters that can't supply a tty, not the primary
+# mechanism. Not every terminal is supported at all (Warp, Alacritty, VS
+# Code's integrated terminal, tmux panes aren't queried here) — tmux users in
+# particular may prefer replacing this script with a `tmux` pane switch.
+#
+# Must never hang the daemon's action dispatch: every osascript call below
+# runs under a hard timeout via run_osa().
+#
+# MIT License - see adapters/README.md
+
+set -u
+
+# Not every session lives in a terminal. Cursor agent sessions run inside the
+# IDE and have no tty at all, so none of the matching below can ever find
+# them — hand off to the Cursor adapter's focus script, installed alongside
+# this one. Kept as a dispatch here rather than a separate [session] focus
+# entry so existing config.toml files keep working unchanged.
+if [ "${FOCALPOINT_SESSION_KIND:-}" = "cursor" ]; then
+  CURSOR_FOCUS="$(dirname "$0")/focus-cursor.sh"
+  [ -x "$CURSOR_FOCUS" ] && exec "$CURSOR_FOCUS"
+  exit 0
+fi
+
+CWD="${FOCALPOINT_SESSION_CWD:-}"
+if [ -n "$CWD" ]; then
+  NEEDLE="$(basename "$CWD" 2>/dev/null)"
+else
+  NEEDLE=""
+fi
+TARGET_TTY="${FOCALPOINT_SESSION_TTY:-}"
+
+# Seconds to wait for any single osascript call before killing it.
+TIMEOUT_SECS="${FOCALPOINT_FOCUS_TIMEOUT:-3}"
+
+# Escape backslashes and double quotes so a value can be embedded inside an
+# AppleScript string literal ("...").
+osa_escape() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
+# Run `osascript -e "$1"`, hard-killing it after TIMEOUT_SECS so a stuck (or
+# permission-prompt-blocked) AppleScript call can never hang this script.
+# Prints the script's stdout on success.
+run_osa() {
+  local script="$1"
+  local tmp
+  tmp="$(mktemp "${TMPDIR:-/tmp}/focalpoint-focus.XXXXXX" 2>/dev/null)" || return 1
+
+  osascript -e "$script" >"$tmp" 2>/dev/null &
+  local pid=$!
+
+  # Poll in 0.1s ticks (not whole seconds) so the common case — osascript
+  # returning almost instantly — doesn't pay up to a full extra second of
+  # latency on a key press. TIMEOUT_SECS is still the hard ceiling.
+  local max_ticks=$((TIMEOUT_SECS * 10))
+  local ticks=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$ticks" -ge "$max_ticks" ]; then
+      kill "$pid" 2>/dev/null
+      wait "$pid" 2>/dev/null
+      rm -f "$tmp"
+      return 124
+    fi
+    sleep 0.1
+    ticks=$((ticks + 1))
+  done
+
+  wait "$pid" 2>/dev/null
+  local status=$?
+  cat "$tmp" 2>/dev/null
+  rm -f "$tmp"
+  return $status
+}
+
+# Best-effort: only try apps that are actually running, so we never launch a
+# new terminal instance just to focus a session (nothing to focus in that
+# case anyway).
+app_running() {
+  pgrep -x "$1" >/dev/null 2>&1
+}
+
+try_iterm_tty() {
+  [ -n "$TARGET_TTY" ] || return 1
+  app_running "iTerm2" || return 1
+
+  local tty_esc script result
+  tty_esc="$(osa_escape "$TARGET_TTY")"
+  script=$(cat <<APPLESCRIPT
+tell application "iTerm2"
+  set found to false
+  repeat with w in windows
+    repeat with t in tabs of w
+      repeat with s in sessions of t
+        try
+          if (tty of s) is "$tty_esc" then
+            select t
+            select w
+            set found to true
+            exit repeat
+          end if
+        end try
+      end repeat
+      if found then exit repeat
+    end repeat
+    if found then exit repeat
+  end repeat
+  if found then activate
+  if found then
+    return "matched"
+  else
+    return "nomatch"
+  end if
+end tell
+APPLESCRIPT
+)
+  result="$(run_osa "$script")"
+  [ "$result" = "matched" ]
+}
+
+try_terminal_tty() {
+  [ -n "$TARGET_TTY" ] || return 1
+  app_running "Terminal" || return 1
+
+  local tty_esc script result
+  tty_esc="$(osa_escape "$TARGET_TTY")"
+  script=$(cat <<APPLESCRIPT
+tell application "Terminal"
+  set found to false
+  repeat with w in windows
+    repeat with tb in tabs of w
+      try
+        if (tty of tb) is "$tty_esc" then
+          set selected of tb to true
+          set index of w to 1
+          set found to true
+          exit repeat
+        end if
+      end try
+    end repeat
+    if found then exit repeat
+  end repeat
+  if found then activate
+  if found then
+    return "matched"
+  else
+    return "nomatch"
+  end if
+end tell
+APPLESCRIPT
+)
+  result="$(run_osa "$script")"
+  [ "$result" = "matched" ]
+}
+
+try_iterm() {
+  [ -n "$NEEDLE" ] || return 1
+  app_running "iTerm2" || return 1
+
+  local needle_esc script result
+  needle_esc="$(osa_escape "$NEEDLE")"
+  script=$(cat <<APPLESCRIPT
+tell application "iTerm2"
+  set found to false
+  repeat with w in windows
+    repeat with t in tabs of w
+      repeat with s in sessions of t
+        try
+          if (name of s contains "$needle_esc") or (tty of s contains "$needle_esc") then
+            select t
+            select w
+            set found to true
+            exit repeat
+          end if
+        end try
+      end repeat
+      if found then exit repeat
+    end repeat
+    if found then exit repeat
+  end repeat
+  if found then activate
+  if found then
+    return "matched"
+  else
+    return "nomatch"
+  end if
+end tell
+APPLESCRIPT
+)
+  result="$(run_osa "$script")"
+  [ "$result" = "matched" ]
+}
+
+try_terminal() {
+  [ -n "$NEEDLE" ] || return 1
+  app_running "Terminal" || return 1
+
+  local needle_esc script result
+  needle_esc="$(osa_escape "$NEEDLE")"
+  script=$(cat <<APPLESCRIPT
+tell application "Terminal"
+  set found to false
+  repeat with w in windows
+    repeat with tb in tabs of w
+      try
+        if (custom title of tb contains "$needle_esc") or (tty of tb contains "$needle_esc") then
+          set selected of tb to true
+          set index of w to 1
+          set found to true
+          exit repeat
+        end if
+      end try
+    end repeat
+    if found then exit repeat
+  end repeat
+  if found then activate
+  if found then
+    return "matched"
+  else
+    return "nomatch"
+  end if
+end tell
+APPLESCRIPT
+)
+  result="$(run_osa "$script")"
+  [ "$result" = "matched" ]
+}
+
+fallback_activate() {
+  if app_running "iTerm2"; then
+    run_osa 'tell application "iTerm2" to activate' >/dev/null 2>&1 || true
+  elif app_running "Terminal"; then
+    run_osa 'tell application "Terminal" to activate' >/dev/null 2>&1 || true
+  fi
+}
+
+if command -v osascript >/dev/null 2>&1; then
+  if try_iterm_tty; then
+    :
+  elif try_terminal_tty; then
+    :
+  elif try_iterm; then
+    :
+  elif try_terminal; then
+    :
+  else
+    fallback_activate
+  fi
+fi
+
+exit 0

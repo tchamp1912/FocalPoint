@@ -1,0 +1,136 @@
+# FocalPoint Rev A mechanical matrix foundation.
+#
+# This produces the switch/diode placement, PCB Edge.Cuts, and DXF/SVG outlines
+# for a 16-key wireless macropad: 12 clear agent selectors plus four ceramic
+# action keys. Its compact, rounded-square visual hierarchy is inspired by the
+# supplied reference: joystick and encoder in a top control rail, RGB selector
+# field below, and a visually distinct action row. The resulting .kicad_pcb is
+# an import/start point; it still needs the nRF52840 module, charger, battery,
+# RGB, encoder, joystick, and routing.
+#
+# Requires Ergogen 4.1+ and KiCad 8 output:
+#   npx --yes ergogen@4.1.0 hardware/ergogen -o hardware/ergogen/output
+
+meta:
+  engine: 4.1.0
+  version: 0.1
+  author: FocalPoint contributors
+
+units:
+  kx: cx
+  ky: cy
+  key_gap: 2
+  edge: 5
+  # KiCad placement targets for the top control rail, measured from selector
+  # slot_1 / row_1 at [0, 0]. They define the case zone; add the actual
+  # footprints in KiCad after generating the matrix.
+  joystick_x: 0
+  encoder_x: 3 * (kx + key_gap)
+  control_y: 18
+
+points:
+  zones:
+    selectors:
+      # Twelve transparent MX keys map left-to-right, top-to-bottom to the
+      # protocol's user slots 1–12.
+      anchor:
+        shift: [0, 0]
+      key:
+        padding: ky + key_gap
+        spread: kx + key_gap
+        tags: [switch, selector]
+      columns:
+        slot_1: {key: {column_net: C0}}
+        slot_2: {key: {column_net: C1}}
+        slot_3: {key: {column_net: C2}}
+        slot_4: {key: {column_net: C3}}
+      rows:
+        row_1: {row_net: R0}
+        row_2: {row_net: R1}
+        row_3: {row_net: R2}
+
+    actions:
+      # Dedicated ceramic action keys. Firmware maps these to protocol controls
+      # accept/reject/new-task/push-to-talk, respectively.
+      anchor:
+        # Tighten the row gap to read as a single compact control cluster.
+        shift: [0, -(3 * (ky + key_gap) + 4)]
+      key:
+        padding: ky + key_gap
+        spread: kx + key_gap
+        tags: [switch, action]
+      columns:
+        accept: {key: {column_net: C0}}
+        reject: {key: {column_net: C1}}
+        new_task: {key: {column_net: C2}}
+        push_to_talk: {key: {column_net: C3}}
+      rows:
+        action: {row_net: R3}
+
+outlines:
+  # Switch cutouts for an optional FR4/laser-cut plate.
+  switch_cutouts:
+    - what: rectangle
+      where: /switch/
+      size: [14, 14]
+
+  # 1u keycap envelopes used for fit checks and the case perimeter.
+  keycaps:
+    - what: rectangle
+      where: /switch/
+      size: [kx, ky]
+
+  # Switch plate around the key field only. Keep it separate from the outer PCB
+  # so the case can place the joystick/encoder in the top rail like the
+  # reference image.
+  plate:
+    - what: outline
+      name: keycaps
+      expand: 3
+      fillet: 4
+
+  # Rounded-square PCB body. It deliberately leaves a 24 mm top rail above the
+  # selector field for the joystick at [joystick_x, control_y] and encoder at
+  # [encoder_x, control_y]. Add their openings, mounting, and footprints in
+  # KiCad/CAD; Ergogen owns the switch matrix and main silhouette.
+  pcb:
+    - what: rectangle
+      where:
+        ref: selectors_slot_2_row_2
+        shift: [10.5, -12]
+      size: [108, 118]
+      fillet: 10
+
+  # The printed case needs room for a top plate lip and gasket/foam while
+  # retaining the reference's soft, compact outer silhouette.
+  case_outer:
+    - what: outline
+      name: pcb
+      expand: 3
+      fillet: 6
+
+pcbs:
+  focalpoint_matrix:
+    template: kicad8
+    outlines:
+      edge_cuts:
+        outline: pcb
+        layer: Edge.Cuts
+    footprints:
+      mx_hotswap:
+        what: mx
+        where: /switch/
+        params:
+          hotswap: true
+          keycaps: true
+          reverse: false
+          from: "{{colrow}}"
+          to: "{{column_net}}"
+      diode:
+        what: diode
+        where: /switch/
+        adjust:
+          shift: [0, -5]
+        params:
+          from: "{{colrow}}"
+          to: "{{row_net}}"

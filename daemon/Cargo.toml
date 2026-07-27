@@ -1,0 +1,46 @@
+[package]
+name = "focalpoint"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Host daemon and CLI for the FocalPoint agent macropad (open clone of the Codex Micro)."
+repository = "https://github.com/focalpoint/focalpoint"
+readme = "README.md"
+
+# Two binaries plus a shared library. `focalpointd` is the daemon; `focalpoint` is the
+# thin CLI client (and can run the daemon via `focalpoint daemon`).
+[lib]
+name = "focalpoint"
+path = "src/lib.rs"
+
+[[bin]]
+name = "focalpointd"
+path = "src/bin/focalpointd.rs"
+
+[[bin]]
+name = "focalpoint"
+path = "src/bin/focalpoint.rs"
+
+[dependencies]
+hidapi = "2"
+serde = { version = "1", features = ["derive"] }
+# preserve_order keeps JSON object keys in insertion order so emitted events
+# match the field order in PROTOCOL.md's examples verbatim.
+serde_json = { version = "1", features = ["preserve_order"] }
+toml = "0.8"
+# Format-preserving TOML editing for in-place `set-style` persistence.
+toml_edit = "0.22"
+clap = { version = "4", features = ["derive"] }
+dirs = "5"
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "net",
+    "io-util",
+    "sync",
+    "time",
+] }
+
+[profile.release]
+lto = true
+strip = true

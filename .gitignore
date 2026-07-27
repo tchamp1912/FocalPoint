@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+# Rust (daemon/)
+target/
+
+# macOS app bundle (app/build.sh output)
+app/FocalPoint.app/
+
+# adapters/mac-virtual (build.sh output; source is backlight.swift)
+adapters/mac-virtual/focalpoint-backlight
+adapters/mac-virtual/vibekey-backlight
+
+# firmware/keychron-v1-max/build/ is intentionally committed (prebuilt
+# .bin/.hex/.elf + SHA256SUMS, see CLAUDE.md) — not ignored.
+# hardware/ergogen/output/ has its own .gitignore (reproducible ergogen output).

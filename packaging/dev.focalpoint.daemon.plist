@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- FocalPoint daemon launchd user-agent template. NOT loaded directly by
+     launchd: install.sh fills in the three placeholder tokens below (daemon
+     path, optional mock-device flag, log directory) and writes the result
+     to ~/Library/LaunchAgents/dev.focalpoint.daemon.plist. Re-run install.sh
+     to regenerate it after moving the repo or toggling --mock. MIT. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>dev.focalpoint.daemon</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>@@FOCALPOINTD_PATH@@</string>
+@@MOCK_ARG_LINE@@
+	</array>
+
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ProcessType</key>
+	<string>Interactive</string>
+
+	<key>StandardOutPath</key>
+	<string>@@LOG_DIR@@/focalpointd.log</string>
+	<key>StandardErrorPath</key>
+	<string>@@LOG_DIR@@/focalpointd.err.log</string>
+</dict>
+</plist>

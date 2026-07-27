@@ -1,0 +1,596 @@
+// FocalPoint menu-bar app — settings window (per-state style editor + toggles).
+// Sidebar/detail layout: a list of General + the 6 states on the left (with
+// a live swatch preview per state), an editor for the selected item on the
+// right. Scales much better than a flat repeated-group list.
+// Initialized from get-styles; sends set-style on change (sliders debounced).
+// MIT License.
+
+import SwiftUI
+import Carbon
+
+/// Coalesces rapid slider edits into one set-style per ~300 ms.
+final class Debouncer {
+    private var work: DispatchWorkItem?
+    func call(after: TimeInterval = 0.3, _ block: @escaping () -> Void) {
+        work?.cancel()
+        let w = DispatchWorkItem(block: block)
+        work = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + after, execute: w)
+    }
+}
+
+enum SettingsSection: Hashable {
+    case general
+    case hotkeys
+    case integrations
+    case history
+    case state(AgentState)
+}
+
+struct SettingsView: View {
+    @ObservedObject var model: AppModel
+    @State private var selection: SettingsSection? = .general
+
+    var body: some View {
+        NavigationSplitView {
+            sidebar
+        } detail: {
+            detail
+        }
+        .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 210)
+        .frame(width: 580, height: 440)
+        // NavigationSplitView paints its own opaque NSSplitViewController
+        // background on macOS regardless of window.isOpaque/backgroundColor
+        // — without this, the sidebar/detail VisualEffectViews and glass
+        // cards render correctly but sit on a solid backing, so none of it
+        // reads as translucent.
+        .background(.clear)
+    }
+
+    private var sidebar: some View {
+        List(selection: $selection) {
+            Section("General") {
+                Label("Behavior", systemImage: "gearshape")
+                    .tag(SettingsSection.general)
+                Label("Hotkeys", systemImage: "keyboard")
+                    .tag(SettingsSection.hotkeys)
+                Label("Agent Integrations", systemImage: "sparkles")
+                    .tag(SettingsSection.integrations)
+                Label("History", systemImage: "clock.arrow.circlepath")
+                    .tag(SettingsSection.history)
+            }
+            Section("State styles") {
+                ForEach(AgentState.allCases) { state in
+                    HStack(spacing: 8) {
+                        StateSwatch(state: state, color: (model.styles[state] ?? defaultStyle(state)).color, size: 10)
+                        Text(state.display)
+                    }
+                    .tag(SettingsSection.state(state))
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        // Opacity on the material layer only — never on the window itself —
+        // so turning translucency up fades the glass toward raw desktop
+        // without touching the legibility of the list text. Goes through
+        // Glass.swift like every other surface so macOS 26 gets real Liquid
+        // Glass here too, instead of always the pre-26 vibrancy material.
+        .liquidGlass(.sidebarPane(opacity: model.interfaceTranslucency), radius: 0)
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        ZStack {
+            Color.clear
+                .liquidGlass(.detailPane(opacity: model.interfaceTranslucency), radius: 0)
+                .ignoresSafeArea()
+            // Groups the section's cards so macOS 26 renders them as one
+            // material; a pass-through on older systems.
+            LiquidGlassGroup(spacing: 22) {
+                switch selection {
+                case .state(let s):
+                    StateStyleDetail(model: model, state: s)
+                case .hotkeys:
+                    HotkeysSettingsView(model: model)
+                case .integrations:
+                    IntegrationsSettingsView(model: model)
+                case .history:
+                    SessionHistoryView(model: model)
+                case .general, .none:
+                    GeneralSettingsView(model: model)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - General / behavior section
+
+struct GeneralSettingsView: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                Text("Behavior").font(.title3).bold()
+
+                VStack(alignment: .leading, spacing: 14) {
+                    Toggle("Enable global hotkeys", isOn: $model.hotkeysEnabled)
+                    Divider()
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle("Colored status icon", isOn: $model.coloredIcon)
+                        Text("The menu-bar icon is a neutral template by default; it adds a badge when a session needs attention. Turn this on to tint it by aggregate state.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Divider()
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Desktop widget").font(.subheadline).bold()
+                        Picker("", selection: $model.desktopWidgetMode) {
+                            ForEach(DesktopWidgetMode.allCases) { mode in
+                                Text(mode.display).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.radioGroup)
+                        Text("Auto-hide keeps the desktop widget out of the way while every session is idle; it reappears the moment something needs attention.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Divider()
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Translucency").font(.subheadline).bold()
+                            Spacer()
+                            Text("\(Int(model.interfaceTranslucency * 100))%")
+                                .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                        }
+                        Slider(value: $model.interfaceTranslucency, in: 0.05...1.0, step: 0.01)
+                        Text("Fades only the frosted background — text and icons stay fully readable.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(16)
+                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Reset").font(.title3).bold()
+                    HStack {
+                        Text("Restore every state's color, pattern, and period to its shipped default.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Reset All to Defaults", role: .destructive) { model.resetStyles() }
+                    }
+                }
+                .padding(16)
+                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+
+                Spacer(minLength: 0)
+            }
+            .padding(20)
+        }
+    }
+}
+
+// MARK: - History section
+
+struct SessionHistoryView: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                Text("History").font(.title3).bold()
+
+                if model.sessionHistory.isEmpty {
+                    VStack(spacing: 6) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 22))
+                            .foregroundStyle(.tertiary)
+                        Text("No sessions yet").font(.body).foregroundStyle(.secondary)
+                        Text("Completed sessions will show up here.")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 28)
+                    .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(model.sessionHistory) { entry in
+                            historyRow(entry)
+                            if entry.id != model.sessionHistory.last?.id { Divider() }
+                        }
+                    }
+                    .padding(16)
+                    .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+
+                    HStack {
+                        Text("\(model.sessionHistory.count) session\(model.sessionHistory.count == 1 ? "" : "s") kept, most recent first.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Clear History", role: .destructive) { model.clearSessionHistory() }
+                    }
+                    .padding(16)
+                    .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(20)
+        }
+    }
+
+    private func historyRow(_ entry: SessionHistoryEntry) -> some View {
+        HStack(spacing: 10) {
+            StateSwatch(state: entry.finalState,
+                        color: (model.styles[entry.finalState] ?? defaultStyle(entry.finalState)).color, size: 9)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.title).font(.body)
+                HStack(spacing: 5) {
+                    Text(entry.kind).font(.caption2).foregroundStyle(.tertiary)
+                    if let cwd = entry.cwd {
+                        Text(cwd).font(.caption2).foregroundStyle(.tertiary)
+                            .lineLimit(1).truncationMode(.middle)
+                    }
+                }
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(durationString(entry.endedAt.timeIntervalSince(entry.startedAt)))
+                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                Text("\(elapsedString(since: entry.endedAt)) ago")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .contextMenu {
+            if let cwd = entry.cwd {
+                Button("Open in Terminal") { model.openInTerminal(cwd) }
+                Button("Show in Finder") { model.revealInFinder(cwd) }
+                Button("Copy Working Directory") { model.copyToPasteboard(cwd) }
+            }
+        }
+    }
+}
+
+// MARK: - Agent integrations section
+
+struct IntegrationsSettingsView: View {
+    @ObservedObject var model: AppModel
+
+    private let roadmap: [(icon: String, title: String, detail: String)] = [
+        ("dollarsign.circle", "Session cost estimate",
+         "Adapter reports a per-model $/1k-token rate alongside tokens_in/out; the badge shows running cost instead of (or next to) raw counts."),
+        ("gauge.with.dots.needle.67percent", "Context-window meter",
+         "A thin bar under the session row showing how full the model's context window is, from the same transcript the token stats already read."),
+        ("cpu", "Model badge",
+         "Small label showing which model is driving the session (e.g. Sonnet vs. Opus, or the Codex model) — useful once you run more than one at a time."),
+        ("network", "MCP server health",
+         "Surface a session's connected MCP servers and flag one that's disconnected or erroring, since that's often the real reason a session looks \u{201C}stuck\u{201D}."),
+        ("bell.badge", "Budget alerts",
+         "Optional threshold (tokens or $) that flips the session's LED/badge to a warning color when crossed."),
+    ]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                Text("Agent Integrations").font(.title3).bold()
+                Text("Features specific to Claude Code, Cursor, and Codex CLI sessions rather than the protocol in general.")
+                    .font(.caption).foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Session stat badges").font(.subheadline).bold()
+                    Text("Shown next to a session's elapsed time when the adapter reports them. A stat you enable here simply stays hidden for sessions that don't have data for it yet — nothing to configure per-adapter.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Divider()
+                    ForEach(SessionStat.allCases) { stat in
+                        Toggle(isOn: statBinding(stat)) {
+                            Label(stat.label, systemImage: stat.symbol)
+                        }
+                    }
+                    Divider()
+                    Text("Today: the Claude Code adapter (adapters/claude-code/hooks.sh) reports all four from the session transcript when `jq` is installed. The Cursor adapter reports turns and tool calls only — Cursor's transcripts carry no token usage. The Codex CLI adapter reports turns only — its notify hook doesn't expose token usage or tool calls.")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+                .padding(16)
+                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle("Show account usage monitor", isOn: $model.showUsage)
+                    Text("The monitor displays provider-reported subscription quota and reset times, not estimates from session token counts.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Divider()
+                    Text("Claude Code")
+                        .font(.subheadline).bold()
+                    Text("Install the FocalPoint status-line reporter in Claude Code. It forwards only the documented rate-limit percentages and reset timestamps locally; prompts, tools, and transcript contents are never sent.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("Codex")
+                        .font(.subheadline).bold()
+                    Toggle("Read Codex quota with app-server", isOn: $model.codexUsageEnabled)
+                    Text("Uses a local Codex app-server process and your existing ChatGPT authentication. API-key accounts and ordinary CLI sessions without ChatGPT quota data remain unavailable; FocalPoint never parses terminal output.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(16)
+                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Ideas / roadmap").font(.subheadline).bold()
+                    Text("Not implemented yet — listed here so they don't get lost.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Divider()
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(roadmap, id: \.title) { item in
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: item.icon)
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 16)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.title).font(.callout)
+                                    Text(item.detail).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(16)
+                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+
+                Spacer(minLength: 0)
+            }
+            .padding(20)
+        }
+    }
+
+    private func statBinding(_ stat: SessionStat) -> Binding<Bool> {
+        Binding(
+            get: { model.visibleStats.contains(stat) },
+            set: { on in
+                if on { model.visibleStats.insert(stat) } else { model.visibleStats.remove(stat) }
+            }
+        )
+    }
+}
+
+// MARK: - Per-state style editor
+
+struct StateStyleDetail: View {
+    @ObservedObject var model: AppModel
+    let state: AgentState
+    @State private var debouncer = Debouncer()
+
+    private var style: StateStyle { model.styles[state] ?? defaultStyle(state) }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(spacing: 10) {
+                    StateSwatch(state: state, color: style.color, size: 18)
+                    Text(state.display).font(.title2).bold()
+                    Spacer()
+                    Button("Reset") { model.setStyle(state, defaultStyle(state)) }
+                }
+
+                if model.connected && !model.stylesSupported {
+                    Text("This daemon doesn\u{2019}t support styles yet — edits are kept locally and set-style attempts may not apply.")
+                        .font(.caption).foregroundStyle(.orange)
+                } else if !model.connected {
+                    Text("Daemon offline — showing defaults; changes apply when it reconnects.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Text("Color").font(.subheadline)
+                        Spacer()
+                        ColorPicker("", selection: colorBinding, supportsOpacity: false)
+                            .labelsHidden()
+                    }
+                    Divider()
+                    HStack {
+                        Text("Pattern").font(.subheadline)
+                        Spacer()
+                        Picker("", selection: patternBinding) {
+                            ForEach(Pattern.allCases) { p in Text(p.display).tag(p) }
+                        }
+                        .labelsHidden()
+                        .frame(width: 160)
+                    }
+                    Divider()
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Period").font(.subheadline)
+                            Spacer()
+                            Text("\(style.periodMs) ms")
+                                .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                        }
+                        Slider(value: periodBinding, in: 100...5000, step: 50)
+                    }
+                }
+                .padding(16)
+                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+
+                Spacer(minLength: 0)
+            }
+            .padding(20)
+        }
+        .id(state) // fresh identity per state so debounced edits never bleed across rows
+    }
+
+    // MARK: Bindings
+
+    private var colorBinding: Binding<Color> {
+        Binding(
+            get: { style.color },
+            set: { newColor in
+                let rgb = rgbComponents(newColor)
+                var s = style; s.rgb = rgb
+                model.setStyle(state, s)   // ColorPicker edits are discrete; no debounce needed
+            }
+        )
+    }
+
+    private var patternBinding: Binding<Pattern> {
+        Binding(
+            get: { style.pattern },
+            set: { var s = style; s.pattern = $0; model.setStyle(state, s) }
+        )
+    }
+
+    private var periodBinding: Binding<Double> {
+        Binding(
+            get: { Double(style.periodMs) },
+            set: { newVal in
+                var s = style; s.periodMs = Int(newVal)
+                model.styles[state] = s              // update UI immediately
+                debouncer.call { model.setStyle(state, s) }   // debounce the wire send
+            }
+        )
+    }
+
+    private func rgbComponents(_ color: Color) -> [Int] {
+        let ns = NSColor(color).usingColorSpace(.sRGB) ?? NSColor(color)
+        let r = Int((ns.redComponent * 255).rounded())
+        let g = Int((ns.greenComponent * 255).rounded())
+        let b = Int((ns.blueComponent * 255).rounded())
+        return [max(0, min(255, r)), max(0, min(255, g)), max(0, min(255, b))]
+    }
+}
+
+// MARK: - Hotkeys section
+
+/// One row per bindable action: current combo (or "Press a key combo…"
+/// while recording), a Record/Cancel button, and a per-row Reset. Recording
+/// captures the next raw NSEvent via a local monitor rather than Carbon
+/// (Carbon can only report combos it's already registered to listen for).
+struct HotkeysSettingsView: View {
+    @ObservedObject var model: AppModel
+    @State private var recordingAction: HotkeyActionID?
+    @State private var warning: String?
+    @State private var monitor: Any?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack {
+                    Text("Hotkeys").font(.title3).bold()
+                    Spacer()
+                    Button("Reset All to Defaults", role: .destructive) {
+                        cancelRecording()
+                        model.resetAllHotkeyBindings()
+                    }
+                }
+                Text("Global hotkeys work system-wide without Accessibility permission. Every combo must include at least one modifier key (\u{2303}\u{2325}\u{21E7}\u{2318}) so normal typing elsewhere is never affected.")
+                    .font(.caption).foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Attention cycle order").font(.subheadline).bold()
+                    Picker("", selection: $model.attentionCycleOrder) {
+                        ForEach(AttentionCycleOrder.allCases) { order in
+                            Text(order.display).tag(order)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.radioGroup)
+                    Text("Order used by \u{201C}Focus Next/Previous Attention Session\u{201D} below \u{2014} which of the waiting/error sessions each press jumps to.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(16)
+                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+
+                VStack(spacing: 0) {
+                    ForEach(HotkeyActionID.allCases) { action in
+                        hotkeyRow(action)
+                        if action != HotkeyActionID.allCases.last {
+                            Divider().padding(.leading, 4)
+                        }
+                    }
+                }
+                .padding(12)
+                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+
+                Spacer(minLength: 0)
+            }
+            .padding(20)
+        }
+        .onDisappear { cancelRecording() }
+    }
+
+    @ViewBuilder
+    private func hotkeyRow(_ action: HotkeyActionID) -> some View {
+        let binding = model.resolvedHotkeyBindings[action] ?? action.defaultBinding
+        let isRecording = recordingAction == action
+        let isCustomized = model.hotkeyBindings[action.rawValue] != nil
+
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 10) {
+                Text(action.label).font(.body)
+                Spacer()
+                if isRecording {
+                    Text("Press a key combo\u{2026}")
+                        .font(.caption).foregroundStyle(.orange)
+                } else {
+                    Text(KeyCodeNames.comboString(keyCode: binding.keyCode, modifiers: binding.modifiers))
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .liquidGlass(.chip, radius: 5)
+                }
+                Button(isRecording ? "Cancel" : "Record") {
+                    isRecording ? cancelRecording() : startRecording(action)
+                }
+                .buttonStyle(.bordered)
+                Button("Reset") { model.resetHotkeyBinding(action) }
+                    .buttonStyle(.borderless)
+                    .disabled(!isCustomized)
+            }
+            if isRecording, let warning {
+                Text(warning).font(.caption).foregroundStyle(.red)
+            }
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 8)
+        .background(RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
+            .fill(isRecording ? Color.orange.opacity(0.12) : .clear))
+    }
+
+    private func startRecording(_ action: HotkeyActionID) {
+        cancelRecording()
+        recordingAction = action
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            handleKeyDown(event, for: action)
+            return nil   // swallow the event while listening
+        }
+    }
+
+    private func handleKeyDown(_ event: NSEvent, for action: HotkeyActionID) {
+        if event.keyCode == UInt16(kVK_Escape) {
+            cancelRecording()
+            return
+        }
+        let modifiers = KeyCodeNames.carbonModifiers(from: event.modifierFlags)
+        guard modifiers != 0 else {
+            // Refuse bare unmodified keys outright — that would break normal
+            // typing system-wide. Keep listening so the user can try again.
+            warning = "Add at least one modifier key (\u{2303}\u{2325}\u{21E7}\u{2318})."
+            return
+        }
+        let keyCode = UInt32(event.keyCode)
+        if let conflict = model.conflictingHotkeyAction(keyCode: keyCode, modifiers: modifiers,
+                                                         excluding: action) {
+            // Blocks the save rather than swapping — the user resets or
+            // rebinds the other action first, so no binding is silently lost.
+            warning = "\u{201C}\(KeyCodeNames.comboString(keyCode: keyCode, modifiers: modifiers))\u{201D} is already used by \u{201C}\(conflict.label)\u{201D}. Choose another combo, or reset that binding first."
+            return
+        }
+        model.setHotkeyBinding(action, keyCode: keyCode, modifiers: modifiers)
+        cancelRecording()
+    }
+
+    private func cancelRecording() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        recordingAction = nil
+        warning = nil
+    }
+}

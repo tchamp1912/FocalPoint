@@ -1,0 +1,79 @@
+# FocalPoint daemon config — copy to ~/.config/focalpoint/config.toml
+#
+# Maps device events (keys, joystick, dial) to actions. Anything not configured
+# defaults to `type = "none"` (the event is still reported over the socket / by
+# `focalpoint watch`, but the daemon synthesizes nothing).
+#
+# Action types (PROTOCOL.md §5):
+#   { type = "keystroke", keys = "enter" }   synthesize a keystroke (macOS: osascript)
+#   { type = "paste", text = "..." }         put text on the clipboard and Cmd-V it (macOS)
+#   { type = "shell", run = "..." }          run a command via `sh -c`
+#   { type = "none" }                        do nothing
+#
+# keystroke `keys` accepts well-known names (enter/return, escape/esc, tab,
+# space, delete/backspace, up, down, left, right) or any literal string to type.
+
+# ---------------------------------------------------------------------------
+# [actions] — keyed by control name.
+#   accept, reject, new-task, push-to-talk, dial-press, and key1 .. key12
+# The action for a key fires on PRESS (release is reported but not acted on).
+# ---------------------------------------------------------------------------
+[actions]
+accept   = { type = "keystroke", keys = "enter" }
+reject   = { type = "keystroke", keys = "escape" }
+new-task = { type = "shell", run = "open -a Terminal" }
+# push-to-talk = { type = "shell", run = "/usr/local/bin/start-dictation" }
+# key1 = { type = "paste", text = "Explain this code." }
+
+# ---------------------------------------------------------------------------
+# [joystick] — keyed by gesture: north, east, south, west, press.
+# ---------------------------------------------------------------------------
+[joystick]
+north = { type = "paste", text = "Review this PR and summarize the risks." }
+# east  = { type = "paste", text = "Write tests for the current file." }
+# south = { type = "paste", text = "Explain the last error." }
+# west  = { type = "paste", text = "Refactor for readability." }
+# press = { type = "shell", run = "echo joystick-press" }
+
+# ---------------------------------------------------------------------------
+# [dial] — the rotary encoder. `mode = "shell"` runs `cw` on clockwise ticks
+# (delta > 0) and `ccw` on counter-clockwise ticks (delta < 0). One run per
+# event regardless of the tick magnitude.
+# ---------------------------------------------------------------------------
+[dial]
+mode = "shell"
+cw   = "echo effort-up"
+ccw  = "echo effort-down"
+
+# ---------------------------------------------------------------------------
+# [session] — multi-session tracking (PROTOCOL.md §3).
+#
+# focus: runs when a NUMBERED key (key1..key12) whose slot holds a live session
+# is pressed — instead of that key's [actions] entry. The session is exposed via
+# env vars: FOCALPOINT_SESSION_ID, FOCALPOINT_SESSION_KIND, FOCALPOINT_SESSION_LABEL,
+# FOCALPOINT_SESSION_CWD, FOCALPOINT_SLOT (empty string for missing values). A key with
+# an empty slot falls back to its normal [actions] mapping.
+#
+# ttl_minutes: end sessions with no set-state update for this long. Absent => 60;
+# 0 => never expire.
+# ---------------------------------------------------------------------------
+[session]
+focus = { type = "shell", run = "~/.config/focalpoint/adapters/focus-session.sh" }
+ttl_minutes = 60
+
+# ---------------------------------------------------------------------------
+# [styles.<state>] — per-state render styles (PROTOCOL.md §3 Styles).
+#
+# Each state (idle | thinking | running | waiting | done | error) has a style:
+#   rgb        = [r, g, b]
+#   pattern    = solid | breathe | blink | strobe | off
+#   period_ms  = animation period, clamped 100..=5000 (omit to use the default)
+#
+# Omitted states use the §1-table defaults. `focalpoint set-style` rewrites the
+# relevant [styles.<state>] table here in place, preserving the rest of this
+# file. Single-color renderers honor pattern + brightness and ignore hue.
+# ---------------------------------------------------------------------------
+[styles.waiting]
+rgb = [30, 144, 255]
+pattern = "blink"
+period_ms = 800
