@@ -192,13 +192,14 @@ grommet_shape = Part.makeCylinder(
 # Top/plate shell, modeled in its local plane and then tilted as one part.
 plate_local = rounded_prism(SHELL_W, SHELL_D, CORNER_R, PLATE_T)
 
-# MX cutouts use actual Ergogen centers. A small prototype clearance is added
-# around the nominal 14 mm plate opening.
-key_centers = []
-for y in (0.0, -20.0, -40.0):
-    for x in (0.0, 20.0, 40.0, 60.0):
-        key_centers.append(local_to_shell(x, y))
-key_centers.append(local_to_shell(40.0, 20.0))
+# MX cutouts use actual Ergogen centers. The three reserved cells are encoder
+# top-left, joystick top-right, and touch bottom-right.
+key_centers = [
+    local_to_shell(x, y)
+    for y in (20.0, 0.0, -20.0, -40.0)
+    for x in (0.0, 20.0, 40.0, 60.0)
+    if (x, y) not in {(0.0, 20.0), (60.0, 20.0), (60.0, -40.0)}
+]
 
 cutout = 14.0 + 2 * FIT_CLEARANCE
 for cx, cy in key_centers:
@@ -207,9 +208,9 @@ for cx, cy in key_centers:
     plate_local = plate_local.cut(cutter)
 
 # Prototype control openings. Replace these values from the selected parts.
-joystick_x, joystick_y = local_to_shell(0.0, 20.0)
-touch_x, touch_y = local_to_shell(20.0, 20.0)
-encoder_x, encoder_y = local_to_shell(60.0, 20.0)
+encoder_x, encoder_y = local_to_shell(0.0, 20.0)
+touch_x, touch_y = local_to_shell(60.0, -40.0)
+joystick_x, joystick_y = local_to_shell(60.0, 20.0)
 joystick_cut = Part.makeCylinder(10.0, PLATE_T + 4,
                                  App.Vector(joystick_x, joystick_y, -2))
 encoder_cut = Part.makeCylinder(4.0, PLATE_T + 4,

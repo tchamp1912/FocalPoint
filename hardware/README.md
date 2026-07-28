@@ -6,9 +6,9 @@ the host loop while this hardware is developed.
 
 ## Rev A definition of done
 
-- A visual 4×4 input lattice: joystick, capacitive touch, ceramic command key,
-  and encoder across the top, followed by 12 clear/frosted-PC RGB grid keys.
-  The 13 mechanical keys use MX hot-swap sockets. All 16 physical controls are
+- A visual 4×4 input lattice with the encoder top-left, analog joystick
+  top-right, capacitive touch bottom-right, and 13 RGB MX keys filling every
+  other cell. Twelve caps are clear/frosted PC and one is ceramic. All controls are
   dynamically assignable in firmware/host configuration. Use south-facing LED
   geometry: Cerakey-style Cherry-profile caps can collide with north-facing
   switch LEDs, and ceramic itself will not transmit the status light.
