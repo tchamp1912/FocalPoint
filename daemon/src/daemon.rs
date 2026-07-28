@@ -922,6 +922,33 @@ fn dispatch(
             apply_effects(effects, ctx, host_tx);
             Dispatch::Reply(serde_json::json!({ "ok": true }))
         }
+        "set-meta" => {
+            let Some(session) = value.get("session").and_then(|s| s.as_str()) else {
+                return err("set-meta requires 'session'");
+            };
+            let kind = value
+                .get("kind")
+                .and_then(|s| s.as_str())
+                .map(str::to_string);
+            let label = value
+                .get("label")
+                .and_then(|s| s.as_str())
+                .map(str::to_string);
+            let meta = value
+                .get("meta")
+                .and_then(|m| m.as_object())
+                .cloned()
+                .unwrap_or_default();
+            // Unknown sessions are a silent no-op (never registers one) —
+            // see `Registry::merge_meta`.
+            let effects = shared
+                .lock()
+                .unwrap()
+                .registry
+                .merge_meta(session, kind, label, meta, Instant::now());
+            apply_effects(effects, ctx, host_tx);
+            Dispatch::Reply(serde_json::json!({ "ok": true }))
+        }
         "list-sessions" => {
             let sessions = shared.lock().unwrap().registry.list();
             let arr: Vec<serde_json::Value> = sessions
@@ -974,6 +1001,22 @@ fn dispatch(
             };
             apply_effects(effects, ctx, host_tx);
             Dispatch::Reply(serde_json::json!({ "ok": true }))
+        }
+        "swap-slots" => {
+            let Some(id1) = value.get("session1").and_then(|s| s.as_str()) else {
+                return err("swap-slots requires 'session1'");
+            };
+            let Some(id2) = value.get("session2").and_then(|s| s.as_str()) else {
+                return err("swap-slots requires 'session2'");
+            };
+            let result = shared.lock().unwrap().registry.swap_slots(id1, id2);
+            match result {
+                Ok(effects) => {
+                    apply_effects(effects, ctx, host_tx);
+                    Dispatch::Reply(serde_json::json!({ "ok": true }))
+                }
+                Err(message) => err(&message),
+            }
         }
         "end-session" => {
             let Some(id) = value.get("session").and_then(|s| s.as_str()) else {

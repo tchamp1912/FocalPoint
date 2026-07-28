@@ -92,6 +92,24 @@ struct MenuContentView: View {
                 .hoverHighlight()
                 .contextMenu {
                     Button("Rename\u{2026}") { renamingID = s.id }
+                    // Manual reorder (PROTOCOL.md §3/§4 swap-slots): native
+                    // drag-and-drop (`.draggable`/`.dropDestination`) doesn't
+                    // work inside a MenuBarExtra(.window) dropdown's
+                    // auxiliary panel — confirmed by testing, not just a
+                    // theoretical gap — so this is a menu instead of a drag
+                    // gesture. Only offered when this session and at least
+                    // one other both hold a real slot; slotless (>12 live)
+                    // sessions have nothing to swap.
+                    let otherSlotted = model.sessions.filter { $0.id != s.id && $0.slot != nil }
+                    if s.slot != nil, !otherSlotted.isEmpty {
+                        Menu("Move to Slot") {
+                            ForEach(otherSlotted) { other in
+                                Button("Swap with #\(other.slot!) \u{00B7} \(other.title)") {
+                                    model.swapSlots(s, other)
+                                }
+                            }
+                        }
+                    }
                     if let cwd = s.cwd {
                         Divider()
                         Button("Open in Terminal") { model.openInTerminal(cwd) }
@@ -111,29 +129,59 @@ struct MenuContentView: View {
     }
 
     private func sessionRow(_ s: SessionInfo) -> some View {
-        HStack(spacing: 10) {
-            slotBadge(s.slot)
-            VStack(alignment: .leading, spacing: 2) {
-                SessionTitleField(session: s, model: model,
-                                  editingID: $renamingID, font: .body)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                HStack(spacing: 5) {
-                    // Live style — reflects the user's current color/pattern for
-                    // this state, not a hardcoded color.
-                    StateSwatch(state: s.state, color: (model.styles[s.state] ?? defaultStyle(s.state)).color, size: 7)
-                    Text(s.state.display).font(.caption).foregroundStyle(.secondary)
+        let hasStats = SessionStat.allCases.contains { model.visibleStats.contains($0) && s.stats[$0] != nil }
+        let overBudget = model.isOverBudget(s)
+        let swatchColor = overBudget ? budgetWarningColor : (model.styles[s.state] ?? defaultStyle(s.state)).color
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 10) {
+                slotBadge(s.slot)
+                VStack(alignment: .leading, spacing: 4) {
+                    // Title on its own line so it uses the full content width
+                    // instead of sharing a row with the metadata column.
+                    SessionTitleField(session: s, model: model,
+                                      editingID: $renamingID, font: .body)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    HStack(spacing: 8) {
+                        HStack(spacing: 5) {
+                            StateSwatch(state: s.state, color: swatchColor, size: 7)
+                            Text(s.state.display).font(.caption).foregroundStyle(.secondary)
+                            if overBudget {
+                                Image(systemName: "exclamationmark.circle.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(budgetWarningColor)
+                                    .help("Over the configured token/cost budget")
+                            }
+                        }
+                        Spacer(minLength: 4)
+                        HStack(spacing: 6) {
+                            Text(s.kind).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                            if model.showModelBadge, let badge = s.modelBadge {
+                                Text(badge).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                            }
+                            Text(elapsedString(since: s.lastChange))
+                                .font(.caption)
+                                .foregroundStyle(overBudget ? budgetWarningColor : .secondary)
+                                .monospacedDigit()
+                                .id(model.tick)
+                        }
+                    }
+
+                    if hasStats {
+                        HStack {
+                            Spacer(minLength: 0)
+                            SessionStatsView(stats: s.stats, visible: model.visibleStats, size: 9)
+                        }
+                    }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .layoutPriority(1)
-            VStack(alignment: .trailing, spacing: 3) {
-                Text(s.kind).font(.caption2).foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                // Re-render every tick for a live "time since last change".
-                Text(elapsedString(since: s.lastChange))
-                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                    .id(model.tick)
-                SessionStatsView(stats: s.stats, visible: model.visibleStats, size: 9)
+            if let fraction = s.contextFraction(defaultWindow: model.contextWindowOverride),
+               let window = s.effectiveContextWindow(defaultWindow: model.contextWindowOverride) {
+                ContextMeterView(fraction: fraction, window: window)
+                    .padding(.top, 3)
+            } else if let raw = s.contextTokensDisplay {
+                Text(raw).font(.caption2).foregroundStyle(.tertiary)
+                    .padding(.top, 1)
             }
         }
         .padding(.horizontal, 8)
@@ -187,10 +235,10 @@ struct MenuContentView: View {
                 usageMeter(label: "Week", percent: percent, reset: usage.sevenDayResetsAt)
             }
             if let percent = usage.primaryUsed {
-                usageMeter(label: "Primary", percent: percent, reset: usage.primaryResetsAt)
+                usageMeter(label: usage.primaryMeterLabel, percent: percent, reset: usage.primaryResetsAt)
             }
             if let percent = usage.secondaryUsed {
-                usageMeter(label: "Secondary", percent: percent, reset: usage.secondaryResetsAt)
+                usageMeter(label: usage.secondaryMeterLabel, percent: percent, reset: usage.secondaryResetsAt)
             }
         }
     }

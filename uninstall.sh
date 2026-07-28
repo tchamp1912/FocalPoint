@@ -22,6 +22,7 @@ DAEMON_DIR="$SCRIPT_DIR/daemon"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/focalpoint"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 CURSOR_HOOKS="$HOME/.cursor/hooks.json"
+CODEX_HOOKS="$HOME/.codex/hooks.json"
 LOG_DIR="$HOME/Library/Logs/focalpoint"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 PLIST_LABEL="dev.focalpoint.daemon"
@@ -29,6 +30,7 @@ PLIST_PATH="$LAUNCH_AGENTS_DIR/${PLIST_LABEL}.plist"
 HOOK_MARKER=".config/focalpoint/adapters/hooks.sh"
 # The "cursor-" prefix keeps this from matching HOOK_MARKER's entries.
 CURSOR_HOOK_MARKER=".config/focalpoint/adapters/cursor-hooks.sh"
+CODEX_HOOK_MARKER=".config/focalpoint/adapters/codex-hooks.sh"
 REPO_MARKER="$SCRIPT_DIR/daemon/target"
 
 ASSUME_YES=0
@@ -241,6 +243,39 @@ else
   ' "$CURSOR_HOOKS")"
   printf '%s\n' "$CLEANED" > "$CURSOR_HOOKS"
   ok "removed focalpoint hooks from hooks.json"
+fi
+
+# ---------------------------------------------------------------------------
+# 4c. Codex hooks — surgical removal, backed up first
+# ---------------------------------------------------------------------------
+
+step "Codex hooks"
+
+if [ ! -f "$CODEX_HOOKS" ]; then
+  ok "$CODEX_HOOKS doesn't exist — nothing to do"
+elif ! jq -e --arg marker "$CODEX_HOOK_MARKER" \
+       '[.. | select(type == "string") | select(contains($marker))] | length > 0' \
+       "$CODEX_HOOKS" >/dev/null 2>&1; then
+  ok "no focalpoint hooks found in Codex hooks.json — nothing to do"
+elif [ "$DRY_RUN" -eq 1 ]; then
+  would "back up $CODEX_HOOKS and remove focalpoint hook entries from it"
+else
+  BACKUP="$CODEX_HOOKS.bak-focalpoint-$(date +%Y%m%d%H%M%S)"
+  cp "$CODEX_HOOKS" "$BACKUP"
+  ok "backed up hooks.json -> $BACKUP"
+
+  CLEANED="$(jq --arg marker "$CODEX_HOOK_MARKER" '
+    .hooks = ((.hooks // {})
+      | with_entries(
+          .value |= [ .[] | select(
+            ([.hooks[]?.command // "" | tostring] | any(contains($marker))) | not
+          ) ]
+        )
+      | with_entries(select(.value | length > 0)))
+    | if (.hooks | length) == 0 then del(.hooks) else . end
+  ' "$CODEX_HOOKS")"
+  printf '%s\n' "$CLEANED" > "$CODEX_HOOKS"
+  ok "removed focalpoint hooks from Codex hooks.json"
 fi
 
 # ---------------------------------------------------------------------------

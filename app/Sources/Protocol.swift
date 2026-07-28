@@ -105,6 +105,7 @@ enum SessionStat: String, CaseIterable, Identifiable {
     case toolCalls = "tool_calls"
     case turns = "turns"
     case subagents = "subagents"
+    case cost = "cost_usd"
 
     var id: String { rawValue }
 
@@ -115,6 +116,7 @@ enum SessionStat: String, CaseIterable, Identifiable {
         case .toolCalls: return "Tool calls"
         case .turns:     return "Turns"
         case .subagents: return "Subagents"
+        case .cost:      return "Cost"
         }
     }
 
@@ -125,19 +127,51 @@ enum SessionStat: String, CaseIterable, Identifiable {
         case .toolCalls: return "wrench.and.screwdriver"
         case .turns:     return "arrow.triangle.2.circlepath"
         case .subagents: return "person.2"
+        case .cost:      return "dollarsign.circle"
         }
     }
 
     /// Compact display for a badge: "12.4k" instead of "12421".
     func format(_ value: Double) -> String {
         switch self {
-        case .tokensIn, .tokensOut:
-            if value >= 1000 { return String(format: "%.1fk", value / 1000) }
-            return String(Int(value))
-        case .toolCalls, .turns, .subagents:
-            return String(Int(value))
+        case .tokensIn, .tokensOut, .toolCalls, .turns, .subagents:
+            return compactCount(value)
+        case .cost:
+            // Below a cent, "$0.00" reads as "free" — show the extra digit.
+            if value >= 0.01 { return String(format: "$%.2f", value) }
+            return String(format: "$%.3f", value)
         }
     }
+}
+
+/// Compact k/M formatting for the plain-count stats (tokens in/out, tool
+/// calls, turns, subagents), capped at 3 significant figures so badges stay
+/// a predictable width regardless of magnitude:
+///   42       -> "42"      (under 1000: plain integer, no scaling)
+///   999      -> "999"
+///   1234     -> "1.23k"   (1000...999999: scaled by 1k, "k" suffix)
+///   12345    -> "12.3k"
+///   123456   -> "123k"
+///   1234567  -> "1.23M"   (1,000,000+: scaled by 1M, "M" suffix)
+private func compactCount(_ value: Double) -> String {
+    let scaled: Double
+    let suffix: String
+    if value >= 1_000_000 {
+        scaled = value / 1_000_000
+        suffix = "M"
+    } else if value >= 1000 {
+        scaled = value / 1000
+        suffix = "k"
+    } else {
+        return String(Int(value))
+    }
+    // Decimal places chosen so the scaled number keeps ~3 significant
+    // figures: 1 integer digit -> 2 decimals, 2 -> 1 decimal, 3+ -> 0.
+    // (A value that rounds up into a new digit count at that precision,
+    // e.g. 999,500 -> "1000k", is an accepted rare edge case.)
+    let integerDigits = String(Int(scaled)).count
+    let decimals = max(0, min(2, 3 - integerDigits))
+    return String(format: "%.\(decimals)f%@", scaled, suffix)
 }
 
 struct SessionInfo: Identifiable, Equatable {
@@ -150,12 +184,24 @@ struct SessionInfo: Identifiable, Equatable {
     var slot: Int?          // 1-12, or nil for slotless
     var state: AgentState
     var cwd: String?
+    /// Raw model id reported by the adapter (e.g. "claude-opus-4-8-..."),
+    /// straight from `meta["model"]` (PROTOCOL.md §4). Use `modelBadge` for
+    /// display. Claude Code and Codex report it; Cursor currently does not.
+    var model: String?
     /// When this session was first seen (session registration), distinct
     /// from `lastChange` (last state transition). Used only for history's
     /// duration column — nothing in the live UI needs it.
     var firstSeen: Date
     var lastChange: Date
     var stats: [SessionStat: Double] = [:]
+    /// Current context-window occupancy from `meta["context_tokens"]`
+    /// (PROTOCOL.md §4) — the latest usage snapshot, not the cumulative
+    /// `tokens_in` stat. Rendered as a bar (`contextFraction`), not a badge,
+    /// so it's a plain field like `model`/`cwd` rather than a `SessionStat`.
+    var contextTokens: Double?
+    /// Adapter-reported total context-window capacity from
+    /// `meta["context_window"]`. Preferred over the model-name fallback.
+    var reportedContextWindow: Double?
 
     /// Display precedence per PROTOCOL.md §3: name → label → kind.
     var title: String {
@@ -167,6 +213,66 @@ struct SessionInfo: Identifiable, Equatable {
 
     /// True when the user has renamed this session (drives "Reset name").
     var isRenamed: Bool { !(name ?? "").isEmpty }
+
+    /// Short display label for `model` (e.g. "claude-opus-4-8-..." → "Opus"),
+    /// or nil when no model has been reported yet.
+    var modelBadge: String? { model.map(shortModelLabel) }
+
+    /// How full the model's context window currently is, 0...1, or nil when
+    /// either `contextTokens` or a window size is unknown — or, critically,
+    /// when `contextTokens` already *exceeds* the assumed window. That's not
+    /// just "cap it at 100%": a session actively running past an assumed
+    /// window is proof the assumption is wrong (observed in practice — a
+    /// session ran fine at ~389k tokens against a hardcoded 200k guess this
+    /// used to ship with), and clamping to 1.0 would render a false "danger,
+    /// about to truncate" red bar off an assumption already known to be
+    /// broken. Falling back to `contextTokensDisplay` (a plain count, no
+    /// implied ceiling) is more honest than a percentage we can't stand
+    /// behind — see MenuContentView/DesktopOverlay for the fallback.
+    ///
+    /// `defaultWindow` is `AppModel.contextWindowOverride` (Settings →
+    /// Agent Integrations) — a user-editable fallback rather than a
+    /// hardcoded per-model-name guess, specifically because that guess kept
+    /// going stale: it doesn't know a model's real window, and a new
+    /// generation shipping a different one used to require a FocalPoint
+    /// rebuild to correct, not just a Settings edit.
+    func contextFraction(defaultWindow: Int?) -> Double? {
+        guard let tokens = contextTokens,
+              let window = effectiveContextWindow(defaultWindow: defaultWindow),
+              window > 0,
+              tokens <= window else {
+            return nil
+        }
+        return tokens / window
+    }
+
+    /// The window value `contextFraction` would use, exposed separately so
+    /// `ContextMeterView` can place its fixed-token tick marks against the
+    /// same number rather than re-deriving it.
+    func effectiveContextWindow(defaultWindow: Int?) -> Double? {
+        reportedContextWindow ?? defaultWindow.map(Double.init)
+    }
+
+    /// Plain "389k ctx" formatting of `contextTokens`, shown when
+    /// `contextFraction` is nil but a raw count is still available —
+    /// unknown/exceeded window, not unknown usage.
+    var contextTokensDisplay: String? {
+        guard let tokens = contextTokens else { return nil }
+        if tokens >= 1000 { return String(format: "%.0fk ctx", (tokens / 1000).rounded()) }
+        return "\(Int(tokens)) ctx"
+    }
+}
+
+/// Shortens a raw model id into a compact display label. Matches on the
+/// well-known Claude family names case-insensitively; anything else passes
+/// through truncated rather than being hidden, so a future/unknown model
+/// still shows *something*.
+func shortModelLabel(_ raw: String) -> String {
+    let lower = raw.lowercased()
+    if lower.contains("opus") { return "Opus" }
+    if lower.contains("sonnet") { return "Sonnet" }
+    if lower.contains("haiku") { return "Haiku" }
+    return raw.count > 20 ? String(raw.prefix(20)) + "…" : raw
 }
 
 // MARK: - Session history (persisted locally; see AppModel.sessionHistory)
@@ -215,6 +321,24 @@ struct ProviderUsage: Identifiable, Equatable {
     var primaryResetsAt: Date? { epochDate("primary_resets_at") }
     var secondaryUsed: Double? { values["secondary_used"] }
     var secondaryResetsAt: Date? { epochDate("secondary_resets_at") }
+
+    /// Short meter label for the provider's primary quota window.
+    var primaryMeterLabel: String {
+        switch provider {
+        case "cursor": return "API"
+        case "codex": return "Primary"
+        default: return "Primary"
+        }
+    }
+
+    /// Short meter label for the provider's secondary quota window.
+    var secondaryMeterLabel: String {
+        switch provider {
+        case "cursor": return "Auto"
+        case "codex": return "Secondary"
+        default: return "Secondary"
+        }
+    }
 
     private func epochDate(_ key: String) -> Date? {
         guard let seconds = values[key], seconds > 0 else { return nil }

@@ -69,10 +69,14 @@ permission-prompt notification hook, so there's no signal for "the agent is
 blocked on you." A Cursor session will never show `waiting`. Watch for `done`
 instead.
 
-**No token counts.** Cursor's transcripts contain no usage data of any kind,
-so `tokens_in`/`tokens_out` are not reportable. The app renders a badge only
-for stats it receives, so those two simply don't appear on Cursor sessions
-(Claude Code sessions still show them).
+Cursor 3.13+ reports per-generation input/output usage on the `stop` hook; the
+adapter accumulates it once per generation and reports token badges. Older
+Cursor versions omit those fields and continue to show turns, tool calls, and
+subagents only. Cursor does not currently report context occupancy or cost.
+
+Cursor does not expose its generated chat title to hooks. The adapter preserves
+the first submitted prompt as its stable label; before that arrives it uses
+`Cursor · <directory>` rather than an ambiguous bare directory name.
 
 **Focus is workspace-level, not chat-level.** Pressing a Cursor session's
 numbered key raises the Cursor window for that session's workspace folder.

@@ -10,7 +10,7 @@ This directory contains four reference adapters and a template for building your
 |---------|--------|------|--------------|-------------|----------|
 | **claude-code** | Production | Hooks | ~1 min | Automatic via `~/.claude/settings.json` | Auto-registers per Claude session (`session_id`/`cwd` from hook JSON); `end-session` on `SessionEnd`; ships the default `[session] focus` action |
 | **cursor** | Production | Hooks | ~1 min | Automatic via `~/.cursor/hooks.json` | Auto-registers per conversation (`conversation_id`/workspace root); `end-session` on `sessionEnd`; no `waiting` state and no token stats ([why](cursor/README.md)) |
-| **codex-cli** | Working | `notify` hook | ~2 min | `notify = [...]` in `~/.codex/config.toml` (done/waiting only) | Auto-registers per thread (`thread-id`/`cwd`); no `end-session` (relies on TTL) |
+| **codex-cli** | Production | Lifecycle hooks | ~1 min | Automatic via `~/.codex/hooks.json` | Auto-registers at `SessionStart`; full thinking/running/waiting/done states; `end-session` on `SessionEnd` |
 | **generic** | Production | Wrapper | ~1 min | Call `wrap.sh` in your scripts/CI | Opt-in via `--session`/`--kind`/`--label`; sessionless by default |
 
 ## Quick Start

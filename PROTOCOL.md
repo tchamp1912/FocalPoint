@@ -72,10 +72,12 @@ Requests:
 ```json
 {"cmd": "set-state", "state": "thinking", "session": "optional-id",
  "kind": "claude", "label": "focalpoint", "meta": {"cwd": "/path"}}
+{"cmd": "set-meta", "session": "id", "kind": "claude", "meta": {"cost_usd": 0.42}}
 {"cmd": "get-state"}
 {"cmd": "list-sessions"}
 {"cmd": "rename-session", "session": "id", "name": "Backend"}
 {"cmd": "end-session", "session": "id"}
+{"cmd": "swap-slots", "session1": "id-a", "session2": "id-b"}
 {"cmd": "set-led", "index": 3, "rgb": [255, 0, 128]}
 {"cmd": "get-styles"}
 {"cmd": "set-style", "state": "waiting", "rgb": [30, 144, 255],
@@ -98,9 +100,23 @@ first sight. `kind` is a free-form tool identifier (`claude`, `codex`,
 well-known key) are optional and merge into the session record on any
 subsequent `set-state`.
 
+`set-meta` merges `kind`/`label`/`meta` into an **already-registered**
+session without touching its `state` (or the aggregate) — for adapters that
+learn a new fact about a session (e.g. running cost) on a rail that has no
+opinion about live agent state, so calling `set-state` would either require
+guessing a state or clobbering the real one. Unlike `set-state`, `session`
+is required and an unknown id is a silent no-op: `set-meta` never registers
+a new session (a state-less session has no state to key `SET_KEY_STATE`
+off of). A `set-meta` still counts as session activity for
+`session_ttl_minutes`, same as `set-state`.
+
 - Each session claims the **lowest free numbered key** (1–12) at registration
-  and keeps that slot for its lifetime; slots never shift. Sessions beyond 12
-  are tracked with `slot: null`.
+  and keeps that slot for its lifetime; slots never shift automatically (a
+  session ending never bumps the others down to close the gap). The one
+  exception is `swap-slots`, an explicit user action (drag-to-reorder in the
+  app's dropdown) that exchanges two live sessions' slots outright. Sessions
+  beyond 12 are tracked with `slot: null` and can't participate in a swap —
+  there's no slot to give.
 - A session ends via `end-session`, after `session_ttl_minutes` (config,
   default 60, 0 = never) without an update, or — for a session carrying a
   `tty` in `meta` (the well-known key set via `--meta tty=$(tty)`, e.g. by
@@ -217,10 +233,13 @@ State names in JSON are the lowercase names from §1 (`running` not
 focalpoint set-state <idle|thinking|running|waiting|done|error>
         [--session ID] [--kind KIND] [--label LABEL] [--cwd PATH]
         [--meta KEY=VALUE]...
+focalpoint set-meta --session ID [--kind KIND] [--label LABEL]
+        [--meta KEY=VALUE]...   # merges meta only; leaves live state untouched
 focalpoint get-state        # aggregate
 focalpoint sessions         # list live sessions in slot order
 focalpoint rename-session <ID> [NAME]   # omit NAME (or pass "") to clear
 focalpoint end-session <ID>
+focalpoint swap-slots <ID1> <ID2>       # exchange two live sessions' numbered-key slots
 focalpoint set-led <index|all> <r> <g> <b>
 focalpoint watch            # prints events as NDJSON to stdout (incl. state/session events)
 focalpoint ping             # exits 0 if daemon and device are up
@@ -237,8 +256,22 @@ focalpoint usage [--json]
 values that parse as a number are stored numerically, everything else as a
 string. Well-known numeric keys the menu bar app renders as optional stat
 badges next to a session's elapsed time: `tokens_in`, `tokens_out`,
-`tool_calls`, `turns`. Any adapter may send some, all, or none of them — the
-UI simply omits a badge whose key is absent for a given session.)
+`tool_calls`, `turns`, `cost_usd`. Any adapter may send some, all, or none of
+them — the UI simply omits a badge whose key is absent for a given session.
+`cost_usd` is a real running total in US dollars (not an estimate), rendered
+as a `$0.42`-style badge; the Claude Code status-line hook is the only
+adapter that reports it today (via `set-meta`, since cost arrives on the
+status-line rail independently of state changes — see §3). Well-known
+string key `model`: the raw model id driving the session (e.g.
+`claude-opus-4-8-...`); the menu bar app shortens it to a small badge like
+"Opus" or "Sonnet" next to the row. Claude Code only today. Well-known
+numeric key `context_tokens`: current context-window occupancy (the latest
+usage snapshot), distinct from the cumulative `tokens_in` stat above;
+rendered as a thin always-visible fill bar under the row rather than a
+badge. Optional numeric key `context_window` supplies the model's total
+context capacity; clients prefer it over a model-name lookup when calculating
+`context_tokens / context_window`. Claude Code reports occupancy and Codex
+reports both values.)
 
 `set-usage` accepts numeric `--meta` values only. Well-known Claude Code keys
 are `five_hour_used`, `five_hour_resets_at`, `seven_day_used`, and

@@ -40,6 +40,26 @@ enum Cmd {
         #[arg(long = "meta", value_name = "KEY=VALUE")]
         meta: Vec<String>,
     },
+    /// Merge extra per-session meta (e.g. cost) WITHOUT touching the
+    /// session's live state — unlike `set-state`, which requires a state
+    /// and would clobber it. The session must already exist (registered via
+    /// a prior `set-state`); an unknown id is a no-op.
+    SetMeta {
+        /// Session id (must already be registered via `set-state`).
+        #[arg(long)]
+        session: String,
+        /// Tool identifier: claude | codex | openrouter | ...
+        #[arg(long)]
+        kind: Option<String>,
+        /// Human-readable label for the session.
+        #[arg(long)]
+        label: Option<String>,
+        /// Extra meta key=value pair (repeatable). Numeric values are
+        /// stored as numbers; adapters use this for optional per-session
+        /// stats like cost_usd (see PROTOCOL.md §3).
+        #[arg(long = "meta", value_name = "KEY=VALUE")]
+        meta: Vec<String>,
+    },
     /// Record a provider-wide account usage snapshot. Values must be numeric.
     SetUsage {
         /// Provider identifier, e.g. claude or codex.
@@ -73,6 +93,15 @@ enum Cmd {
     EndSession {
         /// Session id.
         id: String,
+    },
+    /// Manually swap the numbered-key slots of two live sessions (drag
+    /// reorder in the app's dropdown uses this). Both must currently hold a
+    /// slot.
+    SwapSlots {
+        /// First session id.
+        id1: String,
+        /// Second session id.
+        id2: String,
     },
     /// Override an LED (or all) to an RGB color.
     SetLed {
@@ -172,12 +201,19 @@ fn main() {
             cwd.as_deref(),
             &meta,
         ),
+        Cmd::SetMeta {
+            session,
+            kind,
+            label,
+            meta,
+        } => client::set_meta(&session, kind.as_deref(), label.as_deref(), &meta),
         Cmd::SetUsage { provider, meta } => client::set_usage(&provider, &meta),
         Cmd::Usage { json } => client::usage(json),
         Cmd::GetState => client::get_state(),
         Cmd::Sessions { json } => client::sessions(json),
         Cmd::RenameSession { id, name } => client::rename_session(&id, name.as_deref()),
         Cmd::EndSession { id } => client::end_session(&id),
+        Cmd::SwapSlots { id1, id2 } => client::swap_slots(&id1, &id2),
         Cmd::SetLed { index, r, g, b } => client::set_led(&index, r, g, b),
         Cmd::Styles { json } => client::styles(json),
         Cmd::SetStyle {

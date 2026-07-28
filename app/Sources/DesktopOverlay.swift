@@ -44,7 +44,7 @@ struct DesktopWidgetView: View {
             content
         }
         .padding(.vertical, 8)
-        .frame(width: 230, alignment: .leading)
+        .frame(width: 260, alignment: .leading)
         // Translucency is applied only to the background layer (not the
         // window's alphaValue), so turning it up fades the panel toward raw
         // desktop without ever dimming the text/icons drawn on top of it.
@@ -158,10 +158,10 @@ struct DesktopWidgetView: View {
                             usageRow(usage.provider, label: "Wk", percent: percent, reset: usage.sevenDayResetsAt)
                         }
                         if let percent = usage.primaryUsed {
-                            usageRow(usage.provider, label: "P", percent: percent, reset: usage.primaryResetsAt)
+                            usageRow(usage.provider, label: usage.primaryMeterLabel, percent: percent, reset: usage.primaryResetsAt)
                         }
                         if let percent = usage.secondaryUsed {
-                            usageRow(usage.provider, label: "S", percent: percent, reset: usage.secondaryResetsAt)
+                            usageRow(usage.provider, label: usage.secondaryMeterLabel, percent: percent, reset: usage.secondaryResetsAt)
                         }
                     }
                 }
@@ -173,8 +173,14 @@ struct DesktopWidgetView: View {
 
     private func usageRow(_ provider: String, label: String, percent: Double, reset: Date?) -> some View {
         HStack(spacing: 5) {
+            // Fixed-width label so every provider's gauge starts at the same
+            // x regardless of how long "<Provider> <label>" is (e.g. "Codex
+            // P" is shorter than "Claude Wk") — otherwise each ProgressView
+            // is pushed left/right by its own row's text width.
             Text("\(provider.capitalized) \(label)")
                 .font(.system(size: 9)).foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(width: 54, alignment: .leading)
             ProgressView(value: min(max(percent, 0), 100), total: 100)
             Text("\(Int(percent.rounded()))%")
                 .font(.system(size: 9)).monospacedDigit().frame(width: 25, alignment: .trailing)
@@ -187,18 +193,31 @@ struct DesktopWidgetView: View {
 
     private func sessionRow(_ s: SessionInfo) -> some View {
         let hasStats = SessionStat.allCases.contains { model.visibleStats.contains($0) && s.stats[$0] != nil }
+        let overBudget = model.isOverBudget(s)
+        // Same warning-color swap + elapsed-time tint as MenuContentView's
+        // sessionRow — see that file for the rationale.
+        let swatchColor = overBudget ? budgetWarningColor : (model.styles[s.state] ?? defaultStyle(s.state)).color
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
                 Text(s.slot.map(String.init) ?? "—")
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .frame(width: 15, alignment: .center)
                     .foregroundStyle(.secondary)
-                StateSwatch(state: s.state, color: (model.styles[s.state] ?? defaultStyle(s.state)).color, size: 8)
+                StateSwatch(state: s.state, color: swatchColor, size: 8)
                 SessionTitleField(session: s, model: model,
                                   editingID: $renamingID, font: .system(size: 11))
+                if overBudget {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(budgetWarningColor)
+                        .help("Over the configured token/cost budget")
+                }
                 Spacer(minLength: 4)
+                if model.showModelBadge, let badge = s.modelBadge {
+                    Text(badge).font(.system(size: 9)).foregroundStyle(.tertiary)
+                }
                 Text(elapsedString(since: s.lastChange))
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                    .font(.system(size: 10)).foregroundStyle(overBudget ? budgetWarningColor : .secondary)
                     .id(model.tick)
             }
             if hasStats {
@@ -207,6 +226,26 @@ struct DesktopWidgetView: View {
                     SessionStatsView(stats: s.stats, visible: model.visibleStats)
                 }
                 .padding(.trailing, 1)
+            }
+            // Always shown when data is available — no settings gate, unlike
+            // the optional stat badges above. It's a hairline bar, not a
+            // badge, so it doesn't compete for the row's horizontal space.
+            // Leading inset matches where the stat badge icons actually
+            // start (the slot number above is a plain centered Text, not a
+            // filled circle, so it has a few points of built-in inset the
+            // meter otherwise lacks) — without it the meter reads as
+            // starting a touch too far left of everything above it.
+            if let fraction = s.contextFraction(defaultWindow: model.contextWindowOverride),
+               let window = s.effectiveContextWindow(defaultWindow: model.contextWindowOverride) {
+                ContextMeterView(fraction: fraction, window: window)
+                    .padding(.leading, 8)
+                    .padding(.top, 3)
+            } else if let raw = s.contextTokensDisplay {
+                // Window unknown/exceeded — an honest count beats a
+                // percentage against a guess we no longer trust.
+                Text(raw).font(.system(size: 9)).foregroundStyle(.tertiary)
+                    .padding(.leading, 8)
+                    .padding(.top, 1)
             }
         }
         .padding(.horizontal, 5)
@@ -313,7 +352,7 @@ final class DesktopOverlayController: NSObject, NSWindowDelegate {
     }
 
     private func build() {
-        let p = KeyablePanel(contentRect: NSRect(x: 0, y: 0, width: 230, height: 140),
+        let p = KeyablePanel(contentRect: NSRect(x: 0, y: 0, width: 260, height: 140),
                             styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
         p.isOpaque = false

@@ -45,6 +45,15 @@ enum Metrics {
     static let vPad: CGFloat = 10
 }
 
+// MARK: - Budget alert color (client-only; not an AgentState)
+
+/// Warning tint for a session that has crossed a user-configured token/cost
+/// budget (Settings → Agent Integrations → Budget alerts). Deliberately not
+/// tied to `AgentState`/the daemon's protocol — this is a client-side overlay
+/// concept layered on top of live state (see `AppModel.isOverBudget`), passed
+/// straight into `StateSwatch`'s free `color:` parameter like any other color.
+let budgetWarningColor = Color(red: 1.0, green: 0.36, blue: 0.13)
+
 // MARK: - State color swatch (used in dropdown, settings, and widget)
 
 struct StateSwatch: View {
@@ -135,7 +144,7 @@ struct SessionTitleField: View {
             Text(session.title)
                 .font(font)
                 .lineLimit(1)
-                .truncationMode(.middle)
+                .truncationMode(.tail)
         }
     }
 
@@ -214,6 +223,80 @@ struct SessionStatsView: View {
             // every surface that shows stats gets it.
             .fixedSize()
         }
+    }
+}
+
+// MARK: - Context-window meter (thin bar under a session row)
+
+/// Color-grading thresholds for `ContextMeterView`, named so the cutoffs
+/// read as intent rather than magic numbers: green below 60% full, amber
+/// 60-85%, red above 85% (approaching a compaction/truncation risk).
+private enum ContextMeterThresholds {
+    static let amber = 0.6
+    static let red = 0.85
+}
+
+/// A hairline full-width progress bar showing how full a session's context
+/// window is (`SessionInfo.contextFraction`). Deliberately always shown when
+/// data is available, with no user-facing hide toggle — unlike the optional
+/// stat badges (`SessionStatsView`), this is a thin track+fill line, not
+/// competing for the row's horizontal space, so there's nothing to declutter
+/// by hiding it. Callers gate on `s.contextFraction != nil` at the call site;
+/// this view itself just renders whatever fraction/window it's given.
+struct ContextMeterView: View {
+    let fraction: Double
+    /// The absolute token window `fraction` is relative to — needed only for
+    /// placing tick marks at fixed token intervals (see `ticks`), not for
+    /// the fill itself.
+    let window: Double
+    var barHeight: CGFloat = 3
+
+    private var fillColor: Color {
+        if fraction >= ContextMeterThresholds.red { return .red }
+        if fraction >= ContextMeterThresholds.amber { return .orange }
+        return .green
+    }
+
+    /// Small tick every 100k tokens, a taller one every 250k — fixed
+    /// absolute intervals rather than evenly-spaced fractions, so a tick
+    /// always means "another 100k tokens" and the scale stays meaningful
+    /// even as `window` itself gets corrected later (Settings → Agent
+    /// Integrations): the bar's overall length changes, but what each tick
+    /// means doesn't.
+    ///
+    /// The 100k and 250k marks are two independent grids, not one grid with
+    /// some marks upgraded to "big" — 250k isn't a multiple of 100k, so a
+    /// single `stride(by: 100_000)` can never land on it (250k, 750k, 1.25M,
+    /// ... would all silently vanish; only 500k-multiples, where the two
+    /// grids coincide, ever showed as "big"). Most visible on a short
+    /// window: a Codex session's real 258,400-token window has a 250k mark
+    /// well inside it, but the old single-stride version only ever produced
+    /// 100k/200k and never got there.
+    private var ticks: [(x: CGFloat, big: Bool)] {
+        guard window > 0 else { return [] }
+        var big: Set<Double> = []
+        for t in stride(from: 250_000.0, to: window, by: 250_000.0) { big.insert(t) }
+        var positions = Set(stride(from: 100_000.0, to: window, by: 100_000.0))
+        positions.formUnion(big)
+        return positions.sorted().map { t in (CGFloat(t / window), big.contains(t)) }
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.secondary.opacity(0.15))
+                    .frame(height: barHeight)
+                Capsule().fill(fillColor)
+                    .frame(width: geo.size.width * CGFloat(min(max(fraction, 0), 1)), height: barHeight)
+                ForEach(ticks, id: \.x) { tick in
+                    Rectangle()
+                        .fill(Color.primary.opacity(tick.big ? 0.4 : 0.2))
+                        .frame(width: tick.big ? 1.5 : 1, height: tick.big ? barHeight + 4 : barHeight + 2)
+                        .offset(x: geo.size.width * tick.x)
+                }
+            }
+        }
+        .frame(height: barHeight + 4)
     }
 }
 

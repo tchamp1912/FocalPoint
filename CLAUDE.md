@@ -38,7 +38,7 @@ config.toml ── actions §5 ────▶│    - decode events → actions
   `end-session`: `claude-code/` (hooks-based, richest integration), `cursor/`
   (Cursor's user-level hooks; no `waiting` state and no token stats, and its
   hooks must never exit 2 or write to stdout), `codex-cli/`
-  (Codex's `notify` hook, coarser — only done/waiting), `generic/` (wrap any
+  (native Codex lifecycle hooks; legacy `notify` fallback), `generic/` (wrap any
   command), `mac-virtual/` (the pre-hardware validation rig: a keyboard-backlight
   renderer using the private CoreBrightness API).
 - **`app/`** — native SwiftUI menu-bar app (`FocalPoint.app`), swiftc-only build

@@ -34,12 +34,11 @@
 # do), so this runs inline in the agent loop on every tool call. Keep it
 # cheap: the transcript is only parsed on `stop`, once per turn.
 #
-# Session stats: computed from transcript_path on `stop` and sent via --meta
-# (PROTOCOL.md §4). Cursor transcripts carry NO token usage of any kind, so
-# unlike the Claude Code adapter this one cannot report tokens_in/tokens_out
-# — only turns, tool_calls, and subagents. The menu bar app shows a badge
-# only for stats it actually receives, so the missing ones simply don't
-# render. Requires jq; silently skipped without it.
+# Session stats: turns/tool calls/subagents are computed from transcript_path
+# on `stop`; Cursor 3.13+ also puts per-generation token usage directly in the
+# stop payload. All are sent via --meta (PROTOCOL.md §4). Older Cursor versions
+# omit token usage and continue to report the transcript-derived stats.
+# Requires jq; silently skipped without it.
 #
 # No `waiting` state: Cursor has no equivalent of Claude Code's permission
 # prompt Notification hook, so there is no reliable signal for "blocked on
@@ -124,6 +123,23 @@ session_id=$(extract_field "conversation_id")
 
 root=$(extract_root)
 transcript_path=$(extract_field "transcript_path")
+model=$(extract_field "model")
+prompt=$(extract_field "prompt")
+generation_id=$(extract_field "generation_id")
+
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/focalpoint/cursor"
+label_file="$state_dir/$session_id.label"
+stats_file="$state_dir/$session_id.stats.json"
+
+# Cursor doesn't expose its generated chat title to hooks. Preserve the first
+# submitted prompt as a stable session label; later turns must not rename it.
+if [ "$event" = "beforeSubmitPrompt" ] && [ -n "${prompt:-}" ] && [ -n "${session_id:-}" ]; then
+  mkdir -p "$state_dir" 2>/dev/null
+  if [ ! -s "$label_file" ]; then
+    compact_prompt=$(printf '%s' "$prompt" | tr '\r\n\t' '   ' | tr -s ' ' | cut -c1-60)
+    [ -n "$compact_prompt" ] && printf '%s' "$compact_prompt" > "$label_file" 2>/dev/null
+  fi
+fi
 
 case "$event" in
   beforeSubmitPrompt|afterAgentThought)
@@ -151,6 +167,7 @@ case "$event" in
     # Free the session's numbered-key slot right away (PROTOCOL.md §3).
     if [ -n "${session_id:-}" ]; then
       "$FOCALPOINT" end-session "$session_id" >/dev/null 2>&1 || true
+      rm -f "$label_file" "$stats_file" 2>/dev/null || true
     fi
     exit 0
     ;;
@@ -164,8 +181,14 @@ esac
 # to a plain sessionless set-state, which still drives the aggregate.
 args=("$state")
 if [ -n "${session_id:-}" ]; then
+  if [ -s "$label_file" ]; then
+    label=$(cat "$label_file" 2>/dev/null)
+  else
+    label="Cursor · $(basename "${root:-.}")"
+  fi
   args+=(--session "$session_id" --kind cursor --cwd "$root" \
-         --label "$(basename "${root:-.}")")
+         --label "$label")
+  [ -n "${model:-}" ] && args+=(--meta "model=$model")
 
   if [ "$event" = "stop" ]; then
     stats=$(extract_stats "$transcript_path")
@@ -173,6 +196,32 @@ if [ -n "${session_id:-}" ]; then
       IFS=$'\t' read -r turns tool_calls subagents <<< "$stats"
       args+=(--meta "turns=$turns" --meta "tool_calls=$tool_calls" \
              --meta "subagents=$subagents")
+    fi
+
+    # Cursor 3.13+ reports per-generation usage directly on `stop`. Accumulate
+    # once per generation id; older Cursor versions simply omit these fields.
+    input_tokens=$(extract_field "input_tokens")
+    output_tokens=$(extract_field "output_tokens")
+    if [ -n "${generation_id:-}" ] && [ -n "${input_tokens:-}" ] && [ -n "${output_tokens:-}" ] \
+       && command -v jq >/dev/null 2>&1; then
+      mkdir -p "$state_dir" 2>/dev/null
+      current='{"generations":[],"tokens_in":0,"tokens_out":0}'
+      [ -s "$stats_file" ] && current=$(cat "$stats_file" 2>/dev/null)
+      updated=$(printf '%s' "$current" | jq -c --arg generation "$generation_id" \
+        --argjson tokens_in "$input_tokens" --argjson tokens_out "$output_tokens" '
+          if (.generations // [] | index($generation)) != null then .
+          else
+            .generations = ((.generations // []) + [$generation])
+            | .tokens_in = ((.tokens_in // 0) + $tokens_in)
+            | .tokens_out = ((.tokens_out // 0) + $tokens_out)
+          end
+        ' 2>/dev/null)
+      if [ -n "$updated" ]; then
+        printf '%s' "$updated" > "$stats_file" 2>/dev/null
+        cumulative_in=$(printf '%s' "$updated" | jq -r '.tokens_in')
+        cumulative_out=$(printf '%s' "$updated" | jq -r '.tokens_out')
+        args+=(--meta "tokens_in=$cumulative_in" --meta "tokens_out=$cumulative_out")
+      fi
     fi
   fi
 fi

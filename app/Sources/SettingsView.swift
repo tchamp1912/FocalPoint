@@ -259,16 +259,8 @@ struct IntegrationsSettingsView: View {
     @ObservedObject var model: AppModel
 
     private let roadmap: [(icon: String, title: String, detail: String)] = [
-        ("dollarsign.circle", "Session cost estimate",
-         "Adapter reports a per-model $/1k-token rate alongside tokens_in/out; the badge shows running cost instead of (or next to) raw counts."),
-        ("gauge.with.dots.needle.67percent", "Context-window meter",
-         "A thin bar under the session row showing how full the model's context window is, from the same transcript the token stats already read."),
-        ("cpu", "Model badge",
-         "Small label showing which model is driving the session (e.g. Sonnet vs. Opus, or the Codex model) — useful once you run more than one at a time."),
         ("network", "MCP server health",
          "Surface a session's connected MCP servers and flag one that's disconnected or erroring, since that's often the real reason a session looks \u{201C}stuck\u{201D}."),
-        ("bell.badge", "Budget alerts",
-         "Optional threshold (tokens or $) that flips the session's LED/badge to a warning color when crossed."),
     ]
 
     var body: some View {
@@ -289,7 +281,11 @@ struct IntegrationsSettingsView: View {
                         }
                     }
                     Divider()
-                    Text("Today: the Claude Code adapter (adapters/claude-code/hooks.sh) reports all four from the session transcript when `jq` is installed. The Cursor adapter reports turns and tool calls only — Cursor's transcripts carry no token usage. The Codex CLI adapter reports turns only — its notify hook doesn't expose token usage or tool calls.")
+                    Toggle("Show model badge", isOn: $model.showModelBadge)
+                    Text("Shows which model is driving the session (e.g. Sonnet, Composer, or GPT-5.6) next to each row.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Divider()
+                    Text("Claude Code and Codex CLI report tokens, turns, tool calls, and subagents from local session data. Cursor 3.13+ reports the same badges using stop-hook token usage plus its transcript; older Cursor versions omit tokens. Cost is Claude Code only, reported by its status-line hook as a real dollar figure (not an estimate).")
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
                 .padding(16)
@@ -309,6 +305,55 @@ struct IntegrationsSettingsView: View {
                     Toggle("Read Codex quota with app-server", isOn: $model.codexUsageEnabled)
                     Text("Uses a local Codex app-server process and your existing ChatGPT authentication. API-key accounts and ordinary CLI sessions without ChatGPT quota data remain unavailable; FocalPoint never parses terminal output.")
                         .font(.caption).foregroundStyle(.secondary)
+                    Text("Cursor")
+                        .font(.subheadline).bold()
+                    Toggle("Read Cursor quota from local sign-in", isOn: $model.cursorUsageEnabled)
+                    Text("Reads your Cursor access token from the local app database and queries Cursor's dashboard API for included API and Auto usage. Requires Cursor to be signed in; prompts and session data are never sent.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(16)
+                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Context window").font(.subheadline).bold()
+                    Text("Assumed total context size for the meter under each session row, used only when a session doesn't report its real window itself. Not tied to a specific model on purpose — a new generation shipping a different window is a number to update here, not a FocalPoint release to wait on. Run /context in Claude Code and use the \u{201C}Auto-compact window\u{201D} figure. Leave blank to hide the meter for sessions with no explicit report.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Divider()
+                    HStack {
+                        Label("Assumed window", systemImage: "arrow.left.and.right.square")
+                        Spacer()
+                        TextField("Off", text: contextWindowText)
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 100)
+                        Text("tokens").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(16)
+                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Budget alerts").font(.subheadline).bold()
+                    Text("When either threshold below is set and a session crosses it — tokens (in + out) or total cost, whichever trips first — that session's row tints to a warning color in the dropdown and the desktop widget. Purely local and visual: nothing is sent to the daemon, an adapter, or anywhere else. Leave a field blank to turn that threshold off.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Divider()
+                    HStack {
+                        Label("Token budget", systemImage: "number")
+                        Spacer()
+                        TextField("Off", text: tokenBudgetText)
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 100)
+                    }
+                    HStack {
+                        Label("Cost budget", systemImage: "dollarsign.circle")
+                        Spacer()
+                        Text("$").foregroundStyle(.secondary)
+                        TextField("Off", text: costBudgetText)
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 90)
+                    }
                 }
                 .padding(16)
                 .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
@@ -347,6 +392,43 @@ struct IntegrationsSettingsView: View {
             get: { model.visibleStats.contains(stat) },
             set: { on in
                 if on { model.visibleStats.insert(stat) } else { model.visibleStats.remove(stat) }
+            }
+        )
+    }
+
+    /// String shim for `model.tokenBudget: Int?` — an empty field is "off"
+    /// (`nil`), matching the UserDefaults nil-safe treatment in AppModel.
+    /// Non-digit input is dropped rather than rejected outright, so pasting
+    /// "10,000" still lands on something sane instead of doing nothing.
+    private var tokenBudgetText: Binding<String> {
+        Binding(
+            get: { model.tokenBudget.map(String.init) ?? "" },
+            set: { newValue in
+                let digits = newValue.filter(\.isNumber)
+                model.tokenBudget = digits.isEmpty ? nil : Int(digits)
+            }
+        )
+    }
+
+    /// String shim for `model.costBudget: Double?`, same clearable treatment.
+    private var costBudgetText: Binding<String> {
+        Binding(
+            get: { model.costBudget.map { String(format: "%.2f", $0) } ?? "" },
+            set: { newValue in
+                let cleaned = newValue.filter { $0.isNumber || $0 == "." }
+                model.costBudget = cleaned.isEmpty ? nil : Double(cleaned)
+            }
+        )
+    }
+
+    /// String shim for `model.contextWindowOverride: Int?`, same clearable
+    /// treatment as the budget fields.
+    private var contextWindowText: Binding<String> {
+        Binding(
+            get: { model.contextWindowOverride.map(String.init) ?? "" },
+            set: { newValue in
+                let digits = newValue.filter(\.isNumber)
+                model.contextWindowOverride = digits.isEmpty ? nil : Int(digits)
             }
         )
     }

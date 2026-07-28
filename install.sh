@@ -30,7 +30,9 @@ CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/focalpoint"
 ADAPTER_INSTALL_DIR="$CONFIG_DIR/adapters"
 CLAUDE_DIR="$HOME/.claude"
 CLAUDE_SETTINGS="$CLAUDE_DIR/settings.json"
-CODEX_CONFIG="$HOME/.codex/config.toml"
+CODEX_DIR="$HOME/.codex"
+CODEX_CONFIG="$CODEX_DIR/config.toml"
+CODEX_HOOKS="$CODEX_DIR/hooks.json"
 CURSOR_DIR="$HOME/.cursor"
 CURSOR_HOOKS="$CURSOR_DIR/hooks.json"
 LOG_DIR="$HOME/Library/Logs/focalpoint"
@@ -42,6 +44,7 @@ HOOK_MARKER=".config/focalpoint/adapters/hooks.sh"
 # is a substring of the other's path, so the Claude and Cursor merge/removal
 # passes can never match each other's entries.
 CURSOR_HOOK_MARKER=".config/focalpoint/adapters/cursor-hooks.sh"
+CODEX_HOOK_MARKER=".config/focalpoint/adapters/codex-hooks.sh"
 
 ASSUME_YES=0
 USE_MOCK=0
@@ -227,6 +230,7 @@ install_script "$ADAPTERS_DIR/claude-code/hooks.sh" hooks.sh
 install_script "$ADAPTERS_DIR/claude-code/focus-session.sh" focus-session.sh
 install_script "$ADAPTERS_DIR/claude-code/statusline-usage.sh" statusline-usage.sh
 install_script "$ADAPTERS_DIR/codex-cli/notify.sh" codex-notify.sh
+install_script "$ADAPTERS_DIR/codex-cli/hooks.sh" codex-hooks.sh
 install_script "$ADAPTERS_DIR/cursor/hooks.sh" cursor-hooks.sh
 install_script "$ADAPTERS_DIR/cursor/focus-cursor.sh" focus-cursor.sh
 
@@ -309,28 +313,50 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 8. Codex CLI: print, never auto-edit
+# 8. Merge Codex lifecycle hooks into ~/.codex/hooks.json
 # ---------------------------------------------------------------------------
 
-CODEX_CONFIG_FOUND=0
-if [ -f "$CODEX_CONFIG" ]; then
-  CODEX_CONFIG_FOUND=1
-  if grep -q "codex-notify.sh" "$CODEX_CONFIG" 2>/dev/null; then
-    CODEX_STATUS="notify hook already configured"
-    ok "$CODEX_STATUS"
-  else
-    CODEX_STATUS="config found — add the notify snippet below"
-    info "$CODEX_CONFIG exists but doesn't reference codex-notify.sh yet."
-    info "Add this line at the top level of $CODEX_CONFIG:"
-    cat <<EOF
+step "Codex CLI integration"
 
-    notify = ["bash", "$ADAPTER_INSTALL_DIR/codex-notify.sh"]
+mkdir -p "$CODEX_DIR"
+if [ ! -f "$CODEX_HOOKS" ]; then
+  echo '{}' > "$CODEX_HOOKS"
+  ok "created $CODEX_HOOKS"
+fi
 
-EOF
-  fi
+if jq -e --arg marker "$CODEX_HOOK_MARKER" \
+     '[.. | select(type == "string") | select(contains($marker))] | length > 0' \
+     "$CODEX_HOOKS" >/dev/null 2>&1; then
+  CODEX_STATUS="lifecycle hooks already present — skipped"
+  ok "$CODEX_STATUS"
 else
-  CODEX_STATUS="config.toml not found under ~/.codex — skipped"
-  info "$CODEX_STATUS"
+  BACKUP="$CODEX_HOOKS.bak-focalpoint-$(date +%Y%m%d%H%M%S)"
+  cp "$CODEX_HOOKS" "$BACKUP"
+  ok "backed up hooks.json -> $BACKUP"
+
+  CODEX_FRAGMENT="$ADAPTERS_DIR/codex-cli/hooks-fragment.json"
+  MERGED="$(jq -s --arg cmd "$ADAPTER_INSTALL_DIR/codex-hooks.sh" '
+    .[0] as $orig | .[1] as $frag
+    | $orig
+    | .hooks = (($orig.hooks // {}) as $oh
+        | ($frag.hooks // {} | with_entries(
+            .value |= [ .[] | .hooks |= [ .[] | .command = $cmd ] ])) as $fh
+        | $fh | to_entries | reduce .[] as $e ($oh;
+            .[$e.key] = (($oh[$e.key] // []) + $e.value)))
+  ' "$CODEX_HOOKS" "$CODEX_FRAGMENT")"
+  printf '%s\n' "$MERGED" > "$CODEX_HOOKS"
+  CODEX_STATUS="lifecycle hooks merged into hooks.json"
+  ok "$CODEX_STATUS"
+fi
+
+# Native hooks supersede the legacy completion-only notify adapter. Leaving
+# both enabled would process Stop twice and double-count completed turns.
+if [ -f "$CODEX_CONFIG" ] && grep -q "codex-notify.sh" "$CODEX_CONFIG" 2>/dev/null; then
+  BACKUP="$CODEX_CONFIG.bak-focalpoint-$(date +%Y%m%d%H%M%S)"
+  cp "$CODEX_CONFIG" "$BACKUP"
+  CLEANED="$(sed '/^[[:space:]]*notify[[:space:]]*=.*codex-notify\.sh/d' "$CODEX_CONFIG")"
+  printf '%s\n' "$CLEANED" > "$CODEX_CONFIG"
+  ok "removed legacy codex-notify.sh config (backup: $BACKUP)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -452,9 +478,7 @@ echo ""
 echo "Next steps:"
 echo "  - Restart any running Claude Code sessions so they pick up the new hooks."
 echo "  - Cursor reloads hooks.json on save; restart Cursor if the Hooks tab doesn't list them."
-if [ "$CODEX_CONFIG_FOUND" -eq 0 ]; then
-  echo "  - Using Codex CLI? See adapters/codex-cli/README.md to wire up the notify hook."
-fi
+echo "  - Restart Codex, then review and trust the FocalPoint lifecycle hooks with /hooks."
 echo "  - Run 'focalpoint watch' to see live events, or 'focalpoint ping' any time to check status."
 echo "  - Re-run ./install.sh any time — it's safe, everything above is idempotent."
 echo ""

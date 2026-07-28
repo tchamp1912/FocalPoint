@@ -35,11 +35,14 @@
 # end-to-end: skipped without jq, and the menu bar app only shows a badge for
 # stats it actually receives (Settings → Claude & Codex).
 #
-# Subagent count: Claude Code spawns subagents via a tool_use block named
-# "Task" in the main transcript (its own sub-transcript isn't reachable from
-# this hook's context), so counting those is the only signal available here
-# — it's a cumulative count of subagents launched this session, not how many
-# are running right now.
+# Subagent count: Claude Code spawns subagents via a tool_use block in the
+# main transcript (its own sub-transcript isn't reachable from this hook's
+# context), so counting those is the only signal available here — it's a
+# cumulative count of subagents launched this session, not how many are
+# running right now. The tool is named "Task" on some Claude Code
+# builds/versions and "Agent" on others (confirmed by grepping a live
+# transcript — this session's own subagent launch showed up as "Agent", not
+# "Task"), so both names are matched.
 #
 # Session tty (--meta tty=...): the [session] focus action (PROTOCOL.md §3)
 # needs a way to find the RIGHT terminal window. Matching on the cwd's
@@ -84,10 +87,10 @@ extract_title() {
   printf '{%s' "$line" | jq -r '.aiTitle // empty' 2>/dev/null
 }
 
-# Cumulative "turns tool_calls tokens_in tokens_out" as a TSV line, or empty.
-# Recomputed fresh from the transcript every call (no counter state to drift
-# out of sync) — real turns are user entries whose content is a plain string
-# (tool-result "user" entries carry an array instead).
+# Cumulative "turns tool_calls tokens_in tokens_out model" as a TSV line, or
+# empty. Recomputed fresh from the transcript every call (no counter state to
+# drift out of sync) — real turns are user entries whose content is a plain
+# string (tool-result "user" entries carry an array instead).
 #
 # Token math (easy to get wrong on agentic sessions):
 # - tokens_out: sum output_tokens across unique API message.id values.
@@ -97,6 +100,17 @@ extract_title() {
 #   Do NOT sum cache_read across every iteration — a 38-tool-call turn re-
 #   reads the same cached context on each API round-trip, and adding every
 #   iteration's cache_read inflates a single-turn session into millions.
+#
+# model: the raw model id (e.g. "claude-opus-4-8-...") from the last
+# assistant message, so the app can derive a short display badge.
+#
+# context_tokens: current context-window occupancy, distinct from tokens_in
+# above. tokens_in sums the last usage snapshot *per turn* across every turn
+# (a running cumulative total); context_tokens is just the single latest
+# assistant usage snapshot in the whole transcript (input + cache_creation +
+# cache_read), i.e. what's actually resident in the model's context right
+# now. Reuses the same usage_in() term tokens_in already computes per-turn,
+# just applied once to assistants_with_usage's last entry instead of summed.
 extract_stats() {
   local transcript="$1"
   [ -n "$transcript" ] && [ -f "$transcript" ] || return 0
@@ -111,7 +125,7 @@ extract_stats() {
     {
       turns: (user_turns | length),
       tool_calls: ([.[] | select(.type=="assistant") | (.message.content // [])[] | select(.type=="tool_use")] | length),
-      subagents: ([.[] | select(.type=="assistant") | (.message.content // [])[] | select(.type=="tool_use" and .name=="Task")] | length),
+      subagents: ([.[] | select(.type=="assistant") | (.message.content // [])[] | select(.type=="tool_use" and (.name=="Task" or .name=="Agent"))] | length),
       tokens_in: (
         user_turns as $users
         | if ($users | length) == 0 then
@@ -128,8 +142,10 @@ extract_stats() {
       tokens_out: (
         [.[] | select(.type=="assistant" and .message.usage != null) | {id: .message.id, u: .message.usage}] | unique_by(.id)
         | ([.[].u.output_tokens // 0] | add // 0)
-      )
-    } | [.turns, .tool_calls, .subagents, .tokens_in, .tokens_out] | @tsv
+      ),
+      model: ([.[] | select(.type=="assistant") | .message.model] | last // ""),
+      context_tokens: (assistants_with_usage | if length == 0 then 0 else (last | usage_in(.message.usage)) end)
+    } | [.turns, .tool_calls, .subagents, .tokens_in, .tokens_out, .model, .context_tokens] | @tsv
   ' "$transcript" 2>/dev/null
 }
 
@@ -210,10 +226,12 @@ if [ -n "${session_id:-}" ]; then
   if [ "$event" = "Stop" ]; then
     stats=$(extract_stats "$transcript_path")
     if [ -n "$stats" ]; then
-      IFS=$'\t' read -r turns tool_calls subagents tokens_in tokens_out <<< "$stats"
+      IFS=$'\t' read -r turns tool_calls subagents tokens_in tokens_out model context_tokens <<< "$stats"
       args+=(--meta "turns=$turns" --meta "tool_calls=$tool_calls" \
              --meta "subagents=$subagents" \
              --meta "tokens_in=$tokens_in" --meta "tokens_out=$tokens_out")
+      [ -n "$model" ] && args+=(--meta "model=$model")
+      [ -n "$context_tokens" ] && args+=(--meta "context_tokens=$context_tokens")
     fi
   fi
 fi

@@ -25,7 +25,18 @@ args=()
 [ -n "$five_reset" ] && args+=(--meta "five_hour_resets_at=$five_reset")
 [ -n "$week_used" ] && args+=(--meta "seven_day_used=$week_used")
 [ -n "$week_reset" ] && args+=(--meta "seven_day_resets_at=$week_reset")
-[ "${#args[@]}" -gt 0 ] || exit 0
+if [ "${#args[@]}" -gt 0 ]; then
+    "$FOCALPOINT" set-usage claude "${args[@]}" >/dev/null 2>&1 || true
+fi
 
-"$FOCALPOINT" set-usage claude "${args[@]}" >/dev/null 2>&1 || true
+# Running cost is real (Claude Code reports it, not an estimate) but rides
+# the per-session record, not the account-wide usage snapshot above — so it
+# needs its own `set-meta` call keyed on session_id. `// empty` covers older
+# Claude Code builds / early turns where `cost` isn't populated yet.
+cost=$(printf '%s' "$input" | jq -r '.cost.total_cost_usd // empty' 2>/dev/null)
+session_id=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null)
+if [ -n "$cost" ] && [ -n "$session_id" ]; then
+    "$FOCALPOINT" set-meta --session "$session_id" --kind claude --meta "cost_usd=$cost" >/dev/null 2>&1 || true
+fi
+
 exit 0

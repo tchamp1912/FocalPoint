@@ -130,6 +130,53 @@ pub fn set_state(
     Ok(())
 }
 
+/// `focalpoint set-meta --session <ID> [--kind] [--label] [--meta k=v]...`
+/// Meta-only: merges into an existing session's `meta` without touching its
+/// live state (unlike `set-state`, which requires one). Unknown session ids
+/// are a no-op on the daemon side, not registered.
+#[cfg(unix)]
+pub fn set_meta(
+    session: &str,
+    kind: Option<&str>,
+    label: Option<&str>,
+    meta: &[String],
+) -> Result<(), CliError> {
+    if session.is_empty() {
+        return Err(CliError::new("--session must not be empty", 2));
+    }
+    let mut req = serde_json::json!({ "cmd": "set-meta", "session": session });
+    if let Some(k) = kind {
+        req["kind"] = k.into();
+    }
+    if let Some(l) = label {
+        req["label"] = l.into();
+    }
+    let mut meta_obj = serde_json::Map::new();
+    for kv in meta {
+        let Some((k, v)) = kv.split_once('=') else {
+            return Err(CliError::new(
+                format!("invalid --meta {kv:?}; expected key=value"),
+                2,
+            ));
+        };
+        let value = if let Ok(i) = v.parse::<i64>() {
+            serde_json::Value::from(i)
+        } else if let Ok(f) = v.parse::<f64>() {
+            serde_json::Value::from(f)
+        } else {
+            serde_json::Value::from(v)
+        };
+        meta_obj.insert(k.to_string(), value);
+    }
+    if !meta_obj.is_empty() {
+        req["meta"] = serde_json::Value::Object(meta_obj);
+    }
+    let resp = request(req)?;
+    expect_ok(&resp)?;
+    println!("ok");
+    Ok(())
+}
+
 /// `focalpoint set-usage <provider> --meta key=value...`
 #[cfg(unix)]
 pub fn set_usage(provider: &str, meta: &[String]) -> Result<(), CliError> {
@@ -260,6 +307,20 @@ pub fn rename_session(id: &str, name: Option<&str>) -> Result<(), CliError> {
         "cmd": "rename-session",
         "session": id,
         "name": name,
+    }))?;
+    expect_ok(&resp)?;
+    println!("ok");
+    Ok(())
+}
+
+/// `focalpoint swap-slots <ID1> <ID2>` — manual reorder: exchange the
+/// numbered-key slots of two live sessions.
+#[cfg(unix)]
+pub fn swap_slots(id1: &str, id2: &str) -> Result<(), CliError> {
+    let resp = request(serde_json::json!({
+        "cmd": "swap-slots",
+        "session1": id1,
+        "session2": id2,
     }))?;
     expect_ok(&resp)?;
     println!("ok");
@@ -448,11 +509,13 @@ macro_rules! win_stub {
 #[cfg(not(unix))]
 win_stub!(
     set_state(name: &str, session: Option<&str>, kind: Option<&str>, label: Option<&str>, cwd: Option<&str>, meta: &[String]),
+    set_meta(session: &str, kind: Option<&str>, label: Option<&str>, meta: &[String]),
     set_usage(provider: &str, meta: &[String]),
     usage(json: bool),
     get_state(),
     sessions(json: bool),
     end_session(id: &str),
+    swap_slots(id1: &str, id2: &str),
     set_led(index: &str, r: u8, g: u8, b: u8),
     styles(json: bool),
     set_style(state: &str, r: u8, g: u8, b: u8, pattern: &str, period_ms: Option<u16>),

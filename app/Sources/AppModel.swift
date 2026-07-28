@@ -131,15 +131,66 @@ final class AppModel: ObservableObject {
     @Published var showUsage: Bool {
         didSet { UserDefaults.standard.set(showUsage, forKey: "showUsage") }
     }
+    /// Show the model badge (e.g. "Opus") next to each session row. Claude
+    /// Code only — see SessionInfo.modelBadge.
+    @Published var showModelBadge: Bool {
+        didSet { UserDefaults.standard.set(showModelBadge, forKey: "showModelBadge") }
+    }
     @Published var codexUsageEnabled: Bool {
         didSet {
             UserDefaults.standard.set(codexUsageEnabled, forKey: "codexUsageEnabled")
             if codexUsageEnabled { codexUsageMonitor?.start() } else { codexUsageMonitor?.stop() }
         }
     }
+    @Published var cursorUsageEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(cursorUsageEnabled, forKey: "cursorUsageEnabled")
+            if cursorUsageEnabled { cursorUsageMonitor?.start() } else { cursorUsageMonitor?.stop() }
+        }
+    }
     /// Ordering used by the attention-next/prev focus hotkeys.
     @Published var attentionCycleOrder: AttentionCycleOrder {
         didSet { UserDefaults.standard.set(attentionCycleOrder.rawValue, forKey: "attentionCycleOrder") }
+    }
+    /// Per-user budget thresholds (Settings → Agent Integrations → Budget
+    /// alerts) — nil means "off". `object(forKey:)` (rather than
+    /// `integer(forKey:)`/`double(forKey:)`, which default to 0) is what
+    /// distinguishes "never set" / "cleared" from an actual 0 threshold.
+    /// See `isOverBudget`.
+    @Published var tokenBudget: Int? {
+        didSet {
+            if let tokenBudget {
+                UserDefaults.standard.set(tokenBudget, forKey: "tokenBudget")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "tokenBudget")
+            }
+        }
+    }
+    @Published var costBudget: Double? {
+        didSet {
+            if let costBudget {
+                UserDefaults.standard.set(costBudget, forKey: "costBudget")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "costBudget")
+            }
+        }
+    }
+    /// Assumed context-window size (tokens) for the per-session meter, used
+    /// only when a session doesn't carry an explicit `meta.context_window`
+    /// (`SessionInfo.reportedContextWindow`, always preferred over this).
+    /// User-editable specifically so a new model generation shipping a
+    /// different window is a Settings edit, not a FocalPoint rebuild — the
+    /// previous hardcoded-per-model-name guess (Protocol.swift) went stale
+    /// the moment a current model exceeded it. nil turns the meter off
+    /// entirely for sessions with no explicit report.
+    @Published var contextWindowOverride: Int? {
+        didSet {
+            if let contextWindowOverride {
+                UserDefaults.standard.set(contextWindowOverride, forKey: "contextWindowOverride")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "contextWindowOverride")
+            }
+        }
     }
 
     // Wiring set by the app delegate.
@@ -149,6 +200,7 @@ final class AppModel: ObservableObject {
     let client = DaemonClient()
     private var timer: Timer?
     private var codexUsageMonitor: CodexUsageMonitor?
+    private var cursorUsageMonitor: CursorUsageMonitor?
     /// Last session focused by the attention/session-nav hotkeys, so the next
     /// press can advance relative to it rather than always restarting at the
     /// front of the list. Deliberately not persisted or @Published — pure
@@ -181,13 +233,24 @@ final class AppModel: ObservableObject {
             visibleStats = Set(SessionStat.allCases)
         }
         showUsage = d.object(forKey: "showUsage") as? Bool ?? true
+        showModelBadge = d.object(forKey: "showModelBadge") as? Bool ?? true
         codexUsageEnabled = d.object(forKey: "codexUsageEnabled") as? Bool ?? false
+        cursorUsageEnabled = d.object(forKey: "cursorUsageEnabled") as? Bool ?? true
         if let raw = d.string(forKey: "attentionCycleOrder"), let order = AttentionCycleOrder(rawValue: raw) {
             attentionCycleOrder = order
         } else {
             attentionCycleOrder = .severityFirst
         }
+        tokenBudget = d.object(forKey: "tokenBudget") as? Int
+        costBudget = d.object(forKey: "costBudget") as? Double
+        // 967_000 seeds the same figure Protocol.swift used to hardcode
+        // (Claude Code's own reported "Auto-compact window" for the current
+        // model generation, verified live via /context) — same default
+        // behavior on first run, but now a Settings edit away from staying
+        // current instead of a rebuild.
+        contextWindowOverride = d.object(forKey: "contextWindowOverride") as? Int ?? 967_000
         codexUsageMonitor = CodexUsageMonitor(model: self)
+        cursorUsageMonitor = CursorUsageMonitor(model: self)
         if let data = d.data(forKey: "sessionHistory"),
            let decoded = try? JSONDecoder().decode([SessionHistoryEntry].self, from: data) {
             sessionHistory = decoded
@@ -206,6 +269,25 @@ final class AppModel: ObservableObject {
     }
 
     var aggregateStyle: StateStyle { styles[aggregate] ?? defaultStyle(aggregate) }
+
+    /// True when `s` has crossed a configured budget threshold — either the
+    /// token budget (tokens_in + tokens_out) or the cost budget (cost_usd),
+    /// whichever is set. Either condition alone trips it; both being set
+    /// doesn't require both to be crossed. Purely client-side (Settings →
+    /// Agent Integrations → Budget alerts): mirrors `needsAttention` as a
+    /// layered visual concept, not a real daemon state (see MenuContentView/
+    /// DesktopOverlay `sessionRow`).
+    func isOverBudget(_ s: SessionInfo) -> Bool {
+        if let tokenBudget {
+            let tokens = (s.stats[.tokensIn] ?? 0) + (s.stats[.tokensOut] ?? 0)
+            if tokens >= Double(tokenBudget) { return true }
+        }
+        if let costBudget {
+            let cost = s.stats[.cost] ?? 0
+            if cost >= costBudget { return true }
+        }
+        return false
+    }
 
     /// Every action's effective binding: the user's override if present,
     /// else the shipped default. This is what HotkeyManager actually
@@ -236,6 +318,7 @@ final class AppModel: ObservableObject {
             MainActor.assumeIsolated { AppModel.shared.tick &+= 1 }
         }
         if codexUsageEnabled { codexUsageMonitor?.start() }
+        if cursorUsageEnabled { cursorUsageMonitor?.start() }
     }
 
     private func setConnected(_ up: Bool) {
@@ -310,6 +393,9 @@ final class AppModel: ObservableObject {
         let name = e["name"] as? String
         let meta = e["meta"] as? [String: Any]
         let cwd = meta?["cwd"] as? String
+        let model = meta?["model"] as? String
+        let contextTokens = (meta?["context_tokens"] as? NSNumber)?.doubleValue
+        let reportedContextWindow = (meta?["context_window"] as? NSNumber)?.doubleValue
         let stats = Self.parseStats(meta)
 
         if let idx = sessions.firstIndex(where: { $0.id == id }) {
@@ -324,12 +410,21 @@ final class AppModel: ObservableObject {
             s.name = name
             if let slot = e["slot"] { s.slot = slot as? Int }
             if let cwd = cwd { s.cwd = cwd }
+            if let model = model { s.model = model }
+            if let contextTokens = contextTokens { s.contextTokens = contextTokens }
+            if let reportedContextWindow = reportedContextWindow {
+                s.reportedContextWindow = reportedContextWindow
+            }
             if meta != nil { s.stats = stats }
             sessions[idx] = s
         } else {
-            sessions.append(SessionInfo(id: id, kind: kind, label: label, name: name,
-                                        slot: slot, state: newState, cwd: cwd,
-                                        firstSeen: Date(), lastChange: Date(), stats: stats))
+            var s = SessionInfo(id: id, kind: kind, label: label, name: name,
+                                 slot: slot, state: newState, cwd: cwd,
+                                 firstSeen: Date(), lastChange: Date(), stats: stats)
+            s.model = model
+            s.contextTokens = contextTokens
+            s.reportedContextWindow = reportedContextWindow
+            sessions.append(s)
         }
         sortSessions()
     }
@@ -518,6 +613,25 @@ final class AppModel: ObservableObject {
     /// local removal here.
     func endSession(_ s: SessionInfo) {
         client.send(["cmd": "end-session", "session": s.id])
+    }
+
+    /// Manually swap two sessions' numbered-key slots — a user-initiated
+    /// reorder (drag-and-drop in the dropdown), distinct from the daemon's
+    /// automatic "lowest free slot, kept for life" assignment (PROTOCOL.md
+    /// §3). Applied optimistically like `renameSession` for the same
+    /// reason: instant visual feedback, confirmed a moment later by the
+    /// `session` broadcasts the swap triggers. Both sessions must currently
+    /// hold a slot — a slotless (>12 live) session has nothing to swap.
+    func swapSlots(_ a: SessionInfo, _ b: SessionInfo) {
+        guard a.id != b.id, let slotA = a.slot, let slotB = b.slot else { return }
+        if let idxA = sessions.firstIndex(where: { $0.id == a.id }) {
+            sessions[idxA].slot = slotB
+        }
+        if let idxB = sessions.firstIndex(where: { $0.id == b.id }) {
+            sessions[idxB].slot = slotA
+        }
+        sortSessions()
+        client.send(["cmd": "swap-slots", "session1": a.id, "session2": b.id])
     }
 
     /// Snapshots a session into `sessionHistory` right before it's dropped

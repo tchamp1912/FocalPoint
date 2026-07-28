@@ -215,6 +215,47 @@ impl Registry {
         effects
     }
 
+    /// Apply a `set-meta`: merge `meta` (and optionally `kind`/`label`) into
+    /// an **existing** session without touching its `state`. Unlike
+    /// `set_state`, an unknown `id` is a no-op — `set-meta` never registers a
+    /// new session, since a state-less session has no state to key a
+    /// `SET_KEY_STATE` off of. Touches `last_update` like `set_state` does:
+    /// a meta report (e.g. the status-line hook reporting cost) is the
+    /// session reporting activity, same as a state change — unlike
+    /// `rename`, which is the user acting on the session, not the session
+    /// itself.
+    pub fn merge_meta(
+        &mut self,
+        id: &str,
+        kind: Option<String>,
+        label: Option<String>,
+        meta: Map<String, Value>,
+        now: Instant,
+    ) -> Vec<Effect> {
+        let Some(sess) = self.sessions.get_mut(id) else {
+            return Vec::new();
+        };
+        if kind.is_some() {
+            sess.kind = kind;
+        }
+        if label.is_some() {
+            sess.label = label;
+        }
+        for (k, v) in meta {
+            sess.meta.insert(k, v);
+        }
+        sess.last_update = now;
+        vec![Effect::SessionUpsert {
+            id: sess.id.clone(),
+            kind: sess.kind.clone(),
+            label: sess.label.clone(),
+            name: sess.name.clone(),
+            meta: sess.meta.clone(),
+            slot: sess.slot,
+            state: sess.state,
+        }]
+    }
+
     /// Set (or clear) a session's user-assigned display name.
     ///
     /// `name` is trimmed; empty or whitespace-only clears it, so the UI falls
@@ -252,6 +293,48 @@ impl Registry {
             self.note_aggregate(&mut effects);
         }
         effects
+    }
+
+    /// Swap the numbered-key slots of two live sessions — manual reorder
+    /// (drag-and-drop in the app's dropdown), distinct from the automatic
+    /// "lowest free slot, kept for life" assignment every other path uses.
+    /// Both sessions must currently hold a slot; a slotless session (>12
+    /// live, overflow) can't participate since there's no slot to give it.
+    /// Doesn't touch `last_update` for either — a reorder isn't activity.
+    pub fn swap_slots(&mut self, id1: &str, id2: &str) -> Result<Vec<Effect>, String> {
+        if id1 == id2 {
+            return Ok(Vec::new());
+        }
+        let slot1 = self
+            .sessions
+            .get(id1)
+            .and_then(|s| s.slot)
+            .ok_or_else(|| format!("unknown session or no slot: {id1:?}"))?;
+        let slot2 = self
+            .sessions
+            .get(id2)
+            .and_then(|s| s.slot)
+            .ok_or_else(|| format!("unknown session or no slot: {id2:?}"))?;
+        if let Some(s) = self.sessions.get_mut(id1) {
+            s.slot = Some(slot2);
+        }
+        if let Some(s) = self.sessions.get_mut(id2) {
+            s.slot = Some(slot1);
+        }
+        let effects = [id1, id2]
+            .into_iter()
+            .filter_map(|id| self.sessions.get(id))
+            .map(|s| Effect::SessionUpsert {
+                id: s.id.clone(),
+                kind: s.kind.clone(),
+                label: s.label.clone(),
+                name: s.name.clone(),
+                meta: s.meta.clone(),
+                slot: s.slot,
+                state: s.state,
+            })
+            .collect();
+        Ok(effects)
     }
 
     /// End all sessions past their TTL. No-op when TTL is `None` (never).
@@ -360,6 +443,33 @@ mod tests {
     }
 
     #[test]
+    fn swap_slots_exchanges_two_sessions() {
+        let mut r = Registry::new(None);
+        let now = t0();
+        r.set_state(Some("a"), State::Running, None, None, None, now);
+        r.set_state(Some("b"), State::Running, None, None, None, now);
+        r.set_state(Some("c"), State::Running, None, None, None, now);
+        let effects = r.swap_slots("a", "c").unwrap();
+        assert_eq!(r.sessions.get("a").unwrap().slot, Some(3));
+        assert_eq!(r.sessions.get("b").unwrap().slot, Some(2));
+        assert_eq!(r.sessions.get("c").unwrap().slot, Some(1));
+        assert!(effects.iter().any(|e| matches!(e,
+            Effect::SessionUpsert { id, slot: Some(3), .. } if id == "a")));
+        assert!(effects.iter().any(|e| matches!(e,
+            Effect::SessionUpsert { id, slot: Some(1), .. } if id == "c")));
+    }
+
+    #[test]
+    fn swap_slots_rejects_unknown_or_slotless() {
+        let mut r = Registry::new(None);
+        let now = t0();
+        r.set_state(Some("a"), State::Running, None, None, None, now);
+        assert!(r.swap_slots("a", "ghost").is_err());
+        // Same id is a no-op, not an error.
+        assert_eq!(r.swap_slots("a", "a").unwrap(), Vec::new());
+    }
+
+    #[test]
     fn slots_are_stable_across_updates() {
         let mut r = Registry::new(None);
         let now = t0();
@@ -461,6 +571,43 @@ mod tests {
         let s = &r.list()[0];
         assert_eq!(s.cwd(), "/a"); // preserved
         assert_eq!(s.meta.get("branch").unwrap(), &Value::from("main")); // merged
+    }
+
+    #[test]
+    fn set_meta_merges_without_changing_state() {
+        let mut r = Registry::new(None);
+        let now = t0();
+        r.set_state(Some("a"), State::Running, Some("claude".into()), None, None, now);
+        let mut m = Map::new();
+        m.insert("cost_usd".into(), Value::from(0.42));
+        let effects = r.merge_meta("a", None, None, m, now);
+        let mut expected_meta = Map::new();
+        expected_meta.insert("cost_usd".into(), Value::from(0.42));
+        assert!(effects.contains(&Effect::SessionUpsert {
+            id: "a".into(),
+            kind: Some("claude".into()),
+            label: None,
+            name: None,
+            meta: expected_meta,
+            slot: Some(1),
+            state: State::Running,
+        }));
+        // State (and therefore aggregate) must be untouched by a meta-only update.
+        assert_eq!(r.list()[0].state, State::Running);
+        assert_eq!(r.aggregate(), State::Running);
+    }
+
+    #[test]
+    fn set_meta_on_unknown_session_is_a_noop() {
+        let mut r = Registry::new(None);
+        let now = t0();
+        let mut m = Map::new();
+        m.insert("cost_usd".into(), Value::from(0.1));
+        let effects = r.merge_meta("ghost", None, None, m, now);
+        assert!(effects.is_empty());
+        // Must NOT have registered a new stateless session.
+        assert!(r.list().is_empty());
+        assert!(r.session_by_slot(1).is_none());
     }
 
     #[test]
