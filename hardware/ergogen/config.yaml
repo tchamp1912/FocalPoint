@@ -1,9 +1,9 @@
 # FocalPoint Rev A mechanical matrix foundation.
 #
 # This produces the switch/diode placement, PCB Edge.Cuts, and DXF/SVG outlines
-# for a 16-input wireless macropad arranged on a visual 4x4 lattice: analog
-# joystick, touch, command key, and encoder across the control row, then 12
-# grid keys. Its compact, rounded-square hierarchy is inspired by the supplied
+# for a 16-input wireless macropad arranged on a visual 4x4 lattice: encoder
+# and joystick in the top corners, touch in the bottom-right corner, and 13
+# grid keys in the remaining cells. Its compact, rounded-square hierarchy is inspired by the supplied
 # reference. The resulting .kicad_pcb is
 # an import/start point; it still needs the nRF52840 module, charger, battery,
 # RGB, encoder, joystick, and routing.

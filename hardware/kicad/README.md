@@ -27,7 +27,7 @@ not ready to manufacture.
 4. `usb`: USB-C USB 2.0 device, CC resistors, ESD, and data protection.
 5. `power`: protected 1-cell LiPo, charger with power-path management, battery
    measurement, 3.3 V regulation, and switched/current-budgeted LED rail.
-6. `rgb`: 16 SK6812 MINI-E LEDs, local bypassing, data conditioning, and test
+6. `rgb`: 13 SK6812 MINI-E LEDs, local bypassing, data conditioning, and test
    pads.
 
 Do not assign footprints for the radio, joystick, charger, battery connector,
