@@ -1,84 +1,229 @@
 # FocalPoint
 
-An open-source agent macropad — an open-hardware take on the OpenAI × Work
-Louder **Codex Micro**, but agent-agnostic. RGB keys mirror your coding agent's
-live status (thinking / running / waiting / done / error); physical keys, a
-rotary dial, and a joystick drive the agent loop: accept, reject, new task,
-push-to-talk, reasoning level, canned workflows.
-
-Works with **Claude Code**, **Codex CLI**, or anything that can run a shell
-command on lifecycle events.
+FocalPoint is the attention router for your coding agents. It keeps Claude
+Code, Codex CLI, and Cursor sessions visible in one native macOS dashboard,
+then takes you straight to the agent that needs you next.
 
 <p align="center">
   <img src="docs/assets/focalpoint-live-sessions.png" width="535" alt="FocalPoint showing live Claude Code, Codex, and Cursor sessions with status, model, context, token, tool, turn, subagent, cost, and account-usage telemetry">
 </p>
 
-<p align="center"><em>One glance for every agent: live state, session telemetry, context pressure, and provider quota.</em></p>
+<p align="center"><em>One glance for every agent. One hotkey to jump back into the loop.</em></p>
 
-## What it does
+## One hotkey takes you to the agent that needs you next
 
-- **One live dashboard for every agent.** Track Claude Code, Codex CLI, and
-  Cursor sessions together, with stable numbered slots for keyboard and
-  macropad navigation.
-- **Rich session telemetry.** See model, input/output tokens, tool calls,
-  turns, subagents, cost, and a context-window gauge whenever the provider
-  exposes them.
-- **Attention you can feel.** Waiting and error states light the hardware,
-  badge the menu-bar icon, and surface in the optional desktop overlay.
-- **Provider usage at a glance.** Monitor Claude, Codex, and Cursor quota
-  periods and their reset times without leaving the agent loop.
-- **Fast session control.** Focus, rename, reorder, or end sessions from the
-  native macOS UI; bind the same workflow to global hotkeys or physical
-  controls.
-- **A UI that fits your desk.** Use the compact menu, a movable translucent
-  desktop widget, per-state colors and animation patterns, configurable stat
-  badges, budget alerts, quick actions, and local session history.
+FocalPoint prioritizes errors and input requests across **Cursor, Claude Code,
+and Codex**, then brings the corresponding window, tab, or pane forward—no
+hunting through terminals.
 
-## Repo layout
+Run several agents in parallel without becoming their human task scheduler.
+When one needs approval, clarification, or help recovering from an error,
+FocalPoint moves it to the front of the queue. Press the attention hotkey—or
+the matching key on the macropad—to land where the work is waiting. Press it
+again to move to the next agent that needs you.
 
-| Directory | Contents | License |
-|---|---|---|
-| [`daemon/`](daemon/) | `focalpointd` host daemon + `focalpoint` CLI (Rust) | MIT |
-| [`firmware/`](firmware/) | QMK/Vial firmware for the RP2040 board | GPLv2 |
-| [`adapters/`](adapters/) | Claude Code, Codex CLI, and generic integrations | MIT |
-| [`hardware/`](hardware/) | KiCad PCB (rev A: KB2040 module, Choc hot-swap) | CERN-OHL-S |
-| [`case/`](case/) | 3D-printable case | CERN-OHL-S |
-| [`docs/`](docs/) | Build guide | CC-BY-SA |
+Meanwhile, the menu-bar dashboard and desktop widget keep the whole operation
+visible: which agents are thinking, which are running tools, which are done,
+and how much context and quota each one has left.
 
-Key documents:
+## Install
 
-- [`PLAN.md`](PLAN.md) — project plan, hardware spec, roadmap
-- [`PROTOCOL.md`](PROTOCOL.md) — the v0.1 contract between firmware, daemon,
-  and adapters (HID reports, socket API, CLI)
+FocalPoint currently requires **macOS 14 or newer on Apple Silicon**.
 
-## Architecture
-
-```
-Claude Code / Codex CLI / any tool
-        │ hooks → `focalpoint set-state …`
-        ▼
-focalpointd ──(config.toml actions)── keystrokes/scripts back to the agent
-        │ USB Raw HID
-        ▼
-the macropad: LEDs ← agent state · keys/dial/joystick → events
-```
-
-## Quick start
+Install the prerequisites:
 
 ```sh
-git clone <this repo> && cd focalpoint
+xcode-select --install
+brew install rust jq
+```
+
+Then clone and run the installer:
+
+```sh
+git clone https://github.com/tchamp1912/FocalPoint.git
+cd FocalPoint
 ./install.sh
 ```
 
-One command builds the daemon, wires up the Claude Code adapter, builds the
-macOS menu bar app and backlight helper (if present in your checkout), and
-installs a launchd agent so `focalpointd` runs automatically. It's safe to
-re-run any time — every step checks what's already there before touching it.
-No FocalPoint hardware yet? Pass `--mock` to run the daemon in
-`--mock-device` mode instead. See `./install.sh --help` and
-`./uninstall.sh --help` for options (including `uninstall.sh --dry-run`).
+The installer shows everything it will change and asks for confirmation. To
+skip that prompt, run `./install.sh --yes`.
 
-## Status
+It will:
 
-Early development. The daemon has a `--mock-device` mode so the full software
-stack is testable without any hardware (Phase 0); rev A PCB is next.
+- build and install the `focalpointd` daemon and `focalpoint` CLI;
+- install and launch the native FocalPoint menu-bar app;
+- configure a launchd user service so the daemon starts automatically;
+- install the Claude Code, Codex CLI, and Cursor adapters;
+- merge FocalPoint lifecycle hooks into each installed agent's user config,
+  backing up those files before changing them; and
+- preserve an existing `~/.config/focalpoint/config.toml`.
+
+Restart any agent sessions that were already open so they load the new hooks.
+The FocalPoint keyboard icon will appear in the macOS menu bar.
+
+### Try it without the hardware
+
+The app and all agent integrations work without a physical macropad. Install
+in mock-device mode to exercise the complete software stack:
+
+```sh
+./install.sh --mock
+```
+
+### Verify the installation
+
+```sh
+focalpoint sessions       # live sessions and their assigned slots
+focalpoint get-state      # aggregate agent state
+```
+
+`focalpoint ping` additionally checks for a connected hardware device, so it
+is expected to fail with an app-only install unless the daemon is in mock mode.
+
+## Features
+
+### Attention routing, not notification noise
+
+- Prioritize sessions that need intervention: errors first, then approval or
+  input requests.
+- Jump to the corresponding Cursor workspace, Claude terminal tab, or Codex
+  working surface for that session.
+- Cycle forward or backward through the attention queue with configurable
+  global hotkeys.
+- Use the same flow from numbered session keys on the physical macropad.
+- Keep working while background agents think and run tools; FocalPoint tells
+  you where your attention has the highest value.
+
+### Every agent in one place
+
+- Track concurrent Claude Code, Codex CLI, and Cursor sessions.
+- Keep stable numbered slots while sessions change state or other sessions
+  come and go.
+- See the model, working directory, session name, current state, and elapsed
+  time at a glance.
+- Rename, reorder, focus, or end sessions directly from the app.
+
+### Live stats and context pressure
+
+- Display input/output tokens, tool calls, turns, subagents, and cost whenever
+  the provider exposes them.
+- Watch context-window consumption on a compact per-session gauge.
+- Choose which stat badges appear from Settings.
+- Set token and cost budget alerts for visual warning states.
+
+### Status that is hard to miss
+
+FocalPoint normalizes agent lifecycle events into six states:
+
+| State | Meaning |
+|---|---|
+| `idle` | No active work |
+| `thinking` | The model is reasoning or generating |
+| `running` | A tool or command is executing |
+| `waiting` | The agent needs approval or input |
+| `done` | The current turn completed |
+| `error` | Something failed and needs attention |
+
+Those states drive the menu-bar attention badge, desktop widget, optional
+keyboard backlight, and the RGB pattern assigned to each physical key.
+
+### Account usage monitoring
+
+- View Claude short-window and weekly quota periods.
+- Read Codex plan limits through the local Codex app-server integration.
+- Track Cursor API and Auto usage from the local Cursor sign-in.
+- See utilization percentages and reset times without leaving your workflow.
+
+Usage monitoring stays local and can be enabled or disabled per integration.
+
+### Native macOS controls
+
+- Compact menu-bar dashboard with a waiting/error attention badge.
+- Movable translucent desktop widget with the same live session data.
+- Configurable global hotkeys for focusing sessions, accepting/rejecting,
+  starting tasks, push-to-talk, and jumping through the attention queue.
+- Quick actions that run in a session's working directory.
+- Local history for completed sessions.
+
+### Customizable hardware feedback
+
+- Set a color, pattern, and animation period for every state.
+- Use physical session keys to jump directly to the matching agent.
+- Map the remaining keys, rotary dial, and joystick to your preferred agent
+  workflow.
+- Run the same action path through hotkeys when hardware is not connected.
+
+## Supported integrations
+
+| Integration | Live states | Session stats | Context gauge | Account usage |
+|---|---:|---:|---:|---:|
+| Claude Code | Yes | Yes | Yes | Yes |
+| Codex CLI | Yes | Yes | Yes | Yes |
+| Cursor | Yes | Yes | When available | Yes |
+| Custom scripts and tools | Yes | Whatever you report | Optional | Optional |
+
+Provider APIs expose different information, so a missing badge means that the
+current integration or event did not report that value—not that the session
+failed to register.
+
+## Configure
+
+Open **FocalPoint → Settings** from the menu-bar dashboard to configure:
+
+- the desktop widget and menu-bar appearance;
+- visible stat badges, budget alerts, and context-window fallback;
+- Claude, Codex, and Cursor account-usage monitors;
+- global hotkeys and attention-navigation order;
+- per-state colors and LED animation patterns; and
+- session history.
+
+Low-level daemon actions and hardware mappings live in:
+
+```text
+~/.config/focalpoint/config.toml
+```
+
+## Update or uninstall
+
+Pull the latest version and rerun the idempotent installer:
+
+```sh
+git pull
+./install.sh
+```
+
+To preview or perform a clean uninstall:
+
+```sh
+./uninstall.sh --dry-run
+./uninstall.sh
+```
+
+## Build your own integration
+
+Any tool that can run a shell command can publish state:
+
+```sh
+focalpoint set-state running \
+  --session my-session \
+  --kind my-agent \
+  --label "Implement login flow" \
+  --cwd "$PWD"
+```
+
+Adapters can attach optional telemetry with repeated `--meta key=value`
+arguments. See [the adapter guide](adapters/) for complete examples.
+
+## Developer documentation
+
+The public README intentionally focuses on installing and using FocalPoint.
+Contributor and implementation details live in:
+
+- [CLAUDE.md](CLAUDE.md) — repository guidance and component map
+- [PLAN.md](PLAN.md) — product, hardware, and roadmap notes
+- [PROTOCOL.md](PROTOCOL.md) — daemon, adapter, and device protocol
+- [app/README.md](app/) — macOS app behavior and development
+- [adapters/README.md](adapters/) — provider and custom adapter development
+
+FocalPoint is in active development. The app and mock-device stack are usable
+today; the open-hardware macropad is still evolving.
