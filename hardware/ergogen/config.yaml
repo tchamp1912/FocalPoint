@@ -112,9 +112,9 @@ outlines:
         ref: middle_keys_col_2_row_3
         # Centers the complete action-key through control-rail composition,
         # rather than centering only the 4x3 selector grid.
-        shift: [8.5, -9]
+        shift: [10, -9]
       # Includes the EC11 rail plus clearance below the action-row sockets.
-      size: [128, 128]
+      size: [108, 108]
       fillet: 10
 
   # The printed case needs room for a top plate lip and gasket/foam while

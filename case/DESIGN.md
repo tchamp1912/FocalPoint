@@ -26,7 +26,7 @@ These values are prototypes, not production dimensions:
 
 | Parameter | Initial value | Fit-test range |
 |---|---:|---:|
-| PCB envelope | 128 × 128 mm | Ergogen-owned |
+| PCB envelope | 108 × 108 mm | Ergogen-owned |
 | Shell clearance per side | 1.5 mm | 1.0–2.0 mm |
 | Outer wall | 2.4 mm | 2.0–3.0 mm |
 | Corner radius | 12 mm | 9–15 mm |

@@ -21,8 +21,8 @@ OUTPUT.mkdir(parents=True, exist_ok=True)
 
 # Master parameters, millimetres/degrees. Keep DESIGN.md in sync when changing
 # a user-facing design value.
-PCB_W = 128.0
-PCB_D = 128.0
+PCB_W = 108.0
+PCB_D = 108.0
 PCB_CLEARANCE = 3.0
 SHELL_W = PCB_W + 2 * PCB_CLEARANCE
 SHELL_D = PCB_D + 2 * PCB_CLEARANCE
@@ -47,10 +47,10 @@ GROMMET_T = 2.0
 GROMMET_PROUD = GROMMET_T - GROMMET_RECESS
 FIT_CLEARANCE = 0.30
 
-# Board datum from KiCad Edge.Cuts: x=-35.5..92.5, y=-74..54. The front key row
+# Board datum from KiCad Edge.Cuts: x=-24..84, y=-64..44. The front key row
 # is the front. These offsets convert KiCad XY into enclosure-local XY.
-KICAD_MIN_X = -35.5
-KICAD_MIN_Y = -74.0
+KICAD_MIN_X = -24.0
+KICAD_MIN_Y = -64.0
 
 
 def rounded_prism(width, depth, radius, height, z=0.0, x=0.0, y=0.0):
@@ -281,7 +281,9 @@ set_view(grommet, (0.04, 0.04, 0.04))
 # exports. They make the unresolved component decisions obvious.
 battery = doc.addObject("PartDesign::Feature", "BatteryEnvelope_PLACEHOLDER")
 battery.Label = "1,000 mAh battery envelope placeholder — 50 × 32 × 9 mm"
-battery.Shape = Part.makeBox(50, 32, 9, App.Vector(42, 46, FLOOR))
+battery.Shape = Part.makeBox(
+    50, 32, 9, App.Vector((SHELL_W - 50) / 2, (SHELL_D - 32) / 2, FLOOR)
+)
 set_view(battery, (0.95, 0.65, 0.15), 70)
 
 antenna = doc.addObject("PartDesign::Feature", "AntennaKeepout_PLACEHOLDER")
