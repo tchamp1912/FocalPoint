@@ -6,8 +6,10 @@ the host loop while this hardware is developed.
 
 ## Rev A definition of done
 
-- 12 clear/frosted-PC selector keys for direct per-key RGB visibility and four
-  opaque ceramic action keys on MX hot-swap sockets. Use south-facing LED
+- 12 clear/frosted-PC grid keys for direct per-key RGB visibility and one
+  opaque ceramic command key on MX hot-swap sockets, plus capacitive touch,
+  analog joystick, and encoder inputs. All 16 top-level physical controls are
+  dynamically assignable in firmware/host configuration. Use south-facing LED
   geometry: Cerakey-style Cherry-profile caps can collide with north-facing
   switch LEDs, and ceramic itself will not transmit the status light.
 - nRF52840-module-based board that pairs as BLE HID and accepts daemon status

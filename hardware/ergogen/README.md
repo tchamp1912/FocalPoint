@@ -1,16 +1,16 @@
 # FocalPoint Ergogen layout
 
-`config.yaml` is the source of truth for the Rev A switch matrix and the first
+`config.yaml` is the source of truth for the Rev A input geometry and the first
 plate/case perimeter. It uses the supplied reference’s compact rounded-square
-composition: top control rail (joystick + encoder), selector field, then action
-row. It is deliberately an **MX** layout:
+composition: joystick/touch/encoder rail, 4×3 grid, then centered command key.
+It is deliberately an **MX** layout:
 
 - selector keys `selectors_slot_{1..4}_row_{1..3}` are 12 clear/translucent
   agent-selector caps and map to protocol slots 1–12, left-to-right then
   top-to-bottom;
-- `actions_accept_action`, `actions_reject_action`,
-  `actions_new_task_action`, and `actions_push_to_talk_action` are ceramic
-  action keys and map to protocol controls 0–3.
+- `command_center_command` is a ceramic command key;
+- all 13 keys and the three non-key controls are dynamically assignable. The
+  names describe physical placement, not fixed firmware behavior.
 
 The generated PCB is only the mechanical/matrix starting point. Finish the
 nRF52840 module, USB-C/charger/power path, battery connector, addressable LEDs,

@@ -195,11 +195,10 @@ plate_local = rounded_prism(SHELL_W, SHELL_D, CORNER_R, PLATE_T)
 # MX cutouts use actual Ergogen centers. A small prototype clearance is added
 # around the nominal 14 mm plate opening.
 key_centers = []
-for y in (0.0, -19.0, -38.0):
+for y in (0.0, -20.0, -40.0):
     for x in (0.0, 20.0, 40.0, 60.0):
         key_centers.append(local_to_shell(x, y))
-for x in (0.0, 20.0, 40.0, 60.0):
-    key_centers.append(local_to_shell(x, -61.0))
+key_centers.append(local_to_shell(30.0, -60.0))
 
 cutout = 14.0 + 2 * FIT_CLEARANCE
 for cx, cy in key_centers:
@@ -208,8 +207,8 @@ for cx, cy in key_centers:
     plate_local = plate_local.cut(cutter)
 
 # Prototype control openings. Replace these values from the selected parts.
-joystick_x, joystick_y = local_to_shell(0.0, 18.0)
-encoder_x, encoder_y = local_to_shell(60.0, 18.0)
+joystick_x, joystick_y = local_to_shell(0.0, 20.0)
+encoder_x, encoder_y = local_to_shell(60.0, 20.0)
 joystick_cut = Part.makeCylinder(10.0, PLATE_T + 4,
                                  App.Vector(joystick_x, joystick_y, -2))
 encoder_cut = Part.makeCylinder(4.0, PLATE_T + 4,
@@ -272,8 +271,8 @@ set_view(grommet, (0.04, 0.04, 0.04))
 # Reference envelopes are visible in FreeCAD but excluded from manufacturing
 # exports. They make the unresolved component decisions obvious.
 battery = doc.addObject("PartDesign::Feature", "BatteryEnvelope_PLACEHOLDER")
-battery.Label = "Battery envelope placeholder — 70 × 45 × 7 mm"
-battery.Shape = Part.makeBox(70, 45, 7, App.Vector(22, 36, FLOOR))
+battery.Label = "1,000 mAh battery envelope placeholder — 50 × 32 × 9 mm"
+battery.Shape = Part.makeBox(50, 32, 9, App.Vector(42, 46, FLOOR))
 set_view(battery, (0.95, 0.65, 0.15), 70)
 
 antenna = doc.addObject("PartDesign::Feature", "AntennaKeepout_PLACEHOLDER")
