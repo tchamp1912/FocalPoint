@@ -72,6 +72,7 @@ def card(slide, x, y, w, h, heading, body, accent=BLUE):
     hp = hb.text_frame.paragraphs[0]; hp.text = heading; hp.font.name = "Avenir Next"
     hp.font.size = Pt(15); hp.font.bold = True; hp.font.color.rgb = INK
     bb = slide.shapes.add_textbox(Inches(x+.25), Inches(y+.62), Inches(w-.45), Inches(h-.78))
+    bb.text_frame.word_wrap = True
     bp = bb.text_frame.paragraphs[0]; bp.text = body; bp.font.name = "Avenir Next"
     bp.font.size = Pt(11); bp.font.color.rgb = MUTED
 
@@ -105,7 +106,7 @@ s = prs.slides.add_slide(prs.slide_layouts[6]); title(s,"Exactly two devices","N
 card(s,.8,1.7,3.7,2.0,"26 each","Kailh Polia switches\nKailh hot-swap sockets\n1N4148W matrix diodes\n12 mA SK6812MINI-E LEDs",BLUE)
 card(s,4.8,1.7,3.7,2.0,"2 each","Radio modules • batteries\nUSB-C • joystick • encoder\nEvery power and sensor IC\nJST-SH battery connectors",GREEN)
 card(s,8.8,1.7,3.7,2.0,"Pack minimums","2 × Adafruit 5068 12-cap packs\n1 × Cerakey four-cap pack\n1 silicone sheet + adhesive\n5 bare PCBs may be fab minimum",AMBER)
-bullets(s,["JLC may require attrition quantities for placement. Those are manufacturing consumables—not parts for a third device.","The machine-readable CSV is the purchasing authority for quantities."],1.0,4.35,11.1,1.6,17); footer(s,4)
+bullets(s,["57 frozen BOM lines include per-board reference designators, fabricated parts, and reusable programming tools.","JLC attrition quantities are manufacturing consumables—not parts for a third device.","The machine-readable CSV is the purchasing authority for quantities."],1.0,4.2,11.1,1.9,16); footer(s,4)
 
 # 5 — assembly
 s = prs.slides.add_slide(prs.slide_layouts[6]); title(s,"Who assembles what","Designed around no at-home reflow")

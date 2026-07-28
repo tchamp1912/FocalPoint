@@ -1,15 +1,15 @@
 # Rev A engineering BOM
 
-Status: **evidence-backed component set; not yet safe to order as a complete
-assembly**. Design basis: 108 x 108 mm PCB, 114 x 114 mm enclosure, thirteen
+Status: **complete two-device procurement BOM; product release validation is
+still pending**. Design basis: 108 x 108 mm PCB, 114 x 114 mm enclosure, thirteen
 RGB MX keys plus encoder, analog joystick, and capacitive touch = sixteen
 logical inputs.
 
 `bom.csv` is the machine-readable procurement list for **two finished devices**.
 It does not include discretionary spares. Supplier pack minimums and assembler
 attrition may leave unavoidable excess, but no third PCBA is to be populated.
-Designators remain
-provisional until the schematic is captured.
+The `Designators` column freezes the intended per-board reference map and
+`finalize_bom.py` verifies coverage and two-device quantities.
 
 ## Validation levels
 
@@ -21,7 +21,7 @@ provisional until the schematic is captured.
 
 No line is production-approved until V1-V5 pass.
 
-## Frozen candidate parts
+## Frozen parts
 
 | Function | Exact selection | Qty | Assembly | Current status |
 |---|---|---:|---|---|
@@ -57,11 +57,12 @@ Use Coilcraft `LPS3015-152MLB` 1.5 uH for 3.3 V and `XEL4030-102ME`
 2.21 kΩ ISET, 2.94 kΩ ITERM, and 46.4 kΩ TMR. USB CC1/CC2 each use
 5.1 kΩ. TPS61023 feedback is 732 kΩ/100 kΩ. Every LED gets 100 nF local
 bypass. Exact capacitor MPNs and preliminary quantities are in `bom.csv`; all
-counts must be regenerated from the completed schematic.
+counts and designator ranges are frozen in `bom.csv`; schematic capture must
+match them or deliberately revise and revalidate the BOM.
 
 ## Mechanical parts
 
-| Item | Candidate | Qty | Blocker |
+| Item | Selection | Qty | Validation required |
 |---|---|---:|---|
 | Inserts | McMaster `94180A321`, M2.5 x 0.45 x 3.4 mm | 4 | Current 1.7 mm CAD pilots are wrong; redraw and print test coupons. |
 | Screws | ISO 7380-1 A2 M2.5 x 8 | 4 + spares | Verify engagement, recess, and PCB clearance. |
@@ -103,6 +104,16 @@ inserts, screws, and circular pad. Quote USB-C as hybrid assembly.
 
 Until these close, individual development parts may be sampled, but the full
 PCBA/enclosure order is not justified.
+
+## Fabricated items and reusable tooling
+
+- JLCPCB: five 108 x 108 mm, four-layer, 1.6 mm FR-4, ENIG bare boards; populate
+  exactly two. Five is treated as an unavoidable fabrication minimum, not a
+  third device.
+- JLC3DP: two each of the top, bottom, and circular-base STEP files in black MJF
+  PA12 nylon.
+- One Tag-Connect `TC2030-ARM2010-NL` cable and one Nordic `nRF52840-DK` are
+  reusable lab tools for programming both units.
 
 ## Primary references
 
