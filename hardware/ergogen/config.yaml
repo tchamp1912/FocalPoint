@@ -21,12 +21,14 @@ units:
   ky: cy
   key_gap: 2
   edge: 5
-  # KiCad placement targets for the top control rail, measured from selector
-  # slot_1 / row_1 at [0, 0]. They define the case zone; add the actual
-  # footprints in KiCad after generating the matrix.
+  # Placement targets for the top control rail, measured from selector
+  # slot_1 / row_1 at [0, 0]. Ergogen places the EC11; the joystick center is a
+  # mechanical datum until a specific, measured stick part is selected.
   joystick_x: 0
   encoder_x: 3 * (kx + key_gap)
-  control_y: 18
+  # Ergogen's KiCad coordinate transform flips Y. A negative source-space Y
+  # places the controls above row_1 in the generated board.
+  control_y: -18
 
 points:
   zones:
@@ -54,7 +56,8 @@ points:
       # accept/reject/new-task/push-to-talk, respectively.
       anchor:
         # Tighten the row gap to read as a single compact control cluster.
-        shift: [0, -(3 * (ky + key_gap) + 4)]
+        # Positive source-space Y becomes the bottom action row in KiCad.
+        shift: [0, 3 * (ky + key_gap) + 4]
       key:
         padding: ky + key_gap
         spread: kx + key_gap
@@ -97,8 +100,11 @@ outlines:
     - what: rectangle
       where:
         ref: selectors_slot_2_row_2
-        shift: [10.5, -12]
-      size: [108, 118]
+        # Centers the complete action-key through control-rail composition,
+        # rather than centering only the 4x3 selector grid.
+        shift: [8.5, 2]
+      # Includes the EC11 rail plus clearance below the action-row sockets.
+      size: [128, 128]
       fillet: 10
 
   # The printed case needs room for a top plate lip and gasket/foam while
@@ -134,3 +140,14 @@ pcbs:
         params:
           from: "{{colrow}}"
           to: "{{row_net}}"
+      encoder:
+        what: rotary
+        where:
+          ref: selectors_slot_1_row_1
+          shift: [encoder_x, control_y]
+        params:
+          from: ENC_SW
+          to: GND
+          A: ENC_A
+          B: GND
+          C: ENC_B

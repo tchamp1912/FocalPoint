@@ -1,6 +1,6 @@
 # FocalPoint hardware
 
-The first assembled FocalPoint is a wireless MX macropad, not a wired RP2040
+The first assembled FocalPoint is a square wireless MX macropad, not a wired RP2040
 derivative. The Keychron V1 Max firmware remains the Phase 0 test platform for
 the host loop while this hardware is developed.
 
