@@ -5,7 +5,10 @@ assembly**. Design basis: 108 x 108 mm PCB, 114 x 114 mm enclosure, thirteen
 RGB MX keys plus encoder, analog joystick, and capacitive touch = sixteen
 logical inputs.
 
-`bom.csv` is the machine-readable procurement list. Designators remain
+`bom.csv` is the machine-readable procurement list for **two finished devices**.
+It does not include discretionary spares. Supplier pack minimums and assembler
+attrition may leave unavoidable excess, but no third PCBA is to be populated.
+Designators remain
 provisional until the schematic is captured.
 
 ## Validation levels
@@ -41,8 +44,8 @@ No line is production-approved until V1-V5 pass.
 | Knob | Mentor `505.6131` | 1 | User | V1-V2; 12 mm diameter, 6 mm shaft. |
 | Hot-swap socket | Kailh `CPG151101S11` | 13 | JLC bottom SMT | V1; replace legacy footprint with official land pattern; JLC acceptance pending. `C2803348`. |
 | Matrix diode | Diodes Inc. `1N4148W-13-F` | 13 | JLC SMT | V1-V2; SOD-123. `C112342`. |
-| Tactile MX switch | Kailh Polia `CPG151101D280` | 13 + 2 spares | User | V1; physical sample/supply gate remains. |
-| Frosted 1u cap | **TBD** | 12 + spares | User | Open blocker: stable SKU, RGB transmission, profile, and 20 mm pitch sample. |
+| Tactile MX switch | Kailh Polia `CPG151101D280` | 13 | User | V1; physical sample/supply gate remains. |
+| Frosted 1u cap | Adafruit `5068`, clear DSA 12-pack | 12 | User | V1-V2; 18.6 mm square leaves 1.4 mm between caps at 20 mm pitch. Buy two packs. |
 | Ceramic 1u cap | Cerakey `F SET-RX1U` four-pack | 1 used | User | V1; physically gauge before release. |
 | Reset/boot | Omron `B3U-1000P` | 2 | JLC SMT | V1; access depends on final case. |
 | SWD | Tag-Connect `TC2030-IDC-NL` footprint | 1 | None | V1; external `TC2030-ARM2010-NL` cable and nRF52840-DK/CMSIS-DAP probe required. |
@@ -62,7 +65,7 @@ counts must be regenerated from the completed schematic.
 |---|---|---:|---|
 | Inserts | McMaster `94180A321`, M2.5 x 0.45 x 3.4 mm | 4 | Current 1.7 mm CAD pilots are wrong; redraw and print test coupons. |
 | Screws | ISO 7380-1 A2 M2.5 x 8 | 4 + spares | Verify engagement, recess, and PCB clearance. |
-| Circular pad | 72 mm x 2 mm 50-70A silicone + 3M 467MP | 1 | Exact vendor/SKU still open. |
+| Circular pad | 72 mm disc cut from McMaster `8525T575` 60A silicone, bonded with 3M `467MP` | 1 | Selected stock is 1/16 in (1.59 mm), giving about 0.39 mm projection from the present 1.2 mm recess. Cut two discs. |
 
 The 20 mm control lattice is regular. Typical 19 mm 1u caps leave about 1 mm
 between neighbors. Exact cap geometry—not center placement—must be sampled.
