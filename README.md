@@ -9,6 +9,31 @@ push-to-talk, reasoning level, canned workflows.
 Works with **Claude Code**, **Codex CLI**, or anything that can run a shell
 command on lifecycle events.
 
+<p align="center">
+  <img src="docs/assets/focalpoint-live-sessions.png" width="535" alt="FocalPoint showing live Claude Code, Codex, and Cursor sessions with status, model, context, token, tool, turn, subagent, cost, and account-usage telemetry">
+</p>
+
+<p align="center"><em>One glance for every agent: live state, session telemetry, context pressure, and provider quota.</em></p>
+
+## What it does
+
+- **One live dashboard for every agent.** Track Claude Code, Codex CLI, and
+  Cursor sessions together, with stable numbered slots for keyboard and
+  macropad navigation.
+- **Rich session telemetry.** See model, input/output tokens, tool calls,
+  turns, subagents, cost, and a context-window gauge whenever the provider
+  exposes them.
+- **Attention you can feel.** Waiting and error states light the hardware,
+  badge the menu-bar icon, and surface in the optional desktop overlay.
+- **Provider usage at a glance.** Monitor Claude, Codex, and Cursor quota
+  periods and their reset times without leaving the agent loop.
+- **Fast session control.** Focus, rename, reorder, or end sessions from the
+  native macOS UI; bind the same workflow to global hotkeys or physical
+  controls.
+- **A UI that fits your desk.** Use the compact menu, a movable translucent
+  desktop widget, per-state colors and animation patterns, configurable stat
+  badges, budget alerts, quick actions, and local session history.
+
 ## Repo layout
 
 | Directory | Contents | License |
