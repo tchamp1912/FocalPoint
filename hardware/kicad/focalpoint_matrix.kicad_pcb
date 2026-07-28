@@ -98,7 +98,7 @@
 (net 14 "C3")
 (net 15 "slot_4_row_2")
 (net 16 "slot_4_row_3")
-(net 17 "center_command")
+(net 17 "top_command")
 (net 18 "R0")
 (net 19 "R1")
 (net 20 "R2")
@@ -627,7 +627,7 @@
 
 
       (module MX (layer F.Cu) (tedit 5DD4F656)
-      (at 30 -60 0)
+      (at 40 20 0)
 
 
       (fp_text reference "S13" (at 0 0) (layer F.SilkS) hide (effects (font (size 1.27 1.27) (thickness 0.15))))
@@ -663,8 +663,8 @@
         (pad "" np_thru_hole circle (at -3.81 -2.54) (size 3 3) (drill 3) (layers *.Cu *.Mask))
 
 
-        (pad 1 smd rect (at -7.085 -2.54 0) (size 2.55 2.5) (layers B.Cu B.Paste B.Mask) (net 17 "center_command"))
-        (pad 2 smd rect (at 5.842 -5.08 0) (size 2.55 2.5) (layers B.Cu B.Paste B.Mask) (net 2 "C0"))
+        (pad 1 smd rect (at -7.085 -2.54 0) (size 2.55 2.5) (layers B.Cu B.Paste B.Mask) (net 17 "top_command"))
+        (pad 2 smd rect (at 5.842 -5.08 0) (size 2.55 2.5) (layers B.Cu B.Paste B.Mask) (net 10 "C2"))
         )
 
 
@@ -1140,7 +1140,7 @@
     (module ComboDiode (layer F.Cu) (tedit 5B24D78E)
 
 
-        (at 30 -55 0)
+        (at 40 25 0)
 
 
         (fp_text reference "D13" (at 0 0) (layer F.SilkS) hide (effects (font (size 1.27 1.27) (thickness 0.15))))
@@ -1164,13 +1164,13 @@
 
 
         (pad 1 smd rect (at -1.65 0 0) (size 0.9 1.2) (layers F.Cu F.Paste F.Mask) (net 21 "R3"))
-        (pad 2 smd rect (at 1.65 0 0) (size 0.9 1.2) (layers B.Cu B.Paste B.Mask) (net 17 "center_command"))
+        (pad 2 smd rect (at 1.65 0 0) (size 0.9 1.2) (layers B.Cu B.Paste B.Mask) (net 17 "top_command"))
         (pad 1 smd rect (at -1.65 0 0) (size 0.9 1.2) (layers B.Cu B.Paste B.Mask) (net 21 "R3"))
-        (pad 2 smd rect (at 1.65 0 0) (size 0.9 1.2) (layers F.Cu F.Paste F.Mask) (net 17 "center_command"))
+        (pad 2 smd rect (at 1.65 0 0) (size 0.9 1.2) (layers F.Cu F.Paste F.Mask) (net 17 "top_command"))
 
 
         (pad 1 thru_hole rect (at -3.81 0 0) (size 1.778 1.778) (drill 0.9906) (layers *.Cu *.Mask) (net 21 "R3"))
-        (pad 2 thru_hole circle (at 3.81 0 0) (size 1.905 1.905) (drill 0.9906) (layers *.Cu *.Mask) (net 17 "center_command"))
+        (pad 2 thru_hole circle (at 3.81 0 0) (size 1.905 1.905) (drill 0.9906) (layers *.Cu *.Mask) (net 17 "top_command"))
     )
 
 
@@ -1225,13 +1225,13 @@
             (pad "" thru_hole rect (at -0.12 5.56 0)  (size 3.2 2) (drill oval 2.8 1.5) (layers *.Cu *.Mask))
         )
 
-  (gr_line (start -25.5 42) (end 82.5 42) (layer Edge.Cuts) (stroke (width 0.15) (type default)))
-(gr_line (start 92.5 32) (end 92.5 -76) (layer Edge.Cuts) (stroke (width 0.15) (type default)))
-(gr_line (start 82.5 -86) (end -25.5 -86) (layer Edge.Cuts) (stroke (width 0.15) (type default)))
-(gr_line (start -35.5 -76) (end -35.5 32) (layer Edge.Cuts) (stroke (width 0.15) (type default)))
-(gr_arc (start 82.5 42) (mid 89.5710678 39.0710678) (end 92.5 32) (layer Edge.Cuts) (stroke (width 0.15) (type default)))
-(gr_arc (start 92.5 -76) (mid 89.5710678 -83.0710678) (end 82.5 -86) (layer Edge.Cuts) (stroke (width 0.15) (type default)))
-(gr_arc (start -25.5 -86) (mid -32.5710678 -83.0710678) (end -35.5 -76) (layer Edge.Cuts) (stroke (width 0.15) (type default)))
-(gr_arc (start -35.5 32) (mid -32.5710678 39.0710678) (end -25.5 42) (layer Edge.Cuts) (stroke (width 0.15) (type default)))
+  (gr_line (start -25.5 53) (end 82.5 53) (layer Edge.Cuts) (stroke (width 0.15) (type default)))
+(gr_line (start 92.5 43) (end 92.5 -65) (layer Edge.Cuts) (stroke (width 0.15) (type default)))
+(gr_line (start 82.5 -75) (end -25.5 -75) (layer Edge.Cuts) (stroke (width 0.15) (type default)))
+(gr_line (start -35.5 -65) (end -35.5 43) (layer Edge.Cuts) (stroke (width 0.15) (type default)))
+(gr_arc (start 82.5 53) (mid 89.5710678 50.0710678) (end 92.5 43) (layer Edge.Cuts) (stroke (width 0.15) (type default)))
+(gr_arc (start 92.5 -65) (mid 89.5710678 -72.0710678) (end 82.5 -75) (layer Edge.Cuts) (stroke (width 0.15) (type default)))
+(gr_arc (start -25.5 -75) (mid -32.5710678 -72.0710678) (end -35.5 -65) (layer Edge.Cuts) (stroke (width 0.15) (type default)))
+(gr_arc (start -35.5 43) (mid -32.5710678 50.0710678) (end -25.5 53) (layer Edge.Cuts) (stroke (width 0.15) (type default)))
 
 )

@@ -2,13 +2,14 @@
 
 `config.yaml` is the source of truth for the Rev A input geometry and the first
 plate/case perimeter. It uses the supplied reference’s compact rounded-square
-composition: joystick/touch/encoder rail, 4×3 grid, then centered command key.
-It is deliberately an **MX** layout:
+composition: a complete visual 4×4 lattice. The top row is joystick, touch,
+command key, and encoder; the lower three rows are RGB keys. It is deliberately
+an **MX** layout:
 
 - selector keys `selectors_slot_{1..4}_row_{1..3}` are 12 clear/translucent
   agent-selector caps and map to protocol slots 1–12, left-to-right then
   top-to-bottom;
-- `command_center_command` is a ceramic command key;
+- `command_top_command` is a ceramic command key in the top row;
 - all 13 keys and the three non-key controls are dynamically assignable. The
   names describe physical placement, not fixed firmware behavior.
 

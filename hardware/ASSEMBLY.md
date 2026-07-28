@@ -2,12 +2,13 @@
 
 ## Recommended split
 
-Outsource the PCB fabrication and all SMT assembly. This includes the nRF52840
+Outsource the PCB fabrication and **all SMT assembly**. This includes the nRF52840
 module, QFN charger, USB ESD device, regulator, RGB power circuit, SK6812 LEDs,
 matrix diodes, passives, and hot-swap sockets. Request automated optical
 inspection and X-ray inspection for exposed-pad/QFN parts where offered.
 
-The owner should only need to:
+The owner is comfortable with through-hole soldering and wiring, but should not
+need hot-plate, hot-air, or reflow work. The owner should only need to:
 
 1. inspect and electrically test the assembled PCBA;
 2. connect the protected battery after verifying connector polarity;
@@ -15,8 +16,9 @@ The owner should only need to:
 4. flash firmware through the Tag-Connect/debug pads; and
 5. run the functional and charging test plan.
 
-The through-hole encoder can be factory hand-soldered. Leaving it unpopulated
-for local installation is also reasonable after the first mechanical sample.
+Leave the through-hole encoder and any through-hole joystick/header unpopulated
+for local installation. JLCPCB must populate every SMD part, including hot-swap
+sockets; do not substitute an SMD joystick that requires local reflow.
 
 ## Supplier path
 

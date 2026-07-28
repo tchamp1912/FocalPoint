@@ -12,9 +12,9 @@ dimensions, internal construction, proprietary surfaces, or exact part forms.
   lower at the user/action edge.
 - A translucent or frosted upper/plate volume over a visually denser, darker
   structural base.
-- Sixteen top-level controls: 12 illuminated grid keys, one centered ceramic
-  command key, capacitive touch, analog joystick, and encoder. Their functions
-  remain dynamically assignable rather than being fixed by their positions.
+- Sixteen controls on a uniform visual 4×4 lattice: joystick, capacitive touch,
+  ceramic RGB command key, and encoder across the top row, followed by 12 RGB
+  grid keys. Their functions remain dynamically assignable rather than fixed.
 - A clean underside dominated by a circular base/puck and recessed circular
   elastomer grommet. The rectangular shell bisects the puck on a shallow angle.
 - Generous corner radii and restrained seams. USB-C, reset, and service openings

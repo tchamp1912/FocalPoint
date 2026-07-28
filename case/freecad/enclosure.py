@@ -47,10 +47,10 @@ GROMMET_T = 2.0
 GROMMET_PROUD = GROMMET_T - GROMMET_RECESS
 FIT_CLEARANCE = 0.30
 
-# Board datum from KiCad Edge.Cuts: x=-35.5..92.5, y=-85..43. The action row
+# Board datum from KiCad Edge.Cuts: x=-35.5..92.5, y=-74..54. The front key row
 # is the front. These offsets convert KiCad XY into enclosure-local XY.
 KICAD_MIN_X = -35.5
-KICAD_MIN_Y = -85.0
+KICAD_MIN_Y = -74.0
 
 
 def rounded_prism(width, depth, radius, height, z=0.0, x=0.0, y=0.0):
@@ -198,7 +198,7 @@ key_centers = []
 for y in (0.0, -20.0, -40.0):
     for x in (0.0, 20.0, 40.0, 60.0):
         key_centers.append(local_to_shell(x, y))
-key_centers.append(local_to_shell(30.0, -60.0))
+key_centers.append(local_to_shell(40.0, 20.0))
 
 cutout = 14.0 + 2 * FIT_CLEARANCE
 for cx, cy in key_centers:
@@ -208,12 +208,20 @@ for cx, cy in key_centers:
 
 # Prototype control openings. Replace these values from the selected parts.
 joystick_x, joystick_y = local_to_shell(0.0, 20.0)
+touch_x, touch_y = local_to_shell(20.0, 20.0)
 encoder_x, encoder_y = local_to_shell(60.0, 20.0)
 joystick_cut = Part.makeCylinder(10.0, PLATE_T + 4,
                                  App.Vector(joystick_x, joystick_y, -2))
 encoder_cut = Part.makeCylinder(4.0, PLATE_T + 4,
                                 App.Vector(encoder_x, encoder_y, -2))
 plate_local = plate_local.cut(joystick_cut.fuse(encoder_cut))
+
+# A shallow circular witness mark identifies the capacitive touch cell without
+# cutting through the plate or placing metal above the PCB electrode.
+touch_mark = Part.makeCylinder(
+    6.0, 0.30, App.Vector(touch_x, touch_y, PLATE_T - 0.20)
+)
+plate_local = plate_local.cut(touch_mark)
 
 # M3-class lid clearance holes align with the four lower bosses.
 for bx, by in boss_xy:

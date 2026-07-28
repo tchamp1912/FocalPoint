@@ -6,9 +6,9 @@ the host loop while this hardware is developed.
 
 ## Rev A definition of done
 
-- 12 clear/frosted-PC grid keys for direct per-key RGB visibility and one
-  opaque ceramic command key on MX hot-swap sockets, plus capacitive touch,
-  analog joystick, and encoder inputs. All 16 top-level physical controls are
+- A visual 4×4 input lattice: joystick, capacitive touch, ceramic command key,
+  and encoder across the top, followed by 12 clear/frosted-PC RGB grid keys.
+  The 13 mechanical keys use MX hot-swap sockets. All 16 physical controls are
   dynamically assignable in firmware/host configuration. Use south-facing LED
   geometry: Cerakey-style Cherry-profile caps can collide with north-facing
   switch LEDs, and ceramic itself will not transmit the status light.

@@ -1,9 +1,10 @@
 # FocalPoint Rev A mechanical matrix foundation.
 #
 # This produces the switch/diode placement, PCB Edge.Cuts, and DXF/SVG outlines
-# for a 16-input wireless macropad: 12 grid keys, one centered command key,
-# touch input, analog joystick, and encoder. Its compact, rounded-square visual
-# hierarchy is inspired by the supplied reference. The resulting .kicad_pcb is
+# for a 16-input wireless macropad arranged on a visual 4x4 lattice: analog
+# joystick, touch, command key, and encoder across the control row, then 12
+# grid keys. Its compact, rounded-square hierarchy is inspired by the supplied
+# reference. The resulting .kicad_pcb is
 # an import/start point; it still needs the nRF52840 module, charger, battery,
 # RGB, encoder, joystick, and routing.
 #
@@ -25,7 +26,7 @@ units:
   # slot_1 / row_1 at [0, 0]. Ergogen places the EC11; the joystick center is a
   # mechanical datum until a specific, measured stick part is selected.
   joystick_x: 0
-  touch_x: 30
+  touch_x: 20
   encoder_x: 3 * (kx + key_gap)
   # Ergogen's KiCad coordinate transform flips Y. A negative source-space Y
   # places the controls above row_1 in the generated board.
@@ -53,16 +54,16 @@ points:
         row_3: {row_net: R2}
 
     command:
-      # One centered ceramic command key completes the 13-key arrangement.
+      # The ceramic command key occupies the third cell of the top control row.
       # Its behavior is assigned dynamically like every other physical input.
       anchor:
-        # Positive source-space Y becomes the bottom row in KiCad. X=30 centers
-        # this key under the four-column grid; the 20 mm pitch stays uniform.
-        shift: [30, 3 * key_pitch]
+        # Negative source-space Y becomes the top row in KiCad. Together with
+        # joystick/touch/encoder centers at x=0/20/60, x=40 completes the 4x4.
+        shift: [40, control_y]
       key:
         tags: [switch, command]
       columns:
-        center: {key: {column_net: C0}}
+        top: {key: {column_net: C2}}
       rows:
         command: {row_net: R3}
 
@@ -98,7 +99,7 @@ outlines:
         ref: selectors_slot_2_row_2
         # Centers the complete action-key through control-rail composition,
         # rather than centering only the 4x3 selector grid.
-        shift: [8.5, 2]
+        shift: [8.5, -9]
       # Includes the EC11 rail plus clearance below the action-row sockets.
       size: [128, 128]
       fillet: 10

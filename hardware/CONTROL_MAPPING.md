@@ -6,7 +6,7 @@ are stable, but their behavior is not hard-coded:
 | Physical ID | Control |
 |---|---|
 | `key_01`…`key_12` | Uniform 4×3 RGB MX grid |
-| `key_13` | Centered ceramic RGB command key |
+| `key_13` | Top-row ceramic RGB command key |
 | `touch_01` | Capacitive touch region |
 | `encoder_01` | Rotary encoder with push |
 | `joystick_01` | Analog X/Y joystick with push |
@@ -14,6 +14,16 @@ are stable, but their behavior is not hard-coded:
 The count describes physical controls, not event count. For example,
 `encoder_01` emits clockwise, counter-clockwise, and press gestures, while
 `joystick_01` emits calibrated axes, directions, and press gestures.
+
+All controls occupy a uniform 4×4 visual lattice. From the user-facing top-left
+cell, the rows are:
+
+```text
+joystick   touch     key_13   encoder
+key_01     key_02    key_03   key_04
+key_05     key_06    key_07   key_08
+key_09     key_10    key_11   key_12
+```
 
 ## Mapping model
 
