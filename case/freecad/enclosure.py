@@ -9,11 +9,19 @@ Anything marked PROVISIONAL is placed from layout assumptions, not from a
 routed KiCad board; re-derive it once footprint placement exists.
 
 Frames of reference
-- "local" = the bottom shell before it is rotated SHELL_TO_PUCK_DEG across the
-  puck. The plate datum (plate underside) is z = FRONT_H at y = 0 and rises
-  toward the rear at INTERNAL_SLOPE_DEG.
-- "world" = after that rotation. The plate underside plane is
-  z = FRONT_H + y*tan(SLOPE_DEG); the desk is z ~ 0 (grommet below it).
+- "local" = the bottom shell before it is rotated across the puck: a plain,
+  unwedged rectangular prism, uniform height FRONT_H everywhere. No slope is
+  modeled into the shell's own geometry (redesign note, WP4-1: the keyboard
+  portion itself must not be angled — only the cylinder it bisects is).
+- "world" = after rotating that flat prism by the full SLOPE_DEG about the
+  front-bottom-wall datum (0, 0, FRONT_H). The entire forward tilt comes from
+  this one rigid rotation cutting the flat shell across the level, untilted
+  circular puck at an angle, matching how the top plate is already built
+  (`plate_transform`: a flat plate, rotated once by the full slope). The
+  plate underside plane is exactly z = FRONT_H + y*tan(SLOPE_DEG) in both
+  frames — the rotation reproduces this plane exactly, not approximately,
+  since both shells now share the identical single-rotation construction;
+  the desk is z ~ 0 (grommet below it).
 """
 
 from pathlib import Path
@@ -22,20 +30,21 @@ import re
 
 import FreeCAD as App
 import Mesh
+import MeshPart
 import Part
 
 
 REPO = Path(__file__).resolve().parents[2]
 OUTPUT = REPO / "case" / "output"
 OUTPUT.mkdir(parents=True, exist_ok=True)
-KICAD_BOARD = REPO / "hardware" / "kicad" / "focalpoint_matrix.kicad_pcb"
+KICAD_BOARD = REPO / "hardware" / "kicad" / "focalpoint_production.kicad_pcb"
 DESIGN_MD = REPO / "case" / "DESIGN.md"
 
 # Master parameters, millimetres/degrees. DESIGN.md's parameter table is
 # emitted by this script between generated-content markers — rerun the script
 # after changing a value instead of editing both files by hand.
-PCB_W = 108.0
-PCB_D = 108.0
+PCB_W = 116.0
+PCB_D = 116.0
 PCB_T = 1.6
 PCB_CLEARANCE = 3.0
 SHELL_W = PCB_W + 2 * PCB_CLEARANCE
@@ -45,11 +54,14 @@ WALL = 2.4
 FLOOR = 2.4
 FRONT_H = 11.0
 SLOPE_DEG = 4.0
-# The shell itself crosses the circular desk puck at a slight angle. The
-# remaining angle is built into the hollow shell so the key plane totals 4°.
-SHELL_TO_PUCK_DEG = 2.0
-INTERNAL_SLOPE_DEG = SLOPE_DEG - SHELL_TO_PUCK_DEG
-LOCAL_REAR_H = FRONT_H + SHELL_D * math.tan(math.radians(INTERNAL_SLOPE_DEG))
+# WP4-1 redesign: the rectangular shell carries no internal wedge at all —
+# it's built flat (uniform height FRONT_H) and rotated once, rigidly, by the
+# *full* SLOPE_DEG. The entire forward tilt is expressed as the flat shell
+# bisecting the level, untilted circular puck at an angle, not as a shape
+# baked into the shell itself. (Previously this was split into a 2°
+# internal wedge plus a 2° rigid rotation — replaced because it modeled the
+# keyboard portion itself as angled, which is exactly what this redesign
+# removes.)
 REAR_H = FRONT_H + SHELL_D * math.tan(math.radians(SLOPE_DEG))
 # Plate 1.5 mm: Cherry-style MX plate clips are specified for a 1.5 mm plate;
 # the earlier 1.6 mm exceeded the clip nominal (WP3-6 decision; coupon-verify
@@ -69,7 +81,15 @@ SOCKET_BELOW_PCB = 1.85
 MX_CUTOUT = 14.05
 PUCK_RADIUS = 43.0
 PUCK_VISIBLE_H = 6.0
-PUCK_EMBED_H = 5.0
+# WP4-1: with the shell's full 4 deg tilt now carried entirely as a rigid
+# rotation (no internal wedge — see shell_rotate), the shell's own floor
+# rises enough toward the rear that a shallow puck no longer reaches it
+# across the puck's whole footprint (the old 2 deg-only floor rotation, half
+# the current amount, never had this problem). 5.0 mm left a ~2 mm gap at
+# the puck's rear edge; 9.0 mm clears the worst point (rear edge of the
+# puck's own circular footprint) with margin — asserted below, not just
+# assumed.
+PUCK_EMBED_H = 9.0
 GROMMET_EDGE_INSET = 7.0
 # Grommet stock is 1/16 in (1.59 mm) silicone (BOM: McMaster 8525T575 disc).
 # A 0.8 mm recess leaves ~0.79 mm proud — inside DESIGN.md's 0.6-1.0 mm
@@ -152,21 +172,53 @@ TOUCH_MARK_DEPTH = 0.2
 TOUCH_RECESS_D = 13.0      # underside foam-locating recess
 TOUCH_RECESS_DEPTH = 0.4
 
+# FocalPoint ray mark engraved into the clear front apron of the top plate.
+# The proportions match app/Assets/focalpoint-mark.svg. A shallow recess keeps
+# the mark legible without becoming a through-feature in the 1.5 mm plate.
+LOGO_W = 23.0
+LOGO_H = LOGO_W * 40.0 / 64.0
+LOGO_CENTER_X = SHELL_W / 2
+LOGO_CENTER_Y = 13.0
+LOGO_STROKE = 0.65
+LOGO_DEPTH = 0.25
+
+# Alps RKJXV122400R prototype joystick (official Drawing No. 1, update 2510).
+# It is PCB-mounted: the 18.2 x 21.7 mm lower body sits below the top shell,
+# while the 12.45 x 10.8 mm top frame and tilting Ø4 mm shaft pass through it.
+# A Ø20 opening clears that frame and the shaft through its full 23° motion.
+# The body is 11.2 mm above PCB top; terminals/lugs project 2.5 mm below PCB.
+JOYSTICK_BODY_W = 18.2
+JOYSTICK_BODY_D = 21.7
+JOYSTICK_ABOVE_PCB = 11.2
+JOYSTICK_BELOW_PCB = 2.5
+JOYSTICK_TOP_FRAME_W = 12.45
+JOYSTICK_TOP_FRAME_D = 10.8
+JOYSTICK_OPENING_D = 20.0
+
 # Board datum from KiCad Edge.Cuts: x = -24..84, y = -65..+43 (the ergogen
 # outline is shifted [10, -9], so it is NOT symmetric about the key field —
 # the old hand-copied y = -64..44 was off by 1 mm, WP3-1). The values are
 # asserted against the generated board below instead of being trusted.
-KICAD_MIN_X = -24.0
-KICAD_MIN_Y = -65.0
+KICAD_MIN_X = 100.0
+KICAD_MIN_Y = 100.0
 
 
 def kicad_edge_cuts_extents(path):
     """Parse the Edge.Cuts bounding box out of the generated KiCad board."""
     xs, ys = [], []
-    for line in path.read_text().splitlines():
+    text = path.read_text()
+    # KiCad 10 writes the rectangular production outline across two lines,
+    # with the layer token following the start/end coordinates.
+    for match in re.finditer(
+            r"\(gr_rect\s+\(start\s+(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\)"
+            r"\s+\(end\s+(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\).*?"
+            r"\(layer\s+\"Edge\.Cuts\"\)", text, re.DOTALL):
+        xs.extend((float(match.group(1)), float(match.group(3))))
+        ys.extend((float(match.group(2)), float(match.group(4))))
+    for line in text.splitlines():
         if "Edge.Cuts" not in line:
             continue
-        if not any(tok in line for tok in ("gr_line", "gr_arc", "gr_circle")):
+        if not any(tok in line for tok in ("gr_line", "gr_arc", "gr_circle", "gr_rect")):
             continue
         if "gr_circle" in line:
             # Interior relief cutouts: never the outline extremes, and their
@@ -211,28 +263,20 @@ def rounded_prism(width, depth, radius, height, z=0.0, x=0.0, y=0.0):
     return shape.removeSplitter()
 
 
-def wedge(width, depth, front_height, rear_height, x=0.0, y=0.0, z=0.0):
-    """Linear front-to-rear wedge extruded along X."""
-    profile = Part.makePolygon([
-        App.Vector(x, y, z),
-        App.Vector(x, y + depth, z),
-        App.Vector(x, y + depth, z + rear_height),
-        App.Vector(x, y, z + front_height),
-        App.Vector(x, y, z),
-    ])
-    return Part.Face(profile).extrude(App.Vector(width, 0, 0))
-
-
-def local_to_shell(kicad_x, kicad_y):
+def board_to_shell(kicad_x, kicad_y):
+    """Map production KiCad coordinates into the enclosure's front-left datum."""
     return (
         kicad_x - KICAD_MIN_X + PCB_CLEARANCE,
-        kicad_y - KICAD_MIN_Y + PCB_CLEARANCE,
+        KICAD_MIN_Y + PCB_D - kicad_y + PCB_CLEARANCE,
     )
 
 
-def plate_underside_local(y):
-    """Local-frame z of the plate underside above shell-local y."""
-    return FRONT_H + y * math.tan(math.radians(INTERNAL_SLOPE_DEG))
+def local_to_shell(layout_x, layout_y):
+    """Map the established 4x4 layout coordinates through the production PCB."""
+    return board_to_shell(
+        KICAD_MIN_X + 28.0 + layout_x,
+        KICAD_MIN_Y + 47.0 - layout_y,
+    )
 
 
 def plate_underside_world(y):
@@ -240,10 +284,23 @@ def plate_underside_world(y):
     return FRONT_H + y * math.tan(math.radians(SLOPE_DEG))
 
 
+def shell_floor_world_z(y):
+    """World-frame z of the bottom shell's own floor-bottom (its exterior
+    underside, local z=0) above shell-local y, after shell_rotate's full-angle
+    rotation about (0, 0, FRONT_H). Derived the same way as
+    plate_underside_world, but from local z=0 instead of local z=FRONT_H:
+    z = FRONT_H*(1 - cos(SLOPE_DEG)) + y*sin(SLOPE_DEG). Used to guarantee the
+    puck stays tall enough to reach this floor everywhere inside its own
+    footprint (WP4-1) — see the puck-height check below."""
+    rad = math.radians(SLOPE_DEG)
+    return FRONT_H * (1 - math.cos(rad)) + y * math.sin(rad)
+
+
 def shell_rotate(shape):
-    """Apply the shell-to-puck tilt used for the bottom shell."""
-    shape.rotate(App.Vector(0, 0, FRONT_H), App.Vector(1, 0, 0),
-                 SHELL_TO_PUCK_DEG)
+    """Rotate the flat, unwedged bottom shell across the puck by the full
+    forward slope (WP4-1) — the shell's entire tilt comes from this single
+    rigid rotation, not from any internal wedge geometry."""
+    shape.rotate(App.Vector(0, 0, FRONT_H), App.Vector(1, 0, 0), SLOPE_DEG)
     return shape
 
 
@@ -278,6 +335,21 @@ _lowest_socket = (plate_underside_world(pocket_y0)
 _cavity_depth = _lowest_socket - BATTERY_POCKET_BOTTOM_Z
 _battery_air = _lowest_socket - (BATTERY_POCKET_BOTTOM_Z + BATTERY_T)
 _pocket_web = BATTERY_POCKET_BOTTOM_Z - (-PUCK_VISIBLE_H + GROMMET_RECESS)
+# The puck (flat top at world z = PUCK_EMBED_H, never rotated) must stay in
+# contact with the tilted shell floor across the puck's ENTIRE circular
+# footprint, or the two read as structurally disconnected where the floor
+# has risen above the puck (WP4-1 regression: a shallow puck can satisfy
+# every other check here and still leave a visible gap at the puck's rear
+# edge). The floor's rotated plane only depends on y, so its worst point
+# within the puck's footprint is the single rearmost y on the puck's circle.
+_puck_top_z = PUCK_EMBED_H
+_floor_z_at_puck_rear = shell_floor_world_z(SHELL_D / 2 + PUCK_RADIUS)
+if _floor_z_at_puck_rear >= _puck_top_z:
+    raise RuntimeError(
+        f"puck too shallow: shell floor reaches {_floor_z_at_puck_rear:.2f} mm "
+        f"at the puck's rear edge, >= puck top {_puck_top_z:.2f} mm "
+        f"(PUCK_EMBED_H={PUCK_EMBED_H}); increase PUCK_EMBED_H")
+
 if _cavity_depth < BATTERY_MIN_CAVITY:
     raise RuntimeError(
         f"battery cavity {_cavity_depth:.2f} mm < {BATTERY_MIN_CAVITY} mm")
@@ -310,7 +382,10 @@ parameters = [
     ("Forward slope", SLOPE_DEG, "deg"),
     ("Plate thickness", PLATE_T, "mm"),
     ("MX plate cutout", MX_CUTOUT, "mm"),
-    ("Shell-to-puck angle", SHELL_TO_PUCK_DEG, "deg"),
+    ("Joystick body", f"{JOYSTICK_BODY_W:.1f} x {JOYSTICK_BODY_D:.1f}", "mm"),
+    ("Joystick height above PCB", JOYSTICK_ABOVE_PCB, "mm"),
+    ("Joystick projection below PCB", JOYSTICK_BELOW_PCB, "mm"),
+    ("Joystick top opening", JOYSTICK_OPENING_D, "mm"),
     ("Circular puck radius", PUCK_RADIUS, "mm"),
     ("Grommet edge inset", GROMMET_EDGE_INSET, "mm"),
     ("Grommet stock thickness", GROMMET_T, "mm"),
@@ -326,6 +401,8 @@ parameters = [
     ("Battery cavity depth", _cavity_depth, "mm"),
     ("USB opening width", USB_SHELL_W + 2 * USB_CLEAR, "mm"),
     ("Reset pinhole", RESET_PINHOLE_D, "mm"),
+    ("FocalPoint mark", f"{LOGO_W:.1f} x {LOGO_H:.1f}", "mm"),
+    ("FocalPoint engraving depth", LOGO_DEPTH, "mm"),
 ]
 sheet.set("A1", "Parameter")
 sheet.set("B1", "Value")
@@ -341,31 +418,31 @@ sheet.setColumnWidth("A", 190)
 sheet.setColumnWidth("B", 90)
 sheet.setColumnWidth("C", 55)
 
-# Lower shell: rounded external wedge, hollowed from above, with a retained
-# floor. The inner cut follows the same slope so wall height stays consistent.
-outer_round = rounded_prism(SHELL_W, SHELL_D, CORNER_R, LOCAL_REAR_H)
-outer = outer_round.common(wedge(SHELL_W, SHELL_D, FRONT_H, LOCAL_REAR_H))
+# Lower shell (WP4-1): a plain, unwedged rounded prism, uniform height
+# FRONT_H, hollowed from above with a retained floor. No slope is modeled
+# here at all — the shell's forward tilt comes entirely from shell_rotate()
+# below, applied to this flat shape as a single rigid rotation.
+outer = rounded_prism(SHELL_W, SHELL_D, CORNER_R, FRONT_H)
 inner_w = SHELL_W - 2 * WALL
 inner_d = SHELL_D - 2 * WALL
-inner_round = rounded_prism(inner_w, inner_d, CORNER_R - WALL,
-                            LOCAL_REAR_H + 4, FLOOR, WALL, WALL)
-inner_cut = inner_round.common(
-    wedge(inner_w, inner_d, FRONT_H + 4, LOCAL_REAR_H + 4,
-          WALL, WALL, FLOOR)
-)
+inner_cut = rounded_prism(inner_w, inner_d, CORNER_R - WALL,
+                          FRONT_H + 4 - FLOOR, FLOOR, WALL, WALL)
 bottom_shape = outer.cut(inner_cut)
 
 # USB-C wall opening (WP3-5). Derived from the GCT USB4105-GF-A-060 shell
 # (8.94 x 3.26 above the PCB top) + 0.6 mm clearance per side. The connector
 # top clears the plate underside by only PCB_TOP_DROP - USB_SHELL_H
 # (~0.24 mm), so the opening runs out of the top of the wall as a notch; the
-# tilted plate closes it from above. Cut in the local frame so it stays
-# registered with the PCB when the shell tilts. X position PROVISIONAL.
+# tilted plate closes it from above. Cut in the local (flat, pre-rotation)
+# frame so it stays registered with the PCB once shell_rotate is applied —
+# with no internal wedge (WP4-1), the local-frame reference height is just
+# the constant FRONT_H everywhere, not a y-dependent slope. X position
+# PROVISIONAL.
 usb_open_w = USB_SHELL_W + 2 * USB_CLEAR
-pcb_top_rear = plate_underside_local(PCB_CLEARANCE + PCB_D) - PCB_TOP_DROP
-usb_bottom_z = pcb_top_rear - USB_CLEAR
+pcb_top_local = FRONT_H - PCB_TOP_DROP
+usb_bottom_z = pcb_top_local - USB_CLEAR
 usb_cut = Part.makeBox(
-    usb_open_w, WALL + 4, LOCAL_REAR_H + 4 - usb_bottom_z,
+    usb_open_w, WALL + 4, FRONT_H + 4 - usb_bottom_z,
     App.Vector(USB_X - usb_open_w / 2, SHELL_D - WALL - 1, usb_bottom_z))
 bottom_shape = bottom_shape.cut(usb_cut)
 
@@ -435,23 +512,23 @@ relief_cut = Part.makeBox(
                BATTERY_POCKET_BOTTOM_Z))
 bottom_shape = bottom_shape.cut(relief_cut)
 
-# Four heat-set-insert bosses. Their tops follow the sloped plate datum; the
-# blind Ø4.0 x 5.5 pilots implement the 94180A321 pilot spec. Built in the
-# local frame and rotated with the shell so their tops stay on the plate
-# plane. The bosses pass through the PCB's Ø10.5 corner relief cutouts
-# (hardware/ergogen/config.yaml `pcb_reliefs`) with 0.75 mm radial clearance —
-# the PCB is switch-hung from the plate and never touches a boss. Fused after
-# the interior re-cut and pocket cuts so nothing trims them.
+# Four heat-set-insert bosses. Built flat in the local frame (top at the
+# constant FRONT_H — no wedge, WP4-1) and rotated with the shell so their
+# tops land exactly on the plate plane after shell_rotate. The blind Ø4.0 x
+# 5.5 pilots implement the 94180A321 pilot spec. The bosses pass through the
+# PCB's Ø10.5 corner relief cutouts (hardware/ergogen/config.yaml
+# `pcb_reliefs`) with 0.75 mm radial clearance — the PCB is switch-hung from
+# the plate and never touches a boss. Fused after the interior re-cut and
+# pocket cuts so nothing trims them.
 boss_xy = [(BOSS_INSET, BOSS_INSET),
            (SHELL_W - BOSS_INSET, BOSS_INSET),
            (BOSS_INSET, SHELL_D - BOSS_INSET),
            (SHELL_W - BOSS_INSET, SHELL_D - BOSS_INSET)]
 for bx, by in boss_xy:
-    top_z = plate_underside_local(by)
-    boss = Part.makeCylinder(BOSS_OD / 2, top_z - FLOOR,
+    boss = Part.makeCylinder(BOSS_OD / 2, FRONT_H - FLOOR,
                              App.Vector(bx, by, FLOOR))
     pilot = Part.makeCylinder(INSERT_PILOT_D / 2, INSERT_PILOT_DEPTH + 1,
-                              App.Vector(bx, by, top_z - INSERT_PILOT_DEPTH))
+                              App.Vector(bx, by, FRONT_H - INSERT_PILOT_DEPTH))
     bottom_shape = bottom_shape.fuse(shell_rotate(boss.cut(pilot)))
 
 # Top/plate shell, modeled in its local plane and then tilted as one part.
@@ -471,11 +548,23 @@ for cx, cy in key_centers:
                           App.Vector(cx - MX_CUTOUT / 2, cy - MX_CUTOUT / 2, -2))
     plate_local = plate_local.cut(cutter)
 
-# Prototype control openings. Replace these values from the selected parts.
+# Control openings. The joystick aperture is derived from the selected Alps
+# RKJXV122400R rather than the former low-profile FPC-tail placeholder.
 encoder_x, encoder_y = local_to_shell(0.0, 20.0)
 touch_x, touch_y = local_to_shell(60.0, -40.0)
 joystick_x, joystick_y = local_to_shell(60.0, 20.0)
-joystick_cut = Part.makeCylinder(10.0, PLATE_T + 4,
+joystick_frame_corner = math.hypot(
+    JOYSTICK_TOP_FRAME_W / 2, JOYSTICK_TOP_FRAME_D / 2)
+if joystick_frame_corner + FIT_CLEARANCE > JOYSTICK_OPENING_D / 2:
+    raise RuntimeError("joystick top frame does not clear the top opening")
+if joystick_x + JOYSTICK_BODY_W / 2 + FIT_CLEARANCE > SHELL_W - WALL:
+    raise RuntimeError("joystick body collides with right enclosure wall")
+if joystick_y + JOYSTICK_BODY_D / 2 + FIT_CLEARANCE > SHELL_D - WALL:
+    raise RuntimeError("joystick body collides with rear enclosure wall")
+joystick_under_board_air = FRONT_H - PCB_TOP_DROP - PCB_T - FLOOR
+if JOYSTICK_BELOW_PCB + FIT_CLEARANCE > joystick_under_board_air:
+    raise RuntimeError("joystick terminals/lugs collide with lower shell")
+joystick_cut = Part.makeCylinder(JOYSTICK_OPENING_D / 2, PLATE_T + 4,
                                  App.Vector(joystick_x, joystick_y, -2))
 encoder_cut = Part.makeCylinder(4.0, PLATE_T + 4,
                                 App.Vector(encoder_x, encoder_y, -2))
@@ -496,6 +585,55 @@ touch_recess = Part.makeCylinder(
     App.Vector(touch_x, touch_y, -0.5)
 )
 plate_local = plate_local.cut(touch_recess)
+
+
+def engraved_segment(x1, y1, x2, y2):
+    """A rounded-looking constant-width engraving stroke between SVG points."""
+    scale = LOGO_W / 128.0
+    ox = LOGO_CENTER_X - LOGO_W / 2
+    oy = LOGO_CENTER_Y - LOGO_H / 2
+    ax, ay = ox + x1 * scale, oy + y1 * scale
+    bx, by = ox + x2 * scale, oy + y2 * scale
+    length = math.hypot(bx - ax, by - ay)
+    stroke = Part.makeBox(
+        length, LOGO_STROKE, LOGO_DEPTH + 0.1,
+        App.Vector(ax, ay - LOGO_STROKE / 2, PLATE_T - LOGO_DEPTH),
+    )
+    stroke.rotate(App.Vector(ax, ay, 0), App.Vector(0, 0, 1),
+                  math.degrees(math.atan2(by - ay, bx - ax)))
+    # Round caps also prevent tiny acute corners in the physical recess.
+    for px, py in ((ax, ay), (bx, by)):
+        stroke = stroke.fuse(Part.makeCylinder(
+            LOGO_STROKE / 2, LOGO_DEPTH + 0.1,
+            App.Vector(px, py, PLATE_T - LOGO_DEPTH),
+        ))
+    return stroke
+
+
+# Same three optical rays as the canonical SVG: one shared origin, a convex
+# lens transition, and one focal point. The three rays are engraved in one
+# neutral line weight; color is an app/print presentation detail.
+logo_segments = [
+    (10, 16, 43, 16), (43, 16, 48, 17.778), (48, 17.778, 82, 48),
+    (10, 16, 82, 48),
+    (10, 16, 43.8, 45.8), (43.8, 45.8, 49, 48), (49, 48, 82, 48),
+    # Convex lens outline, approximated with stable engraved line segments.
+    (46, 5, 42, 16), (42, 16, 40, 32), (40, 32, 42, 48),
+    (42, 48, 46, 59), (46, 59, 50, 48), (50, 48, 52, 32),
+    (52, 32, 50, 16), (50, 16, 46, 5),
+]
+logo_cut = None
+for segment in logo_segments:
+    segment_shape = engraved_segment(*segment)
+    logo_cut = segment_shape if logo_cut is None else logo_cut.fuse(segment_shape)
+logo_scale = LOGO_W / 128.0
+logo_focus = Part.makeCylinder(
+    1.25 * logo_scale, LOGO_DEPTH + 0.1,
+    App.Vector(LOGO_CENTER_X - LOGO_W / 2 + 82 * logo_scale,
+               LOGO_CENTER_Y - LOGO_H / 2 + 48 * logo_scale,
+               PLATE_T - LOGO_DEPTH),
+)
+plate_local = plate_local.cut(logo_cut.fuse(logo_focus))
 
 # M2.5 lid clearance holes (Ø2.9) align with the four lower bosses.
 for bx, by in boss_xy:
@@ -540,14 +678,6 @@ top.addProperty("App::PropertyString", "PrototypeWarning", "Design")
 top.PrototypeWarning = "Joystick and encoder apertures require selected-part measurements"
 set_view(top, (0.72, 0.82, 0.84), 45)
 
-top_print = doc.addObject("PartDesign::Feature", "TopPlateShell_PRINT")
-top_print.Label = "Top shell — flat print orientation (export helper)"
-top_print.Shape = plate_local
-top_print.addProperty("App::PropertyString", "Purpose", "Manufacturing")
-top_print.Purpose = "Flat, support-free STL export; use TopPlateShell for assembly"
-if top_print.ViewObject is not None:
-    top_print.ViewObject.Visibility = False
-
 grommet = doc.addObject("PartDesign::Feature", "BottomGrommet")
 grommet.Label = "Replaceable circular silicone/EPDM bottom grommet"
 grommet.Shape = grommet_shape
@@ -569,19 +699,23 @@ set_view(battery, (0.95, 0.65, 0.15), 70)
 
 # Keep-out placeholder positioned inboard of the rear-right boss so the metal
 # insert stays >= ANTENNA_INSERT_CLEAR away (WP3-7 recorded note). Replace
-# with the real MDBT50Q keep-out at KiCad placement.
+# with the real MDBT50Q keep-out at KiCad placement. Built flat in the local
+# frame (like the bosses) and rotated with shell_rotate() so it tracks the
+# tilted PCB/shell instead of sitting at a fixed world Z — previously this box
+# was never rotated, so 74% of its volume fell outside the actual (tilted)
+# bottom shell, poking through the floor near the puck.
 antenna_x_max = SHELL_W - BOSS_INSET - BOSS_OD / 2 - ANTENNA_INSERT_CLEAR
-antenna = doc.addObject("PartDesign::Feature", "AntennaKeepout_PLACEHOLDER")
-antenna.Label = ("Radio antenna keep-out placeholder — inboard of the "
-                 "rear-right insert boss; replace from module datasheet")
-antenna.Shape = Part.makeBox(
+antenna_local = Part.makeBox(
     ANTENNA_KEEPOUT_W, ANTENNA_KEEPOUT_D, ANTENNA_KEEPOUT_H,
     App.Vector(antenna_x_max - ANTENNA_KEEPOUT_W,
                SHELL_D - WALL - ANTENNA_KEEPOUT_D, FLOOR))
+antenna = doc.addObject("PartDesign::Feature", "AntennaKeepout_PLACEHOLDER")
+antenna.Label = ("Radio antenna keep-out placeholder — inboard of the "
+                 "rear-right insert boss; replace from module datasheet")
+antenna.Shape = shell_rotate(antenna_local)
 set_view(antenna, (0.9, 0.15, 0.15), 75)
 
 doc.recompute()
-doc.saveAs(str(OUTPUT / "focalpoint-rev-a.FCStd"))
 
 # Neutral CAD and print exports. The assembly STEP contains the three physical
 # parts; reference envelopes remain only in the editable FCStd.
@@ -590,8 +724,24 @@ Part.export([top], str(OUTPUT / "focalpoint-top.step"))
 Part.export([grommet], str(OUTPUT / "focalpoint-grommet.step"))
 Part.export([bottom, top, grommet], str(OUTPUT / "focalpoint-assembly.step"))
 Mesh.export([bottom], str(OUTPUT / "focalpoint-bottom.stl"))
-Mesh.export([top_print], str(OUTPUT / "focalpoint-top.stl"))
 Mesh.export([grommet], str(OUTPUT / "focalpoint-grommet.stl"))
+
+# The flat (untilted) print-orientation copy of the top plate is an STL-export
+# convenience ONLY — it must never linger as a visible object in the saved
+# FCStd (previously it did: a PartDesign::Feature added to the document, with
+# a `ViewObject.Visibility = False` meant to hide it, but ViewObject is None
+# under the documented headless `freecadcmd` workflow this script's own
+# docstring instructs, so that hide silently no-op'd and the flat shell stayed
+# visible — indistinguishable from the real tilted one — every time the file
+# was reopened). Building it straight to a Mesh via MeshPart, with no
+# `doc.addObject` at all, means there is nothing to hide because nothing is
+# ever added to the document in the first place.
+flat_top_mesh = MeshPart.meshFromShape(
+    Shape=plate_local, LinearDeflection=0.1, AngularDeflection=0.5
+)
+flat_top_mesh.write(str(OUTPUT / "focalpoint-top.stl"))
+
+doc.saveAs(str(OUTPUT / "focalpoint-rev-a.FCStd"))
 
 
 def write_design_table(path):
@@ -621,7 +771,7 @@ print(f"  height: {FRONT_H:.1f} mm front / {REAR_H:.1f} mm rear")
 print(f"  slope: {SLOPE_DEG:.1f} degrees")
 print(f"  under-PCB gap (floor to PCB bottom): "
       f"{plate_underside_world(0) - PCB_TOP_DROP - PCB_T - FLOOR:.2f} mm front / "
-      f"{plate_underside_world(SHELL_D) - PCB_TOP_DROP - PCB_T - (FLOOR + SHELL_D * math.tan(math.radians(SHELL_TO_PUCK_DEG))):.2f} mm rear")
+      f"{plate_underside_world(SHELL_D) - PCB_TOP_DROP - PCB_T - (FLOOR + SHELL_D * math.tan(math.radians(SLOPE_DEG))):.2f} mm rear")
 print(f"  battery cavity: {_cavity_depth:.2f} mm deep "
       f"(pack air gap {_battery_air:.2f} mm, puck web {_pocket_web:.2f} mm)")
 print(f"  bottom volume: {bottom_shape.Volume / 1000:.1f} cm^3")

@@ -7,6 +7,7 @@ cd "$(dirname "$0")"
 APP="FocalPoint.app"
 MACOS_DIR="$APP/Contents/MacOS"
 BIN="$MACOS_DIR/FocalPoint"
+RESOURCES_DIR="$APP/Contents/Resources"
 
 # Liquid Glass (glassEffect / GlassEffectContainer / .buttonStyle(.glass)) is
 # macOS 26 API and simply absent from older SDKs, so it has to be gated at
@@ -26,7 +27,7 @@ fi
 
 echo "==> compiling"
 rm -rf "$APP"
-mkdir -p "$MACOS_DIR"
+mkdir -p "$MACOS_DIR" "$RESOURCES_DIR/Assets"
 
 # shellcheck disable=SC2086  # GLASS_FLAGS is intentionally word-split (empty = no flag)
 swiftc -O \
@@ -39,6 +40,7 @@ swiftc -O \
 
 echo "==> assembling bundle"
 cp Info.plist "$APP/Contents/Info.plist"
+cp Assets/focalpoint-mark.svg "$RESOURCES_DIR/Assets/focalpoint-mark.svg"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 echo "==> ad-hoc codesign"

@@ -43,6 +43,8 @@ struct MenuContentView: View {
     private var header: some View {
         HStack(spacing: 10) {
             StateSwatch(state: model.aggregate, color: model.aggregateStyle.color, size: 13)
+            FocalPointMark(color: model.aggregateStyle.color)
+                .frame(width: 22, height: 14)
             VStack(alignment: .leading, spacing: 1) {
                 Text("FocalPoint").font(.headline)
                 Text(model.aggregate.display)

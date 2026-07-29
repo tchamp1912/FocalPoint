@@ -90,9 +90,8 @@ struct MenuBarLabel: View {
     var body: some View {
         let attention = model.attentionCount
         HStack(spacing: 2) {
-            // Neutral keyboard template (deliberately NOT a colored dot).
-            Image(systemName: "keyboard")
-                .foregroundStyle(iconStyle)
+            FocalPointMark(color: iconStyle)
+                .frame(width: 18, height: 12)
             if attention > 0 {
                 // Attention badge: numeric count next to the icon.
                 Text("\(attention)")

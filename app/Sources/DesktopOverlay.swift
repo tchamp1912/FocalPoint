@@ -77,6 +77,8 @@ struct DesktopWidgetView: View {
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(.tertiary)
             StateSwatch(state: model.aggregate, color: model.aggregateStyle.color, size: 10)
+            FocalPointMark(color: model.aggregateStyle.color)
+                .frame(width: 16, height: 10)
             Text("FocalPoint").font(.system(size: 12, weight: .semibold))
             Spacer()
             Text(model.connected ? model.aggregate.display : "Offline")
