@@ -75,7 +75,39 @@ fn expect_ok(resp: &serde_json::Value) -> Result<(), CliError> {
     }
 }
 
-/// `focalpoint set-state <name> [--session] [--kind] [--label] [--cwd] [--meta k=v]...`
+/// Auto-resolve tty/pid identity for `session`/`kind` and merge into
+/// `meta_obj`, unless the caller already supplied an explicit tty/pid meta
+/// value. Only applies to kinds whose adapter wants ancestry-derived
+/// identity (`claude`, `codex`) — skipped for everything else (`cursor`,
+/// `generic`, unknown), matching the reasoning bash used before this moved
+/// into Rust (SESSION-IDENTITY-PERSISTENCE-PLAN.md Part 1).
+#[cfg(unix)]
+fn apply_identity(
+    meta_obj: &mut serde_json::Map<String, serde_json::Value>,
+    session: Option<&str>,
+    kind: Option<&str>,
+    refresh_identity: bool,
+) {
+    let (Some(session), Some(kind)) = (session, kind) else {
+        return;
+    };
+    if !matches!(kind, "claude" | "codex") {
+        return;
+    }
+    let identity = crate::identity::resolve_identity(session, kind, refresh_identity);
+    if !meta_obj.contains_key("tty") {
+        if let Some(tty) = identity.tty {
+            meta_obj.insert("tty".to_string(), serde_json::Value::from(tty));
+        }
+    }
+    if !meta_obj.contains_key("pid") {
+        if let Some(pid) = identity.pid {
+            meta_obj.insert("pid".to_string(), serde_json::Value::from(pid));
+        }
+    }
+}
+
+/// `focalpoint set-state <name> [--session] [--kind] [--label] [--cwd] [--meta k=v]... [--refresh-identity]`
 #[cfg(unix)]
 pub fn set_state(
     name: &str,
@@ -84,6 +116,7 @@ pub fn set_state(
     label: Option<&str>,
     cwd: Option<&str>,
     meta: &[String],
+    refresh_identity: bool,
 ) -> Result<(), CliError> {
     if State::from_name(name).is_none() {
         return Err(CliError::new(
@@ -123,6 +156,7 @@ pub fn set_state(
         };
         meta_obj.insert(k.to_string(), value);
     }
+    apply_identity(&mut meta_obj, session, kind, refresh_identity);
     if !meta_obj.is_empty() {
         req["meta"] = serde_json::Value::Object(meta_obj);
     }
@@ -132,7 +166,7 @@ pub fn set_state(
     Ok(())
 }
 
-/// `focalpoint set-meta --session <ID> [--kind] [--label] [--meta k=v]...`
+/// `focalpoint set-meta --session <ID> [--kind] [--label] [--meta k=v]... [--refresh-identity]`
 /// Meta-only: merges into an existing session's `meta` without touching its
 /// live state (unlike `set-state`, which requires one). Unknown session ids
 /// are a no-op on the daemon side, not registered.
@@ -142,6 +176,7 @@ pub fn set_meta(
     kind: Option<&str>,
     label: Option<&str>,
     meta: &[String],
+    refresh_identity: bool,
 ) -> Result<(), CliError> {
     if session.is_empty() {
         return Err(CliError::new("--session must not be empty", 2));
@@ -170,6 +205,7 @@ pub fn set_meta(
         };
         meta_obj.insert(k.to_string(), value);
     }
+    apply_identity(&mut meta_obj, Some(session), kind, refresh_identity);
     if !meta_obj.is_empty() {
         req["meta"] = serde_json::Value::Object(meta_obj);
     }
@@ -329,10 +365,14 @@ pub fn swap_slots(id1: &str, id2: &str) -> Result<(), CliError> {
     Ok(())
 }
 
-/// `focalpoint end-session <ID>`
+/// `focalpoint end-session <ID>` — also clears the cached identity for `id`
+/// (Part 1's `identity.rs`), the one chokepoint every adapter's `SessionEnd`
+/// already calls through, so a reused session_id never inherits a stale
+/// tty/pid.
 #[cfg(unix)]
 pub fn end_session(id: &str) -> Result<(), CliError> {
     let resp = request(serde_json::json!({ "cmd": "end-session", "session": id }))?;
+    crate::identity::remove_identity(id);
     expect_ok(&resp)?;
     println!("ok");
     Ok(())

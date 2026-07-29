@@ -29,6 +29,92 @@ use std::time::{Duration, Instant};
 /// a "compacting" indicator stuck on-screen indefinitely.
 const COMPACT_GRACE: Duration = Duration::from_secs(300);
 
+/// Meta keys Claude Code's adapter reports as "cumulative since this
+/// segment's transcript/process started," not "current instantaneous
+/// reading" (`adapters/claude-code/hooks.sh`'s `extract_stats`,
+/// `statusline-usage.sh`'s `cost_usd`). A compaction rekey (below) starts a
+/// new transcript/process, so these must be *added* to the carried-forward
+/// base from any prior segment(s), never overwritten outright, or a
+/// compaction would silently erase everything before it. Everything else
+/// (`tty`, `pid`, `cwd`, `model`, `context_tokens`, `context_window`, ...)
+/// is a plain overwrite as always — `context_tokens`/`context_window`
+/// resetting on compaction is correct, not a bug, since that's what
+/// compaction means. Codex needs none of this: verified against real
+/// rollout files that its compaction happens in place (same `thread_id`,
+/// same transcript), so its adapter-side full-transcript recompute is
+/// already correctly cumulative with no daemon involvement — see
+/// SESSION-IDENTITY-PERSISTENCE-PLAN.md Part 2.
+const CUMULATIVE_META_KEYS: &[&str] =
+    &["turns", "tool_calls", "subagents", "tokens_in", "tokens_out", "cost_usd"];
+
+/// Add `incoming` to the carried-forward base for `key` in `meta`
+/// (`_carry_<key>`, 0 if absent — the common, never-compacted case).
+/// Prefers integer arithmetic when both sides are whole numbers so a
+/// never-compacted session's counters keep displaying as plain integers
+/// (`7`, not `7.0`) — what makes this mechanism a true no-op for the common
+/// case, not just numerically equivalent.
+fn add_carry(meta: &Map<String, Value>, key: &str, incoming: &Value) -> Value {
+    let base = meta.get(&format!("_carry_{key}"));
+    let base_is_int = base.map_or(true, |b| b.is_i64() || b.is_u64());
+    if base_is_int {
+        if let Some(vi) = incoming.as_i64() {
+            let bi = base.and_then(Value::as_i64).unwrap_or(0);
+            return Value::from(bi + vi);
+        }
+    }
+    let bf = base.and_then(Value::as_f64).unwrap_or(0.0);
+    let vf = incoming.as_f64().unwrap_or(0.0);
+    Value::from(bf + vf)
+}
+
+/// Apply an incoming meta update to `meta`. Cumulative keys
+/// (`CUMULATIVE_META_KEYS`) are added to their carried-forward base rather
+/// than overwritten; everything else is a plain overwrite, same as always.
+/// Shared by `set_state`'s update and rekey branches and by `merge_meta`, so
+/// there's exactly one place this distinction is made.
+fn apply_meta_update(meta: &mut Map<String, Value>, incoming: Map<String, Value>) {
+    for (k, v) in incoming {
+        if CUMULATIVE_META_KEYS.contains(&k.as_str()) && v.is_number() {
+            let added = add_carry(meta, &k, &v);
+            meta.insert(k, added);
+            continue;
+        }
+        meta.insert(k, v);
+    }
+}
+
+/// How many of `{label, cwd, tty, pid}` agree between `candidate` and the
+/// incoming registration's own values. Each field only counts when
+/// non-empty/present on *both* sides — an empty-vs-empty "match" (e.g. two
+/// sessions that both failed to resolve a tty) must never count, or two
+/// unrelated sessions sharing nothing real could still hit the threshold.
+/// See `Registry::find_recovery_candidate` for how the resulting score is
+/// used (≥2 required).
+fn count_identity_matches(
+    candidate: &Session,
+    incoming_label: &str,
+    incoming_cwd: &str,
+    incoming_tty: &str,
+    incoming_pid: Option<i32>,
+) -> u32 {
+    let mut n = 0;
+    if !incoming_label.is_empty() && Some(incoming_label) == candidate.label.as_deref() {
+        n += 1;
+    }
+    if !incoming_cwd.is_empty() && incoming_cwd == candidate.cwd() {
+        n += 1;
+    }
+    if !incoming_tty.is_empty() && incoming_tty == candidate.tty() {
+        n += 1;
+    }
+    if let (Some(a), Some(b)) = (incoming_pid, candidate.pid()) {
+        if a == b {
+            n += 1;
+        }
+    }
+    n
+}
+
 /// A live, identified session.
 #[derive(Debug, Clone)]
 pub struct Session {
@@ -122,23 +208,58 @@ pub enum Effect {
 }
 
 /// The session registry.
+/// A session's last-known state, kept around after it disappeared via a
+/// sweep (TTL/dead-tty/dead-pid/stuck-compacting) rather than an explicit
+/// `end-session` — so that if a matching session reappears (a false-reap
+/// that was never really dead, or a genuine resume after an unexplained
+/// gap), it can be reunited instead of starting over at zero. Never created
+/// by `end_session` (a deliberate "this is over" must never be
+/// resurrected) — see `reap_session` vs `end_session`.
+#[derive(Debug, Clone)]
+struct Tombstone {
+    session: Session,
+    reaped_at: Instant,
+}
+
+/// Default tombstone lifetime when `tombstone_ttl_minutes` isn't set in
+/// config.toml — long enough to survive a real coffee-break-length gap, not
+/// so long that a stale tombstone lingers and gets picked up as a spurious
+/// "match" far later than makes sense. Explicitly overridable, including to
+/// `None` (never expire) via `with_tombstone_ttl` — see `config.rs`.
+const DEFAULT_TOMBSTONE_TTL: Duration = Duration::from_secs(30 * 60);
+
 pub struct Registry {
     sessions: HashMap<String, Session>,
+    tombstones: HashMap<String, Tombstone>,
     default_state: Option<State>,
     /// Last aggregate we emitted, for change detection.
     last_aggregate: State,
     /// TTL for identified sessions; `None` = never expire.
     ttl: Option<Duration>,
+    /// How long a tombstone stays recoverable; `None` = never expire.
+    tombstone_ttl: Option<Duration>,
 }
 
 impl Registry {
     pub fn new(ttl: Option<Duration>) -> Self {
         Registry {
             sessions: HashMap::new(),
+            tombstones: HashMap::new(),
             default_state: None,
             last_aggregate: State::Idle,
             ttl,
+            tombstone_ttl: Some(DEFAULT_TOMBSTONE_TTL),
         }
+    }
+
+    /// Override the default tombstone lifetime (`daemon.rs` applies the
+    /// configured `tombstone_ttl_minutes` after construction). `None` means
+    /// never expire — a session "left through a reboot" stays recoverable
+    /// indefinitely, which Part 4's restart persistence is what makes that
+    /// meaningful rather than moot.
+    pub fn with_tombstone_ttl(mut self, tombstone_ttl: Option<Duration>) -> Self {
+        self.tombstone_ttl = tombstone_ttl;
+        self
     }
 
     /// Worst state across the default session (if set) and all live sessions.
@@ -173,6 +294,63 @@ impl Registry {
         }
     }
 
+    /// Find the best recovery candidate for a newly-registering session, if
+    /// any — either a live `State::Compacting` session within
+    /// `COMPACT_GRACE` (the fast compaction-continuation path — a
+    /// still-visible "compacting" key almost always claimed within
+    /// seconds) or a tombstoned one within `tombstone_ttl` (the general
+    /// "reappeared after an unexplained sweep-driven disappearance" path).
+    /// Same pooled signal matcher either way: `label` (Claude Code's
+    /// `ai-title`, verified to survive a compaction fork even though pid/tty
+    /// don't — see identity.rs's doc comment for why those two are
+    /// OS-process-identity signals that a real fork/resume can't preserve),
+    /// `cwd`, `tty`, `pid` — **at least 2 must agree**, and `cwd` alone is
+    /// never enough (it's explicitly not unique — multiple simultaneous
+    /// sessions commonly share one). The right pair falls out naturally per
+    /// cause: label+cwd for a compaction/resume fork (new pid, maybe new
+    /// tty), pid+cwd or pid+tty for a false-reap (same process, never
+    /// actually died). Ties (same score) broken by most recent activity.
+    fn find_recovery_candidate(
+        &self,
+        incoming_label: &str,
+        incoming_cwd: &str,
+        incoming_tty: &str,
+        incoming_pid: Option<i32>,
+        now: Instant,
+    ) -> Option<String> {
+        let mut best: Option<(String, u32, Instant)> = None;
+        let mut consider = |id: &str, candidate: &Session, ts: Instant| {
+            let score = count_identity_matches(candidate, incoming_label, incoming_cwd, incoming_tty, incoming_pid);
+            if score < 2 {
+                return;
+            }
+            let better = match &best {
+                None => true,
+                Some((_, best_score, best_ts)) => score > *best_score || (score == *best_score && ts > *best_ts),
+            };
+            if better {
+                best = Some((id.to_string(), score, ts));
+            }
+        };
+
+        for s in self.sessions.values() {
+            if s.state == State::Compacting && now.saturating_duration_since(s.last_update) <= COMPACT_GRACE {
+                consider(&s.id, s, s.last_update);
+            }
+        }
+        for (id, t) in self.tombstones.iter() {
+            let within_grace = self
+                .tombstone_ttl
+                .map(|ttl| now.saturating_duration_since(t.reaped_at) <= ttl)
+                .unwrap_or(true); // None = never expire
+            if within_grace {
+                consider(id, &t.session, t.reaped_at);
+            }
+        }
+
+        best.map(|(id, _, _)| id)
+    }
+
     /// Apply a `set-state`. `id == None` updates the sessionless default.
     pub fn set_state(
         &mut self,
@@ -199,9 +377,7 @@ impl Registry {
                         sess.label = label;
                     }
                     if let Some(m) = meta {
-                        for (k, v) in m {
-                            sess.meta.insert(k, v);
-                        }
+                        apply_meta_update(&mut sess.meta, m);
                     }
                     sess.last_update = now;
                     effects.push(Effect::SessionUpsert {
@@ -214,37 +390,55 @@ impl Registry {
                         state,
                     });
                 } else {
-                    // Before registering a brand-new session, check for an
-                    // orphaned `Compacting` one to reunite with: Claude
-                    // Code's `PreCompact` hook marks the pre-compaction
-                    // session `Compacting` (adapters/claude-code/hooks.sh)
-                    // because it knows the conversation is about to get a
-                    // new session_id, but Claude Code exposes no field
-                    // linking the two — so the continuation's first hook
-                    // event just looks like a brand-new session_id to us.
-                    // Matching on cwd+tty (both set by the same adapter's
-                    // ancestor-walk, PROTOCOL.md §4) within `COMPACT_GRACE`
-                    // is how we tell "this is that session's continuation"
-                    // apart from "this is a genuinely new session that
-                    // happens to share a terminal" (which can't happen — a
-                    // tty hosts one foreground session at a time).
+                    // Before registering a brand-new session, check for a
+                    // session it might be the continuation of — either a
+                    // live `State::Compacting` one (Claude Code's
+                    // `PreCompact` hook, adapters/claude-code/hooks.sh) or a
+                    // tombstoned one (a session that disappeared via a sweep
+                    // rather than an explicit end-session — see
+                    // `reap_session`/`Tombstone` below). Claude Code exposes
+                    // no field linking a compaction continuation back to its
+                    // predecessor, and a sweep-reaped session obviously
+                    // can't link forward either, so `find_recovery_candidate`
+                    // matches on a pooled set of signals instead — see its
+                    // own doc comment for why pid/tty/cwd/label are each in
+                    // the pool and why ≥2 must agree.
                     let incoming_meta = meta.unwrap_or_default();
-                    let incoming_cwd = incoming_meta.get("cwd").and_then(|v| v.as_str());
-                    let incoming_tty = incoming_meta.get("tty").and_then(|v| v.as_str());
-                    let rekey_from = incoming_cwd.and_then(|cwd| {
-                        self.sessions
-                            .iter()
-                            .find(|(_, s)| {
-                                s.state == State::Compacting
-                                    && s.cwd() == cwd
-                                    && s.tty() == incoming_tty.unwrap_or("")
-                                    && now.saturating_duration_since(s.last_update) <= COMPACT_GRACE
-                            })
-                            .map(|(old_id, _)| old_id.clone())
-                    });
+                    let incoming_cwd = incoming_meta.get("cwd").and_then(|v| v.as_str()).unwrap_or("");
+                    let incoming_tty = incoming_meta.get("tty").and_then(|v| v.as_str()).unwrap_or("");
+                    let incoming_pid = incoming_meta.get("pid").and_then(|v| v.as_i64()).map(|n| n as i32);
+                    let incoming_label = label.as_deref().unwrap_or("");
 
-                    if let Some(old_id) = rekey_from {
-                        let mut sess = self.sessions.remove(&old_id).unwrap();
+                    let recovered = self
+                        .find_recovery_candidate(incoming_label, incoming_cwd, incoming_tty, incoming_pid, now)
+                        .and_then(|old_id| {
+                            self.sessions
+                                .remove(&old_id)
+                                .or_else(|| self.tombstones.remove(&old_id).map(|t| t.session))
+                                .map(|sess| (old_id, sess))
+                        });
+
+                    if let Some((old_id, mut sess)) = recovered {
+                        // Snapshot the outgoing segment's cumulative totals
+                        // as the new segment's carried-forward base, and
+                        // bump the compaction counter — reading it off the
+                        // *old* session so repeated compactions compound
+                        // correctly instead of resetting to 1 each time.
+                        // See CUMULATIVE_META_KEYS/apply_meta_update above.
+                        for key in CUMULATIVE_META_KEYS {
+                            if let Some(v) = sess.meta.get(*key).cloned() {
+                                sess.meta.insert(format!("_carry_{key}"), v);
+                            }
+                        }
+                        let compactions = sess
+                            .meta
+                            .get("compactions")
+                            .and_then(Value::as_u64)
+                            .unwrap_or(0)
+                            + 1;
+                        sess.meta
+                            .insert("compactions".to_string(), Value::from(compactions));
+
                         sess.id = id.to_string();
                         sess.state = state;
                         if kind.is_some() {
@@ -253,9 +447,7 @@ impl Registry {
                         if label.is_some() {
                             sess.label = label;
                         }
-                        for (k, v) in incoming_meta {
-                            sess.meta.insert(k, v);
-                        }
+                        apply_meta_update(&mut sess.meta, incoming_meta);
                         sess.last_update = now;
                         effects.push(Effect::SessionRekeyed {
                             old_id,
@@ -328,9 +520,7 @@ impl Registry {
         if label.is_some() {
             sess.label = label;
         }
-        for (k, v) in meta {
-            sess.meta.insert(k, v);
-        }
+        apply_meta_update(&mut sess.meta, meta);
         sess.last_update = now;
         vec![Effect::SessionUpsert {
             id: sess.id.clone(),
@@ -370,8 +560,16 @@ impl Registry {
     }
 
     /// End a session by id (idempotent — unknown ids yield no effects).
+    /// Explicit only — an adapter's `SessionEnd`, or a user running
+    /// `focalpoint end-session` directly: a deliberate "this is over," never
+    /// a sweep's guess. Never leaves a recoverable tombstone behind, and
+    /// clears one if it somehow already exists for this id — manually
+    /// ending a session must actually clear its entries, not just hide them
+    /// until a future registration accidentally resurrects it. Contrast
+    /// with `reap_session`, used by every sweep instead.
     pub fn end_session(&mut self, id: &str) -> Vec<Effect> {
         let mut effects = Vec::new();
+        self.tombstones.remove(id);
         if let Some(sess) = self.sessions.remove(id) {
             effects.push(Effect::SessionEnded {
                 id: id.to_string(),
@@ -380,6 +578,43 @@ impl Registry {
             self.note_aggregate(&mut effects);
         }
         effects
+    }
+
+    /// End a session the way a sweep does — its tty/pid/TTL genuinely looks
+    /// dead, but nothing *said* it was over. Unlike `end_session`, stashes
+    /// a `Tombstone` so a later matching registration can be reunited with
+    /// its history instead of starting over at zero (`find_recovery_candidate`).
+    /// Used by every sweep (TTL, dead-tty, dead-pid, stuck-compacting) and
+    /// by Part 4's startup reconciliation — never by an explicit
+    /// end-session (see `end_session`).
+    pub fn reap_session(&mut self, id: &str, now: Instant) -> Vec<Effect> {
+        let mut effects = Vec::new();
+        if let Some(sess) = self.sessions.remove(id) {
+            effects.push(Effect::SessionEnded {
+                id: id.to_string(),
+                slot: sess.slot,
+            });
+            self.tombstones.insert(
+                id.to_string(),
+                Tombstone {
+                    session: sess,
+                    reaped_at: now,
+                },
+            );
+            self.note_aggregate(&mut effects);
+        }
+        effects
+    }
+
+    /// Drop tombstones past `tombstone_ttl`. No-op when `None` (never).
+    /// Purely internal bookkeeping — a tombstone was never visible
+    /// (`list()`), so expiring one emits no effect.
+    pub fn expire_tombstones(&mut self, now: Instant) {
+        let Some(ttl) = self.tombstone_ttl else {
+            return;
+        };
+        self.tombstones
+            .retain(|_, t| now.saturating_duration_since(t.reaped_at) < ttl);
     }
 
     /// Swap the numbered-key slots of two live sessions — manual reorder
@@ -425,6 +660,8 @@ impl Registry {
     }
 
     /// End all sessions past their TTL. No-op when TTL is `None` (never).
+    /// Routes through `reap_session` — an idle timeout isn't a deliberate
+    /// "this is over," so the session stays recoverable as a tombstone.
     pub fn expire(&mut self, now: Instant) -> Vec<Effect> {
         let mut effects = Vec::new();
         let Some(ttl) = self.ttl else {
@@ -438,15 +675,7 @@ impl Registry {
             .collect();
         expired.sort();
         for id in expired {
-            if let Some(sess) = self.sessions.remove(&id) {
-                effects.push(Effect::SessionEnded {
-                    id,
-                    slot: sess.slot,
-                });
-            }
-        }
-        if !effects.is_empty() {
-            self.note_aggregate(&mut effects);
+            effects.extend(self.reap_session(&id, now));
         }
         effects
     }
@@ -457,6 +686,8 @@ impl Registry {
     /// `expire`: a stuck "compacting" indicator is actively misleading (it
     /// promises "this is temporary"), so it can't be left to
     /// `session_ttl_minutes`, which may be configured to never expire.
+    /// Routes through `reap_session` — a very-late continuation shouldn't be
+    /// lost outright, just no longer shown as "compacting" (Part 3).
     pub fn expire_compacting(&mut self, now: Instant) -> Vec<Effect> {
         let mut effects = Vec::new();
         let mut stuck: Vec<String> = self
@@ -470,15 +701,7 @@ impl Registry {
             .collect();
         stuck.sort();
         for id in stuck {
-            if let Some(sess) = self.sessions.remove(&id) {
-                effects.push(Effect::SessionEnded {
-                    id,
-                    slot: sess.slot,
-                });
-            }
-        }
-        if !effects.is_empty() {
-            self.note_aggregate(&mut effects);
+            effects.extend(self.reap_session(&id, now));
         }
         effects
     }
@@ -505,6 +728,46 @@ impl Registry {
     /// The live session occupying `slot`, if any (for focus dispatch).
     pub fn session_by_slot(&self, slot: u8) -> Option<&Session> {
         self.sessions.values().find(|s| s.slot == Some(slot))
+    }
+
+    /// All current tombstones as `(old_id, session, reaped_at)` — for
+    /// persistence (`daemon.rs`'s `save_snapshot`) only, never part of any
+    /// visible API (a tombstone is invisible bookkeeping, not shown in
+    /// `list()`).
+    pub fn tombstones_snapshot(&self) -> Vec<(String, Session, Instant)> {
+        self.tombstones
+            .iter()
+            .map(|(id, t)| (id.clone(), t.session.clone(), t.reaped_at))
+            .collect()
+    }
+
+    /// Rebuild a registry from a previously-persisted snapshot (`daemon.rs`
+    /// startup, `paths::daemon_state_path`). Slots are preserved as saved; a
+    /// collision (shouldn't happen from a snapshot the daemon itself wrote)
+    /// falls back to the next free slot rather than dropping/overwriting.
+    /// Reconstructing `last_update`/`reaped_at` from the snapshot's elapsed-
+    /// ms offsets is the caller's job (daemon.rs) — this just inserts
+    /// whatever `Instant`s it's given.
+    pub fn restore(
+        ttl: Option<Duration>,
+        tombstone_ttl: Option<Duration>,
+        sessions: Vec<Session>,
+        tombstones: Vec<(String, Session, Instant)>,
+    ) -> Registry {
+        let mut r = Registry::new(ttl).with_tombstone_ttl(tombstone_ttl);
+        for mut s in sessions {
+            if let Some(slot) = s.slot {
+                if r.sessions.values().any(|x| x.slot == Some(slot)) {
+                    s.slot = r.lowest_free_slot();
+                }
+            }
+            r.sessions.insert(s.id.clone(), s);
+        }
+        for (old_id, session, reaped_at) in tombstones {
+            r.tombstones.insert(old_id, Tombstone { session, reaped_at });
+        }
+        r.last_aggregate = r.aggregate();
+        r
     }
 }
 
@@ -886,6 +1149,243 @@ mod tests {
     }
 
     #[test]
+    fn rekey_carries_forward_cumulative_stats_and_bumps_compactions() {
+        let mut r = Registry::new(None);
+        let now = t0();
+        let mut old_meta = meta("/repo", "/dev/ttys004");
+        old_meta.insert("turns".into(), Value::from(30));
+        old_meta.insert("tool_calls".into(), Value::from(550));
+        old_meta.insert("cost_usd".into(), Value::from(1.5));
+        old_meta.insert("context_tokens".into(), Value::from(116_821));
+        r.set_state(Some("old"), State::Running, None, None, Some(old_meta), now);
+        r.set_state(Some("old"), State::Compacting, None, None, None, now);
+
+        // The continuation's own first Stop event reports only ITS segment's
+        // recomputed totals (small, fresh — a new transcript/process), same
+        // as the real adapter does.
+        let later = now.checked_add(Duration::from_secs(2)).unwrap();
+        let mut new_meta = meta("/repo", "/dev/ttys004");
+        new_meta.insert("turns".into(), Value::from(3));
+        new_meta.insert("tool_calls".into(), Value::from(12));
+        new_meta.insert("cost_usd".into(), Value::from(0.2));
+        new_meta.insert("context_tokens".into(), Value::from(4_000));
+        r.set_state(
+            Some("new"),
+            State::Thinking,
+            None,
+            None,
+            Some(new_meta),
+            later,
+        );
+
+        let s = r.session_by_slot(1).expect("slot 1 still occupied");
+        assert_eq!(s.id, "new");
+        // Cumulative keys: old segment's total + this segment's own total.
+        assert_eq!(s.meta.get("turns"), Some(&Value::from(33)));
+        assert_eq!(s.meta.get("tool_calls"), Some(&Value::from(562)));
+        assert_eq!(s.meta.get("cost_usd").and_then(Value::as_f64), Some(1.7));
+        // Instantaneous key: plain overwrite, NOT carried — resetting on
+        // compaction is correct, not a bug.
+        assert_eq!(s.meta.get("context_tokens"), Some(&Value::from(4_000)));
+        assert_eq!(s.meta.get("compactions"), Some(&Value::from(1u64)));
+    }
+
+    #[test]
+    fn repeated_rekeys_compound_cumulative_stats_and_compactions() {
+        let mut r = Registry::new(None);
+        let now = t0();
+        let mut m1 = meta("/repo", "/dev/ttys004");
+        m1.insert("turns".into(), Value::from(10));
+        r.set_state(Some("a"), State::Running, None, None, Some(m1), now);
+        r.set_state(Some("a"), State::Compacting, None, None, None, now);
+
+        let t1 = now.checked_add(Duration::from_secs(1)).unwrap();
+        let mut m2 = meta("/repo", "/dev/ttys004");
+        m2.insert("turns".into(), Value::from(5));
+        r.set_state(Some("b"), State::Running, None, None, Some(m2), t1);
+        r.set_state(Some("b"), State::Compacting, None, None, None, t1);
+
+        let t2 = t1.checked_add(Duration::from_secs(1)).unwrap();
+        let mut m3 = meta("/repo", "/dev/ttys004");
+        m3.insert("turns".into(), Value::from(2));
+        r.set_state(Some("c"), State::Thinking, None, None, Some(m3), t2);
+
+        let s = r.session_by_slot(1).expect("slot 1 still occupied");
+        assert_eq!(s.id, "c");
+        assert_eq!(s.meta.get("turns"), Some(&Value::from(17))); // 10 + 5 + 2
+        assert_eq!(s.meta.get("compactions"), Some(&Value::from(2u64))); // not reset to 1
+    }
+
+    #[test]
+    fn end_session_never_leaves_a_recoverable_tombstone() {
+        let mut r = Registry::new(None);
+        let now = t0();
+        let mut m = meta("/repo", "/dev/ttys004");
+        m.insert("pid".into(), Value::from(555));
+        m.insert("turns".into(), Value::from(9));
+        r.set_state(Some("old"), State::Running, None, Some("My Chat".into()), Some(m), now);
+
+        // A deliberate end-session — never a sweep's guess.
+        r.end_session("old");
+
+        // A brand-new registration with all the same signals must NOT
+        // recover "old"'s history — it's a fresh session at zero.
+        let later = now.checked_add(Duration::from_secs(5)).unwrap();
+        let mut m2 = meta("/repo", "/dev/ttys004");
+        m2.insert("pid".into(), Value::from(555));
+        let effects = r.set_state(
+            Some("new"),
+            State::Thinking,
+            None,
+            Some("My Chat".into()),
+            Some(m2),
+            later,
+        );
+        assert!(!effects.iter().any(|e| matches!(e, Effect::SessionRekeyed { .. })));
+        let s = r.session_by_slot(1).expect("slot 1 occupied");
+        assert_eq!(s.id, "new");
+        assert_eq!(s.meta.get("turns"), None);
+        assert_eq!(s.meta.get("compactions"), None);
+    }
+
+    #[test]
+    fn reap_session_creates_a_tombstone_recoverable_by_pid_and_cwd() {
+        // The "false-reap" case: a sweep's guess was wrong (tty check
+        // raced, or the process never actually died) — same pid, same cwd,
+        // but a genuinely different tty this time (e.g. reattached in a new
+        // terminal), and no label at all. pid+cwd is 2 signals, enough.
+        let mut r = Registry::new(None);
+        let now = t0();
+        let mut m = meta("/repo", "/dev/ttys004");
+        m.insert("pid".into(), Value::from(555));
+        m.insert("turns".into(), Value::from(9));
+        r.set_state(Some("old"), State::Running, None, None, Some(m), now);
+
+        let reap_effects = r.reap_session("old", now);
+        assert!(reap_effects
+            .iter()
+            .any(|e| matches!(e, Effect::SessionEnded { id, .. } if id == "old")));
+        assert!(r.list().is_empty(), "tombstone must not be visible in list()");
+
+        let later = now.checked_add(Duration::from_secs(5)).unwrap();
+        let mut m2 = meta("/repo", "/dev/ttys009");
+        m2.insert("pid".into(), Value::from(555));
+        let effects = r.set_state(Some("new"), State::Thinking, None, None, Some(m2), later);
+
+        assert!(effects.contains(&Effect::SessionRekeyed {
+            old_id: "old".into(),
+            new_id: "new".into(),
+        }));
+        let s = r.session_by_slot(1).expect("slot 1 occupied");
+        assert_eq!(s.id, "new");
+        assert_eq!(s.meta.get("turns"), Some(&Value::from(9)));
+    }
+
+    #[test]
+    fn reap_session_creates_a_tombstone_recoverable_by_label_and_cwd() {
+        // The "resumed after an unexplained gap" case: a genuinely
+        // different process (new pid, and this time no tty resolved at
+        // all), but the same conversation — label survives even though
+        // pid/tty can't (see identity.rs's doc comment).
+        let mut r = Registry::new(None);
+        let now = t0();
+        let m = meta("/repo", "/dev/ttys004");
+        r.set_state(Some("old"), State::Running, None, Some("Fix drag stutter".into()), Some(m), now);
+        r.reap_session("old", now);
+
+        let later = now.checked_add(Duration::from_secs(5)).unwrap();
+        let m2 = meta("/repo", "");
+        let effects = r.set_state(
+            Some("new"),
+            State::Thinking,
+            None,
+            Some("Fix drag stutter".into()),
+            Some(m2),
+            later,
+        );
+
+        assert!(effects.contains(&Effect::SessionRekeyed {
+            old_id: "old".into(),
+            new_id: "new".into(),
+        }));
+    }
+
+    #[test]
+    fn reap_session_tombstone_does_not_recover_on_single_signal() {
+        // Only cwd matches — must never be enough on its own.
+        let mut r = Registry::new(None);
+        let now = t0();
+        let m = meta("/repo", "/dev/ttys004");
+        r.set_state(Some("old"), State::Running, None, Some("Old Chat".into()), Some(m), now);
+        r.reap_session("old", now);
+
+        let later = now.checked_add(Duration::from_secs(5)).unwrap();
+        let m2 = meta("/repo", "/dev/ttys009");
+        let effects = r.set_state(
+            Some("new"),
+            State::Thinking,
+            None,
+            Some("Unrelated Chat".into()),
+            Some(m2),
+            later,
+        );
+        assert!(!effects.iter().any(|e| matches!(e, Effect::SessionRekeyed { .. })));
+        assert_eq!(r.list().len(), 1);
+        assert_eq!(r.list()[0].id, "new");
+    }
+
+    #[test]
+    fn tombstone_past_ttl_is_not_recoverable() {
+        let mut r = Registry::new(None).with_tombstone_ttl(Some(Duration::from_secs(60)));
+        let now = t0();
+        let mut m = meta("/repo", "/dev/ttys004");
+        m.insert("pid".into(), Value::from(555));
+        r.set_state(Some("old"), State::Running, None, None, Some(m), now);
+        r.reap_session("old", now);
+
+        let too_late = now.checked_add(Duration::from_secs(61)).unwrap();
+        let mut m2 = meta("/repo", "/dev/ttys004");
+        m2.insert("pid".into(), Value::from(555));
+        let effects = r.set_state(Some("new"), State::Thinking, None, None, Some(m2), too_late);
+        assert!(!effects.iter().any(|e| matches!(e, Effect::SessionRekeyed { .. })));
+    }
+
+    #[test]
+    fn tombstone_infinite_ttl_recovers_arbitrarily_late() {
+        let mut r = Registry::new(None).with_tombstone_ttl(None);
+        let now = t0();
+        let mut m = meta("/repo", "/dev/ttys004");
+        m.insert("pid".into(), Value::from(555));
+        r.set_state(Some("old"), State::Running, None, None, Some(m), now);
+        r.reap_session("old", now);
+
+        let way_later = now.checked_add(Duration::from_secs(60 * 60 * 24 * 30)).unwrap();
+        let mut m2 = meta("/repo", "/dev/ttys004");
+        m2.insert("pid".into(), Value::from(555));
+        let effects = r.set_state(Some("new"), State::Thinking, None, None, Some(m2), way_later);
+        assert!(effects.contains(&Effect::SessionRekeyed {
+            old_id: "old".into(),
+            new_id: "new".into(),
+        }));
+    }
+
+    #[test]
+    fn expire_tombstones_drops_entries_past_ttl() {
+        let mut r = Registry::new(None).with_tombstone_ttl(Some(Duration::from_secs(60)));
+        let now = t0();
+        let m = meta("/repo", "/dev/ttys004");
+        r.set_state(Some("old"), State::Running, None, None, Some(m), now);
+        r.reap_session("old", now);
+        assert_eq!(r.tombstones.len(), 1);
+
+        r.expire_tombstones(now.checked_add(Duration::from_secs(30)).unwrap());
+        assert_eq!(r.tombstones.len(), 1, "well within ttl");
+
+        r.expire_tombstones(now.checked_add(Duration::from_secs(61)).unwrap());
+        assert_eq!(r.tombstones.len(), 0, "past ttl");
+    }
+
+    #[test]
     fn compacting_session_does_not_rekey_across_different_terminals() {
         let mut r = Registry::new(None);
         let now = t0();
@@ -907,6 +1407,41 @@ mod tests {
             Some(meta("/repo", "/dev/ttys009")),
             now,
         );
+        assert_eq!(r.list().len(), 2);
+        assert!(r.list().iter().any(|s| s.id == "old" && s.state == State::Compacting));
+        assert!(r.list().iter().any(|s| s.id == "new" && s.slot == Some(2)));
+    }
+
+    #[test]
+    fn compacting_session_does_not_rekey_on_empty_tty_match() {
+        // Regression test: `cwd` is not unique — two independent live
+        // sessions sharing one is normal (multiple agents in the same
+        // repo). Before this guard, a compacting session with no resolved
+        // tty and a brand-new session that also had no resolved tty would
+        // "match" on `"" == ""` plus the shared cwd and get silently merged
+        // — an unrelated live session losing its own identity to someone
+        // else's stale compacting slot.
+        let mut r = Registry::new(None);
+        let now = t0();
+        r.set_state(
+            Some("old"),
+            State::Compacting,
+            None,
+            None,
+            Some(meta("/repo", "")),
+            now,
+        );
+        let effects = r.set_state(
+            Some("new"),
+            State::Thinking,
+            None,
+            None,
+            Some(meta("/repo", "")),
+            now,
+        );
+        assert!(!effects
+            .iter()
+            .any(|e| matches!(e, Effect::SessionRekeyed { .. })));
         assert_eq!(r.list().len(), 2);
         assert!(r.list().iter().any(|s| s.id == "old" && s.state == State::Compacting));
         assert!(r.list().iter().any(|s| s.id == "new" && s.slot == Some(2)));

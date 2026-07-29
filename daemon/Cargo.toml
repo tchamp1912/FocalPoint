@@ -35,6 +35,10 @@ dirs = "5"
 # kill(pid, 0) liveness check for the dead-process sweep (daemon.rs) — no
 # new transitive weight, already pulled in indirectly by tokio/hidapi.
 libc = "0.2"
+# Process ancestry (ppid/comm/argv) for identity.rs's tty/pid resolution —
+# safe, cross-platform, avoids hand-written unsafe FFI against macOS's
+# sysctl/kinfo_proc struct layout.
+sysinfo = "0.32"
 tokio = { version = "1", features = [
     "rt-multi-thread",
     "macros",

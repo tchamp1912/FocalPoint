@@ -1,5 +1,24 @@
 #!/bin/bash
 # FocalPoint Codex lifecycle-hook adapter.
+#
+# tty/pid identity: previously resolved here via a `ps` ancestry walk on
+# every hook call (the same design claude-code/hooks.sh had before it was
+# fixed to cache once per process instance — this script had drifted out of
+# sync with that fix). Moved into the `focalpoint` CLI itself
+# (daemon/src/identity.rs) so there's exactly one implementation shared by
+# both adapters instead of two copies that can silently diverge again.
+# set-state/set-meta resolve+cache tty/pid automatically whenever --session
+# and --kind claude|codex are given and no explicit --meta tty=/pid= was
+# passed; --refresh-identity (passed below on SessionStart) forces a fresh
+# walk instead of trusting the cache. See
+# SESSION-IDENTITY-PERSISTENCE-PLAN.md Part 1.
+#
+# Compaction: unlike Claude Code, Codex has no PreCompact-equivalent hook,
+# but it also doesn't need one — verified against real local rollout files,
+# Codex compacts *in place* (same thread_id, same rollout file, nothing
+# forks), so the existing full-transcript recompute below is already
+# correctly cumulative across a Codex compaction for free. The only thing
+# missing was a `compactions` counter itself, added below (Part 2b).
 
 set -u
 
@@ -35,41 +54,6 @@ if [ "$event" = "UserPromptSubmit" ] && [ -n "${prompt:-}" ] && [ -n "${session_
 fi
 [ -n "${event:-}" ] || exit 0
 
-# Find the nearest ancestor with a controlling terminal AND the nearest
-# ancestor that IS the codex process itself, for the [session] focus action
-# and the daemon's dead-tty/dead-process sweeps (PROTOCOL.md §3). Without a
-# tty meta, focus degrades to the focus script's fuzzy title match, which
-# cannot disambiguate sessions in the same repo (and Claude Code's generated
-# tab titles can even steal the match). Mirrors claude-code/hooks.sh's walk;
-# `ps` rather than the `tty` builtin because stdin is the hook-JSON pipe.
-session_tty=""
-codex_pid=""
-tty_pid=$$
-while [ -n "$tty_pid" ] && [ "$tty_pid" -gt 1 ] 2>/dev/null; do
-  if [ -z "$session_tty" ]; then
-    tty_raw=$(ps -o tty= -p "$tty_pid" 2>/dev/null | tr -d '[:space:]')
-    if [ -n "$tty_raw" ] && [ "$tty_raw" != "??" ] && [ "$tty_raw" != "?" ]; then
-      case "$tty_raw" in
-        /*) session_tty="$tty_raw" ;;
-        *)  session_tty="/dev/$tty_raw" ;;
-      esac
-    fi
-  fi
-
-  if [ -z "$codex_pid" ]; then
-    comm=$(ps -o comm= -p "$tty_pid" 2>/dev/null | tr -d '[:space:]')
-    case "$comm" in
-      */codex|codex) codex_pid="$tty_pid" ;;
-    esac
-  fi
-
-  [ -n "$session_tty" ] && [ -n "$codex_pid" ] && break
-
-  parent_pid=$(ps -o ppid= -p "$tty_pid" 2>/dev/null | tr -d '[:space:]')
-  [ -n "$parent_pid" ] && [ "$parent_pid" != "$tty_pid" ] || break
-  tty_pid="$parent_pid"
-done
-
 case "$event" in
   SessionStart|UserPromptSubmit|PostToolUse) state="thinking" ;;
   PreToolUse) state="running" ;;
@@ -95,10 +79,10 @@ if [ -n "${session_id:-}" ]; then
     label="Codex · $(basename "${cwd:-.}")"
   fi
   args+=(--session "$session_id" --kind codex --cwd "$cwd" --label "$label")
-  [ -n "$session_tty" ] && args+=(--meta "tty=$session_tty")
-  # Lets the daemon's dead-process sweep reap this session the moment codex
-  # itself exits, even if the terminal it ran in stays open.
-  [ -n "$codex_pid" ] && args+=(--meta "pid=$codex_pid")
+  # SessionStart means "a fresh process instance for this session_id just
+  # began" — force the CLI to re-walk instead of trusting a (possibly stale,
+  # possibly nonexistent) cached identity (identity.rs).
+  [ "$event" = "SessionStart" ] && args+=(--refresh-identity)
   [ -n "${model:-}" ] && args+=(--meta "model=$model")
 
   if [ "$event" = "Stop" ]; then
@@ -111,6 +95,10 @@ if [ -n "${session_id:-}" ]; then
       # hook API, so keep this parser defensive and retain the counter fallback
       # below. token_count.total_token_usage is already cumulative; cached and
       # reasoning tokens are subsets of input_tokens/output_tokens respectively.
+      # compactions: counts inline context-compaction events (verified against
+      # real rollout files — Codex compacts in place, same thread_id, so this
+      # is already a whole-lineage total with no daemon-side carry-forward
+      # needed, unlike Claude Code's cumulative stats).
       stats=$(jq -r -s '
         ([.[] | select(.type=="event_msg" and .payload.type=="token_count"
           and .payload.info.total_token_usage!=null) | .payload.info] | last // {}) as $usage
@@ -126,21 +114,22 @@ if [ -n "${session_id:-}" ]; then
             model: ([.[] | select(.type=="turn_context") | .payload.model]
               | map(select(.!=null and .!="")) | last // ""),
             context_tokens: ($usage.last_token_usage.input_tokens // 0),
-            context_window: ($usage.model_context_window // 0)
+            context_window: ($usage.model_context_window // 0),
+            compactions: ([.[] | select(.type=="event_msg" and .payload.type=="context_compacted")] | length)
           }
         | [.turns, .tool_calls, .subagents, .tokens_in, .tokens_out, .model,
-           .context_tokens, .context_window]
+           .context_tokens, .context_window, .compactions]
         | @tsv
       ' "$transcript_path" 2>/dev/null)
     fi
 
     if [ -n "$stats" ]; then
-      IFS=$'\t' read -r turns tool_calls subagents tokens_in tokens_out transcript_model context_tokens context_window <<< "$stats"
+      IFS=$'\t' read -r turns tool_calls subagents tokens_in tokens_out transcript_model context_tokens context_window compactions <<< "$stats"
       printf '%s' "$turns" > "$counter_file" 2>/dev/null
       args+=(--meta "turns=$turns" --meta "tool_calls=$tool_calls" \
              --meta "subagents=$subagents" --meta "tokens_in=$tokens_in" \
              --meta "tokens_out=$tokens_out" --meta "context_tokens=$context_tokens" \
-             --meta "context_window=$context_window")
+             --meta "context_window=$context_window" --meta "compactions=$compactions")
       [ -n "$transcript_model" ] && args+=(--meta "model=$transcript_model")
     else
       turns=$(( $(cat "$counter_file" 2>/dev/null || echo 0) + 1 ))

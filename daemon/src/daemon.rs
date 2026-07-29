@@ -19,11 +19,11 @@ use crate::config::{Action, Config};
 use crate::protocol::{
     control_id, control_name, joy_id, joy_name, DeviceEvent, HostCmd, Pattern, State,
 };
-use crate::session::{Effect, Registry};
+use crate::session::{Effect, Registry, Session};
 use crate::styles::{Style, StyleTable};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// True if a process with this pid exists, via `kill(pid, 0)` — sends no
 /// signal, just checks. `ESRCH` means it doesn't; any other errno (e.g.
@@ -316,13 +316,17 @@ fn replay_state_cmds(shared: &Mutex<Shared>) -> Vec<HostCmd> {
 }
 
 /// Translate registry effects into device commands (`SET_KEY_STATE` /
-/// `SET_STATE`) and subscriber events (PROTOCOL.md §3).
+/// `SET_STATE`) and subscriber events (PROTOCOL.md §3). Also persists a
+/// fresh snapshot (Part 4) whenever any effect actually touched session
+/// state — `AggregateChanged` alone (e.g. only the sessionless default
+/// changed, which is deliberately never persisted) doesn't count.
 #[cfg(unix)]
 fn apply_effects(
     effects: Vec<Effect>,
     ctx: &EventCtx,
     host_tx: &tokio::sync::mpsc::UnboundedSender<HostCmd>,
 ) {
+    let mut session_effect = false;
     for effect in effects {
         match effect {
             Effect::SessionUpsert {
@@ -334,6 +338,7 @@ fn apply_effects(
                 slot,
                 state,
             } => {
+                session_effect = true;
                 if let Some(key) = slot {
                     let _ = host_tx.send(HostCmd::SetKeyState {
                         key,
@@ -345,6 +350,7 @@ fn apply_effects(
                 ));
             }
             Effect::SessionEnded { id, slot } => {
+                session_effect = true;
                 if let Some(key) = slot {
                     let _ = host_tx.send(HostCmd::SetKeyState { key, state: None });
                 }
@@ -354,6 +360,7 @@ fn apply_effects(
                 // No device command: the slot/state don't change here — the
                 // SessionUpsert that immediately follows (Registry::set_state
                 // always emits both together) carries those.
+                session_effect = true;
                 ctx.broadcast(&session_rekeyed_line(&old_id, &new_id));
             }
             Effect::AggregateChanged { state } => {
@@ -361,6 +368,225 @@ fn apply_effects(
                 ctx.broadcast(&state_event_line(state));
             }
         }
+    }
+    if session_effect {
+        save_snapshot(&ctx.shared);
+    }
+}
+
+/// `Session` -> the JSON shape both `"list-sessions"` and the persisted
+/// snapshot use (PROTOCOL.md §3) — one place so they can't drift apart.
+#[cfg(unix)]
+fn session_to_json(s: &Session) -> serde_json::Value {
+    serde_json::json!({
+        "session": s.id,
+        "kind": s.kind,
+        "label": s.label,
+        "name": s.name,
+        "slot": s.slot,
+        "state": s.state.name(),
+        "meta": serde_json::Value::Object(s.meta.clone()),
+    })
+}
+
+/// The inverse of `session_to_json`, given the `Instant` to use for
+/// `last_update`/`reaped_at` (reconstructed by the caller — see
+/// `restore_instant`). `None` on any malformed/missing required field.
+#[cfg(unix)]
+fn session_from_json(v: &serde_json::Value, last_update: Instant) -> Option<Session> {
+    let id = v.get("session")?.as_str()?.to_string();
+    let state = crate::protocol::State::from_name(v.get("state")?.as_str()?)?;
+    Some(Session {
+        id,
+        kind: v.get("kind").and_then(|x| x.as_str()).map(str::to_string),
+        label: v.get("label").and_then(|x| x.as_str()).map(str::to_string),
+        name: v.get("name").and_then(|x| x.as_str()).map(str::to_string),
+        meta: v
+            .get("meta")
+            .and_then(|m| m.as_object())
+            .cloned()
+            .unwrap_or_default(),
+        slot: v.get("slot").and_then(|x| x.as_u64()).map(|n| n as u8),
+        state,
+        last_update,
+    })
+}
+
+/// Milliseconds since the Unix epoch, wall-clock — `0` on a clock that
+/// somehow predates 1970 (never in practice), rather than panicking.
+#[cfg(unix)]
+fn unix_ms_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Reconstruct an `Instant` from a snapshot's elapsed-ms-since-`saved_at`
+/// offset: `Instant::now() - (elapsed_ms + gap since the snapshot was
+/// written)`. `Instant` is monotonic and meaningless across a process
+/// restart, so this is the only way to carry `last_update`/`reaped_at`
+/// forward accurately — without it, every TTL/COMPACT_GRACE/tombstone_ttl
+/// clock would silently reset to "now" on every restart.
+#[cfg(unix)]
+fn restore_instant(saved_at_unix_ms: u64, elapsed_ms: u64) -> Instant {
+    let gap_ms = unix_ms_now().saturating_sub(saved_at_unix_ms);
+    let total = Duration::from_millis(elapsed_ms.saturating_add(gap_ms));
+    Instant::now().checked_sub(total).unwrap_or_else(Instant::now)
+}
+
+/// Persist the full current session/tombstone/usage state (Part 4) —
+/// called after any session-affecting `Effect` (`apply_effects`) and after
+/// a successful `set-usage`. Best-effort: a write failure (disk full,
+/// permissions) is silently swallowed, same tolerance every other
+/// persistence path in this codebase already has for its own I/O.
+#[cfg(unix)]
+fn save_snapshot(shared: &Mutex<Shared>) {
+    let now = Instant::now();
+    let (sessions, tombstones, usage) = {
+        let s = shared.lock().unwrap();
+        let sessions: Vec<serde_json::Value> = s
+            .registry
+            .list()
+            .iter()
+            .map(|sess| {
+                let mut v = session_to_json(sess);
+                v["elapsed_ms_since_update"] = serde_json::json!(
+                    now.saturating_duration_since(sess.last_update).as_millis() as u64
+                );
+                v
+            })
+            .collect();
+        let tombstones: Vec<serde_json::Value> = s
+            .registry
+            .tombstones_snapshot()
+            .iter()
+            .map(|(_, sess, reaped_at)| {
+                let mut v = session_to_json(sess);
+                v["elapsed_ms_since_reaped"] = serde_json::json!(
+                    now.saturating_duration_since(*reaped_at).as_millis() as u64
+                );
+                v
+            })
+            .collect();
+        (sessions, tombstones, s.usage.clone())
+    };
+    let snapshot = serde_json::json!({
+        "saved_at_unix_ms": unix_ms_now(),
+        "sessions": sessions,
+        "tombstones": tombstones,
+        "usage": usage,
+    });
+    let path = crate::paths::daemon_state_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(data) = serde_json::to_string(&snapshot) {
+        let _ = std::fs::write(&path, data);
+    }
+}
+
+/// Load a previously-persisted snapshot, reconstructing `Instant`s via
+/// `restore_instant`. Missing, corrupt, or unreadable: silent no-op,
+/// returning an empty registry/usage map — same tolerance `Config::load()`
+/// already has for a missing `config.toml` (`CLAUDE.md`: graceful
+/// degradation is load-bearing throughout this codebase, not optional).
+#[cfg(unix)]
+fn load_snapshot(
+    ttl: Option<Duration>,
+    tombstone_ttl: Option<Duration>,
+) -> (
+    Registry,
+    HashMap<String, serde_json::Map<String, serde_json::Value>>,
+) {
+    let empty = || (Registry::new(ttl).with_tombstone_ttl(tombstone_ttl), HashMap::new());
+    let Ok(data) = std::fs::read_to_string(crate::paths::daemon_state_path()) else {
+        return empty();
+    };
+    let Ok(root) = serde_json::from_str::<serde_json::Value>(&data) else {
+        return empty();
+    };
+    let saved_at_unix_ms = root
+        .get("saved_at_unix_ms")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
+    let sessions: Vec<Session> = root
+        .get("sessions")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|v| {
+            let elapsed = v
+                .get("elapsed_ms_since_update")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(0);
+            session_from_json(v, restore_instant(saved_at_unix_ms, elapsed))
+        })
+        .collect();
+
+    let tombstones: Vec<(String, Session, Instant)> = root
+        .get("tombstones")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|v| {
+            let elapsed = v
+                .get("elapsed_ms_since_reaped")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(0);
+            let reaped_at = restore_instant(saved_at_unix_ms, elapsed);
+            let sess = session_from_json(v, reaped_at)?;
+            let id = sess.id.clone();
+            Some((id, sess, reaped_at))
+        })
+        .collect();
+
+    let usage: HashMap<String, serde_json::Map<String, serde_json::Value>> = root
+        .get("usage")
+        .and_then(|v| v.as_object())
+        .into_iter()
+        .flatten()
+        .filter_map(|(k, v)| v.as_object().map(|m| (k.clone(), m.clone())))
+        .collect();
+
+    (
+        Registry::restore(ttl, tombstone_ttl, sessions, tombstones),
+        usage,
+    )
+}
+
+/// One-shot startup reconciliation (Part 4): a restored session might have
+/// actually died *while the daemon was down* — reuses the same tty/pid
+/// liveness facts the periodic dead-tty/dead-process sweeps check (see
+/// `run()` below), but runs once, synchronously, before the daemon answers
+/// its first request or replays anything to a device. Routes through
+/// `reap_session` (tombstoned, not hard-dropped) so a session that died
+/// while the daemon was down is still recoverable via the pooled matcher —
+/// consistent with every other non-explicit disappearance.
+#[cfg(unix)]
+fn reconcile_on_startup(shared: &Mutex<Shared>) {
+    let now = Instant::now();
+    let dead: Vec<String> = {
+        let s = shared.lock().unwrap();
+        s.registry
+            .list()
+            .into_iter()
+            .filter(|sess| {
+                let tty = sess.tty();
+                let tty_dead = !tty.is_empty() && !std::path::Path::new(&tty).exists();
+                let pid_dead = matches!(sess.pid(), Some(pid) if !process_is_alive(pid));
+                tty_dead || pid_dead
+            })
+            .map(|sess| sess.id)
+            .collect()
+    };
+    if dead.is_empty() {
+        return;
+    }
+    let mut s = shared.lock().unwrap();
+    for id in dead {
+        s.registry.reap_session(&id, now);
     }
 }
 
@@ -702,12 +928,24 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
 
     let config = Arc::new(Config::load()?);
     let ttl = config.session.ttl();
+    let tombstone_ttl = config.session.tombstone_ttl();
+    // Restore sessions/tombstones/usage from the last run (Part 4) instead
+    // of always starting fresh — a daemon restart shouldn't blank
+    // `focalpoint sessions`/`focalpoint usage` until adapters naturally
+    // re-report. Missing/corrupt snapshot: silently empty, same as before
+    // this feature existed.
+    let (registry, usage) = load_snapshot(ttl, tombstone_ttl);
     let shared = Arc::new(Mutex::new(Shared {
-        registry: Registry::new(ttl),
-        usage: HashMap::new(),
+        registry,
+        usage,
         styles: config.style_table(),
         device_present: false,
     }));
+    // One-shot reconciliation against live OS facts, before anything else
+    // can see the restored state: a session that actually died while the
+    // daemon was down must not resurrect as a zombie, just become a
+    // recoverable tombstone like any other non-explicit disappearance.
+    reconcile_on_startup(&shared);
     let (evt_tx, _keep) = tokio::sync::broadcast::channel::<String>(256);
     let (host_tx, host_rx) = tokio::sync::mpsc::unbounded_channel::<HostCmd>();
 
@@ -741,6 +979,22 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
                 if !effects.is_empty() {
                     apply_effects(effects, &ctx, &host_tx);
                 }
+            }
+        });
+    }
+
+    // Periodic tombstone sweep: drop reaped-but-not-explicitly-ended
+    // sessions' recoverable history past `tombstone_ttl_minutes` (no-op when
+    // never-expire). Purely internal bookkeeping — a tombstone is never
+    // visible (`list()`), so this emits no effects/device commands, unlike
+    // every other sweep here.
+    if tombstone_ttl.is_some() {
+        let ctx = ctx.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
+            loop {
+                tick.tick().await;
+                ctx.shared.lock().unwrap().registry.expire_tombstones(Instant::now());
             }
         });
     }
@@ -807,8 +1061,9 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
                 }
                 let effects: Vec<Effect> = {
                     let mut shared = ctx.shared.lock().unwrap();
+                    let now = Instant::now();
                     dead.iter()
-                        .flat_map(|id| shared.registry.end_session(id))
+                        .flat_map(|id| shared.registry.reap_session(id, now))
                         .collect()
                 };
                 apply_effects(effects, &ctx, &host_tx);
@@ -851,8 +1106,9 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
                 }
                 let effects: Vec<Effect> = {
                     let mut shared = ctx.shared.lock().unwrap();
+                    let now = Instant::now();
                     dead.iter()
-                        .flat_map(|id| shared.registry.end_session(id))
+                        .flat_map(|id| shared.registry.reap_session(id, now))
                         .collect()
                 };
                 apply_effects(effects, &ctx, &host_tx);
@@ -1053,20 +1309,7 @@ fn dispatch(
         }
         "list-sessions" => {
             let sessions = shared.lock().unwrap().registry.list();
-            let arr: Vec<serde_json::Value> = sessions
-                .iter()
-                .map(|s| {
-                    serde_json::json!({
-                        "session": s.id,
-                        "kind": s.kind,
-                        "label": s.label,
-                        "name": s.name,
-                        "slot": s.slot,
-                        "state": s.state.name(),
-                        "meta": serde_json::Value::Object(s.meta.clone()),
-                    })
-                })
-                .collect();
+            let arr: Vec<serde_json::Value> = sessions.iter().map(session_to_json).collect();
             Dispatch::Reply(serde_json::json!({ "ok": true, "sessions": arr }))
         }
         "set-usage" => {
@@ -1084,6 +1327,7 @@ fn dispatch(
                 }
             };
             ctx.broadcast(&usage_event_line(provider, &snapshot));
+            save_snapshot(shared);
             Dispatch::Reply(serde_json::json!({ "ok": true }))
         }
         "get-usage" => {
@@ -1227,6 +1471,57 @@ mod tests {
         // Not a real pid on any sane system (max_pid ceilings are far below
         // this on macOS/Linux) — exercises the ESRCH -> false path.
         assert!(!process_is_alive(999_999_999));
+    }
+
+    #[test]
+    fn session_to_json_and_back_round_trips() {
+        let mut meta = serde_json::Map::new();
+        meta.insert("turns".into(), json!(7));
+        meta.insert("tty".into(), json!("/dev/ttys004"));
+        let original = Session {
+            id: "abc".into(),
+            kind: Some("claude".into()),
+            label: Some("My Chat".into()),
+            name: Some("Renamed".into()),
+            meta,
+            slot: Some(3),
+            state: State::Thinking,
+            last_update: Instant::now(),
+        };
+        let v = session_to_json(&original);
+        let restored = session_from_json(&v, original.last_update).expect("parses");
+        assert_eq!(restored.id, original.id);
+        assert_eq!(restored.kind, original.kind);
+        assert_eq!(restored.label, original.label);
+        assert_eq!(restored.name, original.name);
+        assert_eq!(restored.slot, original.slot);
+        assert_eq!(restored.state, original.state);
+        assert_eq!(restored.meta, original.meta);
+    }
+
+    #[test]
+    fn session_from_json_rejects_malformed_input() {
+        assert!(session_from_json(&json!({"kind": "claude"}), Instant::now()).is_none());
+        assert!(session_from_json(
+            &json!({"session": "x", "state": "not-a-real-state"}),
+            Instant::now()
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn restore_instant_accounts_for_elapsed_and_gap_since_saved() {
+        let saved_at = unix_ms_now();
+        // A session that was already 5s idle at the moment the snapshot was
+        // written must still be at least ~5s "old" once reconstructed —
+        // this is what keeps TTL/COMPACT_GRACE/tombstone_ttl clocks correct
+        // immediately after a restart instead of resetting to "just now".
+        let restored = restore_instant(saved_at, 5_000);
+        let age = Instant::now().saturating_duration_since(restored);
+        assert!(
+            age.as_millis() >= 5_000,
+            "reconstructed instant should be at least the elapsed offset old, got {age:?}"
+        );
     }
 
     #[test]

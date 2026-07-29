@@ -51,12 +51,26 @@ pub struct SessionConfig {
     /// End sessions with no updates for this long. Absent => 60; `0` => never.
     #[serde(default)]
     pub ttl_minutes: Option<u64>,
+    /// How long a session reaped by a sweep (not an explicit end-session)
+    /// stays recoverable — see `session::Registry::find_recovery_candidate`.
+    /// Absent => 30; `0` => never (a session "left through a reboot" stays
+    /// recoverable indefinitely — meaningful once persisted, see Part 4).
+    #[serde(default)]
+    pub tombstone_ttl_minutes: Option<u64>,
 }
 
 impl SessionConfig {
     /// Effective TTL: `None` means "never expire".
     pub fn ttl(&self) -> Option<std::time::Duration> {
         match self.ttl_minutes.unwrap_or(60) {
+            0 => None,
+            m => Some(std::time::Duration::from_secs(m * 60)),
+        }
+    }
+
+    /// Effective tombstone TTL: `None` means "never expire".
+    pub fn tombstone_ttl(&self) -> Option<std::time::Duration> {
+        match self.tombstone_ttl_minutes.unwrap_or(30) {
             0 => None,
             m => Some(std::time::Duration::from_secs(m * 60)),
         }
@@ -299,6 +313,25 @@ ttl_minutes = 30
         // 0 => never.
         let cfg = Config::from_toml("[session]\nttl_minutes = 0\n").expect("parse");
         assert_eq!(cfg.session.ttl(), None);
+    }
+
+    #[test]
+    fn tombstone_ttl_defaults_and_never() {
+        // Missing => 30 minutes.
+        assert_eq!(
+            Config::default().session.tombstone_ttl(),
+            Some(std::time::Duration::from_secs(30 * 60))
+        );
+        // 0 => never — the user who commissioned this feature wants exactly
+        // this, personally, for sessions left through a reboot.
+        let cfg = Config::from_toml("[session]\ntombstone_ttl_minutes = 0\n").expect("parse");
+        assert_eq!(cfg.session.tombstone_ttl(), None);
+        // A configured value round-trips.
+        let cfg = Config::from_toml("[session]\ntombstone_ttl_minutes = 90\n").expect("parse");
+        assert_eq!(
+            cfg.session.tombstone_ttl(),
+            Some(std::time::Duration::from_secs(90 * 60))
+        );
     }
 
     #[test]

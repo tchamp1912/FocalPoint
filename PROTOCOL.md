@@ -132,22 +132,30 @@ off of). A `set-meta` still counts as session activity for
   there's no slot to give.
 - A session ends via `end-session`, after `session_ttl_minutes` (config,
   default 60, 0 = never) without an update, or — for a session carrying a
-  `tty` in `meta` (the well-known key set via `--meta tty=$(tty)`, e.g. by
-  the Claude Code adapter) — the moment that pty device stops existing on
+  `tty` in `meta` (the well-known key, resolved by the daemon — see
+  **Identity resolution** below) — the moment that pty device stops existing on
   disk. The daemon sweeps for this every 30s, independent of
   `session_ttl_minutes`; it's a hard OS fact (closing the terminal destroys
   its pty) rather than a guess, so it reaps a dead session far sooner than
   the TTL fallback without the false-positive risk of inferring death from a
   failed window-focus attempt. Sessions with no `tty` are unaffected. Or —
-  for a session carrying a `pid` in `meta` (the well-known key set via
-  `--meta pid=<pid>`, the Claude Code process's own pid, found by the
-  adapter walking its hook's process ancestry) — the moment `kill(pid, 0)`
-  reports that process gone. Also swept every 30s, same hard-fact tier as
-  the tty check, and independent of it: `tty` catches "the terminal closed,"
-  `pid` catches "the agent itself crashed but the terminal is still open" —
-  neither alone covers both failure modes. Sessions with no `pid` are
-  unaffected. Any end reason frees the session's slot (`SET_KEY_STATE slot
-  0xFF` on the device).
+  for a session carrying a `pid` in `meta` (the well-known key, also resolved
+  by the daemon) — the moment `kill(pid, 0)` reports that process gone. Also
+  swept every 30s, same hard-fact tier as the tty check, and independent of
+  it: `tty` catches "the terminal closed," `pid` catches "the agent itself
+  crashed but the terminal is still open" — neither alone covers both failure
+  modes. Sessions with no `pid` are unaffected. Any end reason frees the
+  session's slot (`SET_KEY_STATE slot 0xFF` on the device).
+- **Two removal paths.** An explicit `end-session` (adapter `SessionEnd`, or
+  a user running `focalpoint end-session`) removes the session outright and
+  **never** leaves a recoverable trace — not a tombstone, not a persisted
+  snapshot entry worth matching against later. Every other end reason above
+  (TTL idle timeout, dead-tty sweep, dead-pid sweep, or a session stuck in
+  `compacting` past its grace period — see below) routes through an internal
+  **reap** instead: the session is removed from the live list and its last
+  full record is stashed as a **tombstone** for possible recovery. Tombstones
+  are invisible to `list-sessions` and carry no slot; they expire after
+  `tombstone_ttl_minutes` (config, default 30, `0` = never — see §5).
 - **Compaction (Claude Code adapter only).** Compaction is always a
   session-lifecycle transition in Claude Code (`SessionStart` fires with
   `source: "compact"` on the continuation), but Claude Code exposes no field
@@ -163,22 +171,67 @@ off of). A `set-meta` still counts as session activity for
   - If the *same* `session_id` sends the next `set-state` (the common case),
     it's an ordinary update: state changes normally, meta merges forward as
     always. Nothing was lost.
-  - If a *different* `session_id` registers next with matching `cwd` and
-    `tty` meta while a `compacting` session is still parked (the fork case)
-    — a tty hosts one foreground session at a time, so this pairing is
-    unambiguous — the daemon reunites them: the new id takes over the old
-    session's slot, `name`, and merged `meta` in place, and the old id is
-    dropped. This emits a `session-rekeyed` event (below) immediately before
+  - If a *different* `session_id` registers next while a recoverable
+    predecessor exists — either a live `compacting` session still within its
+    **5-minute grace period** (the fast compaction-continuation path; a
+    still-visible "compacting" key is almost always claimed within seconds)
+    or a tombstoned session within `tombstone_ttl_minutes` (the general
+    "reappeared after an unexplained sweep-driven disappearance" path) — the
+    daemon reunites them: the new id takes over the old session's slot,
+    `name`, and merged `meta` in place, and the old id is dropped. Matching
+    uses a pooled set of signals `{label, cwd, tty, pid}`: **at least 2 must
+    agree**, and `cwd` alone is never enough (multiple simultaneous sessions
+    commonly share one). The right pair falls out naturally per cause —
+    `label`+`cwd` for a compaction/resume fork (new pid, maybe new tty;
+    Claude Code's `ai-title` survives a compaction fork even though pid/tty
+    don't), `pid`+`cwd` or `pid`+`tty` for a false-reap (same process, never
+    actually died). Ties (same score) are broken by most recent activity. On
+    reunification, **cumulative** meta keys (`turns`, `tool_calls`,
+    `subagents`, `tokens_in`, `tokens_out`, `cost_usd`) are **added** to the
+    predecessor's totals rather than overwritten; the `compactions` counter
+    increments; instantaneous keys (`context_tokens`, `context_window`, `tty`,
+    `pid`, `model`, rate-limit fields) are plain overwrites as always —
+    resetting `context_tokens`/`context_window` on compaction is correct, not
+    a bug. This emits a `session-rekeyed` event (below) immediately before
     the `session` event carrying the continuation's real state. Front-ends
     should relabel their existing record for `old_session` to `new_session`
     in place (preserving name/history/stats), not treat it as an end
     followed by a fresh registration.
   - A session stuck in `compacting` for **5 minutes** with no claim (the
     grace period, independent of `session_ttl_minutes` — including a
-    configured "never expire") is ended outright by a dedicated sweep, same
-    30s cadence as the tty/pid sweeps: compaction was cancelled, or the
-    continuation genuinely never appeared, and a stuck `compacting`
-    indicator is actively misleading, not just stale.
+    configured "never expire") is **reaped** (tombstoned), same 30s cadence
+    as the tty/pid sweeps: compaction was cancelled, or the continuation
+    genuinely never appeared, and a stuck `compacting` indicator is actively
+    misleading — but a very-late continuation can still recover via the
+    tombstone path if it arrives within `tombstone_ttl_minutes`.
+- **Identity resolution (daemon-side).** For `claude` and `codex` sessions,
+  the `focalpoint` CLI resolves `meta.tty` and `meta.pid` automatically when
+  `--kind` is passed — adapters no longer walk process ancestry themselves.
+  Resolution walks from the calling process up through parents to the
+  outermost ancestor whose process name matches the kind (`claude`/`codex`),
+  skipping transient helper processes (e.g. Claude Code's `claude daemon run
+  --origin transient` subprocess). `tty` comes from the caller's controlling
+  terminal (`/dev/tty`), not stdio fds. Results are cached per session at
+  `$XDG_STATE_HOME/focalpoint/sessions/<session_id>.json` (falling back to
+  `~/.local/state/focalpoint/sessions/…`); `--refresh-identity` forces a
+  fresh walk + cache overwrite (adapters pass this on `SessionStart`). An
+  explicit `--meta tty=`/`--meta pid=` from the caller skips auto-resolution
+  for that key. The cache is deleted on `end-session`. Cursor/generic/unknown
+  kinds skip the walk entirely — same as before.
+- **Identity model.** `session` (the id) is the only field any daemon logic
+  or front-end may treat as authoritative identity — it's what the adapter
+  gets directly from its tool (Claude Code's `session_id`, Codex's
+  `thread-id`), never derived. `tty` and `pid` are best-effort hints resolved
+  as above, not guarantees. They're trustworthy enough to key the tty/pid
+  dead-session sweeps because those only ever act within a single session's
+  own reported values. **`cwd` is explicitly not unique** — multiple
+  simultaneous sessions commonly share one (several agents working the same
+  repo) — so nothing may treat cwd-equality alone as session-equality; it
+  only contributes to recovery when paired with at least one other agreeing
+  signal (see reunification above). Internal bookkeeping keys `_carry_*` may
+  appear in `meta` on `list-sessions`/`session` events — safely ignorable by
+  clients; they hold the carried-forward base for cumulative stats across
+  rekeys/recoveries and are not part of the adapter contract.
 - A `set-state` with **no** `session` sets the sessionless default session:
   it occupies no slot but participates in the aggregate (back-compat).
 - `rename-session` sets a session's user-assigned `name`, which front-ends
@@ -189,8 +242,19 @@ off of). A `set-meta` still counts as session activity for
   `name`. The value is trimmed, and an empty or omitted `name` clears the
   rename. Renaming broadcasts a `session` event but does **not** count as
   session activity, so it never extends `session_ttl_minutes`. Renaming an
-  unknown session is an error. Names live only as long as the session: they
-  are not persisted across `end-session`, TTL expiry, or a daemon restart.
+  unknown session is an error. Names live only as long as the session is live:
+  they are not persisted across `end-session`, TTL/reap expiry, or a daemon
+  restart (unlike session records, tombstones, and usage — see **Persisted
+  state** below).
+- **Persisted state.** The daemon writes a snapshot to
+  `$XDG_STATE_HOME/focalpoint/state.json` (falling back to
+  `~/.local/state/focalpoint/state.json`) on every session-affecting change
+  and on `set-usage`. The file holds live sessions, tombstones, and usage
+  snapshots; on startup the daemon loads it instead of starting empty,
+  reconstructs internal timestamps from the saved wall-clock anchor, and
+  runs a one-shot reconciliation (dead tty/pid → reap/tombstone) before
+  serving its first request. Missing or corrupt snapshots are a silent
+  no-op (start empty). Session `name` values are **not** in the snapshot.
 - The **aggregate state** is the worst state across all live sessions:
   `error > waiting > running > thinking > done > compacting > idle`.
   `compacting` sits just above `idle` — it's bookkeeping, not agent work, so
@@ -261,10 +325,10 @@ into the provider's record and is immediately broadcast:
 {"ok":true,"usage":{"claude":{"five_hour_used":42.5}}}
 ```
 
-Usage is retained for the daemon lifetime. Clients should treat it as
-last-known data and display the update time when freshness matters. On
-`subscribe`, the daemon sends a `usage` event for every recorded provider
-after the session snapshot.
+Usage is retained across daemon restarts (via the persisted snapshot above).
+Clients should treat it as last-known data and display the update time when
+freshness matters. On `subscribe`, the daemon sends a `usage` event for every
+recorded provider after the session snapshot.
 
 ### Styles
 
@@ -291,9 +355,9 @@ State names in JSON are the lowercase names from §1 (`running` not
 ```
 focalpoint set-state <idle|thinking|running|waiting|done|error|compacting>
         [--session ID] [--kind KIND] [--label LABEL] [--cwd PATH]
-        [--meta KEY=VALUE]...
+        [--meta KEY=VALUE]... [--refresh-identity]
 focalpoint set-meta --session ID [--kind KIND] [--label LABEL]
-        [--meta KEY=VALUE]...   # merges meta only; leaves live state untouched
+        [--meta KEY=VALUE]... [--refresh-identity]   # merges meta only; leaves live state untouched
 focalpoint get-state        # aggregate
 focalpoint sessions         # list live sessions in slot order
 focalpoint rename-session <ID> [NAME]   # omit NAME (or pass "") to clear
@@ -315,8 +379,11 @@ focalpoint usage [--json]
 values that parse as a number are stored numerically, everything else as a
 string. Well-known numeric keys the menu bar app renders as optional stat
 badges next to a session's elapsed time: `tokens_in`, `tokens_out`,
-`tool_calls`, `turns`, `cost_usd`. Any adapter may send some, all, or none of
-them — the UI simply omits a badge whose key is absent for a given session.
+`tool_calls`, `turns`, `cost_usd`, `compactions`. Any adapter may send some,
+all, or none of them — the UI simply omits a badge whose key is absent for a
+given session. `compactions` counts how many times a conversation's context
+has been compacted (Claude Code: daemon-side on rekey/recovery; Codex:
+adapter-side transcript scan — same cumulative key, different source).
 `cost_usd` is a real running total in US dollars (not an estimate), rendered
 as a `$0.42`-style badge; the Claude Code status-line hook is the only
 adapter that reports it today (via `set-meta`, since cost arrives on the
@@ -331,9 +398,10 @@ badge. Optional numeric key `context_window` supplies the model's total
 context capacity; clients prefer it over a model-name lookup when calculating
 `context_tokens / context_window`. Claude Code reports occupancy and Codex
 reports both values. Well-known numeric key `pid`: the agent process's own
-process id (Claude Code only, found by the adapter walking its hook's
-process ancestry to the nearest `claude` process) — not rendered by any
-client, purely for the daemon's dead-process sweep (§3).)
+process id (Claude Code/Codex when `--kind` is passed — resolved by the
+daemon, see §3) — not rendered by any client, purely for the daemon's
+dead-process sweep (§3). Well-known string key `tty`: the session's
+controlling terminal device path — same resolution path as `pid`.
 
 `set-usage` accepts numeric `--meta` values only. Well-known Claude Code keys
 are `five_hour_used`, `five_hour_resets_at`, `seven_day_used`, and
@@ -368,6 +436,7 @@ ccw  = "echo effort-down"
 # The session is exposed via FOCALPOINT_SESSION_* env vars.
 focus = { type = "shell", run = "~/.config/focalpoint/adapters/focus-session.sh" }
 ttl_minutes = 60   # end sessions with no updates for this long (0 = never)
+tombstone_ttl_minutes = 30   # how long a sweep-reaped session stays recoverable (0 = never)
 
 # Per-state render styles (§3 Styles). Omitted states use the §1 defaults.
 # The daemon rewrites this section when it receives `set-style`.

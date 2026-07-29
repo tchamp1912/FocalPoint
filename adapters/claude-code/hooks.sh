@@ -5,6 +5,10 @@
 # MIT License - see adapters/README.md
 #
 # Hook event mappings:
+#   SessionStart        → no state change; asks the CLI to (re)resolve and
+#                         cache this process instance's tty/pid identity
+#                         (daemon/src/identity.rs handles the walk+cache —
+#                         see --refresh-identity below)
 #   UserPromptSubmit    → thinking
 #   PreToolUse          → running
 #   PostToolUse         → thinking
@@ -12,7 +16,9 @@
 #                         by the matcher in settings-fragment.json)
 #   Stop                → done
 #   SessionEnd          → end-session (falls back to sessionless `idle` if
-#                         no session_id could be extracted)
+#                         no session_id could be extracted); the CLI's
+#                         end-session also drops this session's cached
+#                         identity (identity.rs)
 #   PreCompact          → compacting (transient, greyed-out state — see
 #                         comment above the case below; the daemon reunites
 #                         it with its continuation instead of leaving a
@@ -31,13 +37,20 @@
 # picker. When present we use that instead of the cwd's basename, so FocalPoint
 # shows "Fix drag stutter" rather than "focalpoint" for every session in the
 # same directory. Requires jq; silently falls back to basename(cwd) without
-# it, same as before this feature existed.
+# it, same as before this feature existed. This title also survives a
+# compaction fork (verified empirically) — the daemon's session-recovery
+# matcher (PROTOCOL.md §3) relies on that to reunite a continuation even when
+# tty/pid can't (see identity.rs's doc comment for why those can't always).
 #
 # Session stats (tokens/tool-calls/turns/subagents): computed from the same
 # transcript on the Stop event only (once per turn, not per tool call, to
 # keep the hook fast) and sent via --meta (PROTOCOL.md §4). Optional
 # end-to-end: skipped without jq, and the menu bar app only shows a badge for
-# stats it actually receives (Settings → Claude & Codex).
+# stats it actually receives (Settings → Claude & Codex). The daemon adds
+# these on top of whatever total a prior compaction segment already
+# accumulated (session.rs's cumulative-meta carry-forward) — this script
+# only ever reports "this segment's own recomputed total," never has to know
+# about compaction history itself.
 #
 # Subagent count: Claude Code spawns subagents via a tool_use block in the
 # main transcript (its own sub-transcript isn't reachable from this hook's
@@ -45,17 +58,17 @@
 # cumulative count of subagents launched this session, not how many are
 # running right now. The tool is named "Task" on some Claude Code
 # builds/versions and "Agent" on others (confirmed by grepping a live
-# transcript — this session's own subagent launch showed up as "Agent", not
-# "Task"), so both names are matched.
+# transcript), so both names are matched.
 #
-# Session tty (--meta tty=...): the [session] focus action (PROTOCOL.md §3)
-# needs a way to find the RIGHT terminal window. Matching on the cwd's
-# basename in window titles doesn't work — Claude Code titles iTerm2/Terminal
-# tabs with a generated task summary, not the cwd, so it may never appear in
-# the title at all, and two sessions in the same repo are indistinguishable by
-# cwd anyway. Async Claude hooks have no controlling terminal of their own, so
-# walk their parent chain to find the Claude/shell process that still owns it.
-# We use `ps`, not the `tty` builtin: stdin is a pipe carrying the hook JSON.
+# Session tty/pid: previously resolved here via a `ps` ancestry walk on
+# every hook call — moved into the `focalpoint` CLI itself
+# (daemon/src/identity.rs), since that binary is invoked fresh each call
+# anyway and can resolve its OWN ancestry natively (no `ps` subprocess
+# spawning) and cache the answer once per real process instance instead of
+# re-deriving it dozens of times a session. `set-state`/`set-meta` do this
+# automatically whenever --session and --kind claude|codex are given and no
+# explicit --meta tty=/pid= was passed — this script no longer computes
+# either at all. See SESSION-IDENTITY-PERSISTENCE-PLAN.md Part 1 for why.
 
 set -u
 
@@ -153,45 +166,6 @@ extract_stats() {
   ' "$transcript" 2>/dev/null
 }
 
-# Find the nearest ancestor with a controlling terminal, e.g.
-# "/dev/ttys003", AND the nearest ancestor that IS the Claude Code process
-# itself (comm "claude" — confirmed empirically via `ps -o comm=`; it's not
-# wrapped by node/electron on this platform). An async hook itself normally
-# reports "??" for tty and is never "claude" itself (it's the per-invocation
-# bash `hooks.sh` runs as); walking up typically reaches both at once, since
-# Claude Code's own process is usually the nearest ancestor holding the
-# terminal. Empty session_tty means a background/non-interactive invocation
-# with no terminal anywhere in its ancestry; empty claude_pid means the walk
-# hit PID 1 without finding a "claude" process (unexpected, but the pid meta
-# is simply omitted rather than sent wrong).
-session_tty=""
-claude_pid=""
-tty_pid=$$
-while [ -n "$tty_pid" ] && [ "$tty_pid" -gt 1 ] 2>/dev/null; do
-  if [ -z "$session_tty" ]; then
-    tty_raw=$(ps -o tty= -p "$tty_pid" 2>/dev/null | tr -d '[:space:]')
-    if [ -n "$tty_raw" ] && [ "$tty_raw" != "??" ] && [ "$tty_raw" != "?" ]; then
-      case "$tty_raw" in
-        /*) session_tty="$tty_raw" ;;
-        *)  session_tty="/dev/$tty_raw" ;;
-      esac
-    fi
-  fi
-
-  if [ -z "$claude_pid" ]; then
-    comm=$(ps -o comm= -p "$tty_pid" 2>/dev/null | tr -d '[:space:]')
-    case "$comm" in
-      */claude|claude) claude_pid="$tty_pid" ;;
-    esac
-  fi
-
-  [ -n "$session_tty" ] && [ -n "$claude_pid" ] && break
-
-  parent_pid=$(ps -o ppid= -p "$tty_pid" 2>/dev/null | tr -d '[:space:]')
-  [ -n "$parent_pid" ] && [ "$parent_pid" != "$tty_pid" ] || break
-  tty_pid="$parent_pid"
-done
-
 event=$(extract_field "hook_event_name")
 [ -n "${event:-}" ] || exit 0
 
@@ -201,6 +175,21 @@ transcript_path=$(extract_field "transcript_path")
 
 # Map event to state
 case "$event" in
+  SessionStart)
+    # Ask the CLI to (re)resolve and cache this process instance's tty/pid
+    # identity (identity.rs) — a fresh process instance for this session_id
+    # just began (startup, --resume, /clear, or the fork-after-compact case
+    # all fire this), so any previously-cached identity is from a
+    # *different*, possibly-dead process (the process behind a --resume'd
+    # session_id is never the same pid twice). set-meta doesn't require the
+    # session to already be registered (an unknown id is a harmless no-op
+    # daemon-side), and causes no visible state change — a session merely
+    # starting/resuming isn't itself a state transition worth reporting.
+    if [ -n "${session_id:-}" ]; then
+      "$FOCALPOINT" set-meta --session "$session_id" --kind claude --refresh-identity >/dev/null 2>&1 || true
+    fi
+    exit 0
+    ;;
   UserPromptSubmit)
     state="thinking"
     ;;
@@ -215,7 +204,8 @@ case "$event" in
     ;;
   SessionEnd)
     # Prefer a clean end-session over just marking idle, so the session's
-    # numbered-key slot is freed immediately (PROTOCOL.md §3).
+    # numbered-key slot is freed immediately (PROTOCOL.md §3). end-session
+    # also drops this session's cached identity (identity.rs).
     if [ -n "${session_id:-}" ]; then
       "$FOCALPOINT" end-session "$session_id" 2>/dev/null || true
     else
@@ -244,21 +234,18 @@ case "$event" in
     # (a transient, greyed-out state — PROTOCOL.md §1) instead of ending
     # it. If the *same* session_id sends the next hook event (the common
     # case), it just transitions state normally and keeps every meta key
-    # (turns/tool_calls/tokens/cost) it had already accumulated — ending
-    # the session here instead, as this hook used to, would wipe all of
-    # that for no reason. If a *different* session_id shows up next with
-    # matching cwd/tty (the fork case), the daemon reunites it with this
-    # same slot instead of leaving a zombie duplicate behind (Registry::
-    # set_state's rekey match, daemon/src/session.rs). Either way, a
+    # it had already accumulated. If a *different* session_id shows up next
+    # matching on the daemon's pooled identity signals (label/cwd/tty/pid,
+    # ≥2 must agree — PROTOCOL.md §3), the daemon reunites it with this same
+    # slot instead of leaving a zombie duplicate behind, carrying forward
+    # cumulative stats (turns/tool_calls/tokens/cost) rather than resetting
+    # them (session.rs's cumulative-meta carry-forward). Either way, a
     # session stuck `compacting` for more than a few minutes — compaction
-    # was cancelled, or the continuation never appears — is reaped by the
-    # daemon's own compacting-timeout sweep, independent of
-    # session_ttl_minutes.
+    # was cancelled, or the continuation never appears — is demoted to a
+    # recoverable (not lost) tombstone by the daemon's own
+    # compacting-timeout sweep, independent of session_ttl_minutes.
     if [ -n "${session_id:-}" ]; then
-      args=(compacting --session "$session_id" --kind claude --cwd "$cwd")
-      [ -n "$session_tty" ] && args+=(--meta "tty=$session_tty")
-      [ -n "$claude_pid" ] && args+=(--meta "pid=$claude_pid")
-      "$FOCALPOINT" set-state "${args[@]}" 2>/dev/null || true
+      "$FOCALPOINT" set-state compacting --session "$session_id" --kind claude --cwd "$cwd" 2>/dev/null || true
     fi
     exit 0
     ;;
@@ -276,11 +263,6 @@ if [ -n "${session_id:-}" ]; then
   label=$(extract_title "$transcript_path")
   [ -n "$label" ] || label="$(basename "${cwd:-.}")"
   args+=(--session "$session_id" --kind claude --cwd "$cwd" --label "$label")
-  [ -n "$session_tty" ] && args+=(--meta "tty=$session_tty")
-  # Lets the daemon's dead-process sweep (PROTOCOL.md §3) reap this session
-  # the moment Claude Code itself exits, even if the terminal it ran in
-  # stays open — the tty sweep alone can't see that failure mode.
-  [ -n "$claude_pid" ] && args+=(--meta "pid=$claude_pid")
 
   if [ "$event" = "Stop" ]; then
     stats=$(extract_stats "$transcript_path")

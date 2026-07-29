@@ -39,6 +39,12 @@ enum Cmd {
         /// tokens_in/tokens_out/tool_calls/turns (see PROTOCOL.md §3).
         #[arg(long = "meta", value_name = "KEY=VALUE")]
         meta: Vec<String>,
+        /// Force a fresh tty/pid identity resolution (ancestry walk) and
+        /// overwrite the cache, instead of trusting an existing one. Adapters
+        /// pass this on SessionStart, the one point a process instance for
+        /// this session is known to have just begun (see identity.rs).
+        #[arg(long)]
+        refresh_identity: bool,
     },
     /// Merge extra per-session meta (e.g. cost) WITHOUT touching the
     /// session's live state — unlike `set-state`, which requires a state
@@ -59,6 +65,10 @@ enum Cmd {
         /// stats like cost_usd (see PROTOCOL.md §3).
         #[arg(long = "meta", value_name = "KEY=VALUE")]
         meta: Vec<String>,
+        /// Force a fresh tty/pid identity resolution (ancestry walk) and
+        /// overwrite the cache, instead of trusting an existing one.
+        #[arg(long)]
+        refresh_identity: bool,
     },
     /// Record a provider-wide account usage snapshot. Values must be numeric.
     SetUsage {
@@ -193,6 +203,7 @@ fn main() {
             label,
             cwd,
             meta,
+            refresh_identity,
         } => client::set_state(
             &state,
             session.as_deref(),
@@ -200,13 +211,21 @@ fn main() {
             label.as_deref(),
             cwd.as_deref(),
             &meta,
+            refresh_identity,
         ),
         Cmd::SetMeta {
             session,
             kind,
             label,
             meta,
-        } => client::set_meta(&session, kind.as_deref(), label.as_deref(), &meta),
+            refresh_identity,
+        } => client::set_meta(
+            &session,
+            kind.as_deref(),
+            label.as_deref(),
+            &meta,
+            refresh_identity,
+        ),
         Cmd::SetUsage { provider, meta } => client::set_usage(&provider, &meta),
         Cmd::Usage { json } => client::usage(json),
         Cmd::GetState => client::get_state(),
