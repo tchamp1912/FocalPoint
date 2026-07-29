@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "focalpoint")(type "KiCad")(uri "${KIPRJMOD}/focalpoint.kicad_sym")(options "")(descr "FocalPoint Rev A local symbols (net-level capture)"))
+)

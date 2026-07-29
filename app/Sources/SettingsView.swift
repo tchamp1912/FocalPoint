@@ -359,6 +359,24 @@ struct IntegrationsSettingsView: View {
                 .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
 
                 VStack(alignment: .leading, spacing: 14) {
+                    Text("Stale sessions").font(.subheadline).bold()
+                    Text("A session can be left showing \u{201C}Thinking\u{201D}/\u{201C}Running\u{201D}/\u{201C}Waiting\u{201D} forever if its agent process dies without a clean shutdown \u{2014} crashed, terminal closed, laptop slept. After this many minutes with no update, that session dims and shows as possibly-stale instead of implying it's still working. This is only a display heads-up — it doesn't end the session; the daemon's own longer session.ttl_minutes (config.toml) still owns that. Leave blank to turn this off.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Divider()
+                    HStack {
+                        Label("Stale after", systemImage: "moon.zzz")
+                        Spacer()
+                        TextField("Off", text: staleThresholdText)
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 60)
+                        Text("min").foregroundStyle(.secondary)
+                    }
+                }
+                .padding(16)
+                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+
+                VStack(alignment: .leading, spacing: 14) {
                     Text("Ideas / roadmap").font(.subheadline).bold()
                     Text("Not implemented yet — listed here so they don't get lost.")
                         .font(.caption).foregroundStyle(.secondary)
@@ -417,6 +435,18 @@ struct IntegrationsSettingsView: View {
             set: { newValue in
                 let cleaned = newValue.filter { $0.isNumber || $0 == "." }
                 model.costBudget = cleaned.isEmpty ? nil : Double(cleaned)
+            }
+        )
+    }
+
+    /// String shim for `model.staleThresholdMinutes: Int?`, same clearable
+    /// treatment as the budget fields.
+    private var staleThresholdText: Binding<String> {
+        Binding(
+            get: { model.staleThresholdMinutes.map(String.init) ?? "" },
+            set: { newValue in
+                let digits = newValue.filter(\.isNumber)
+                model.staleThresholdMinutes = digits.isEmpty ? nil : Int(digits)
             }
         )
     }

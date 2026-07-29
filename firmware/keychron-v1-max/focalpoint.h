@@ -10,7 +10,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-/* ---- Protocol version reported in PONG (PROTOCOL.md is "v0.1") ---- */
+/* ---- Protocol version reported in PONG ----
+ * PROTOCOL.md is at v0.2 and this firmware implements its semantics
+ * (including the v0.2 `compacting` state id below), but PONG still reports
+ * 0.1: v0.2 was purely additive, no current host gates behavior on the
+ * minor, and bumping VK_PROTO_MINOR is a code/behavior change tracked
+ * separately from this comment-level doc fix. */
 #define VK_PROTO_MAJOR 0
 #define VK_PROTO_MINOR 1
 
@@ -37,12 +42,17 @@ enum vk_dev_cmd {
 
 /* ---- Agent state IDs (PROTOCOL.md 1) ---- */
 enum vk_state {
-    VK_STATE_IDLE     = 0,
-    VK_STATE_THINKING = 1,
-    VK_STATE_RUNNING  = 2,
-    VK_STATE_WAITING  = 3,
-    VK_STATE_DONE     = 4,
-    VK_STATE_ERROR    = 5,
+    VK_STATE_IDLE       = 0,
+    VK_STATE_THINKING   = 1,
+    VK_STATE_RUNNING    = 2,
+    VK_STATE_WAITING    = 3,
+    VK_STATE_DONE       = 4,
+    VK_STATE_ERROR      = 5,
+    /* Transient: a session between identities across a Claude Code
+     * compaction (PROTOCOL.md 1/3). Added additively in protocol v0.2 —
+     * older hosts never send it, so firmware from before this id existed
+     * simply never receives it. */
+    VK_STATE_COMPACTING = 6,
 };
 
 /* Sentinel for an empty session slot (SET_KEY_STATE b2 == 0xFF). */

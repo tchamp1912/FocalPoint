@@ -20,29 +20,95 @@ dimensions, internal construction, proprietary surfaces, or exact part forms.
 - Generous corner radii and restrained seams. USB-C, reset, and service openings
   should look intentionally integrated rather than cut into a generic box.
 
-## Starting parameters for the first print
+## Parameters
 
-These values are prototypes, not production dimensions:
+This table is **emitted by `case/freecad/enclosure.py`** (rerun the script
+after changing a constant; do not hand-edit between the markers). These are
+prototype values, not production dimensions.
 
-| Parameter | Initial value | Fit-test range |
-|---|---:|---:|
-| PCB envelope | 108 × 108 mm | Ergogen-owned |
-| Shell clearance per side | 1.5 mm | 1.0–2.0 mm |
-| Outer wall | 2.4 mm | 2.0–3.0 mm |
-| Corner radius | 12 mm | 9–15 mm |
-| Plate thickness | 1.5 mm | 1.5–2.0 mm |
-| Forward slope | 4° | 3–6° |
-| Front base height | 11 mm | component-driven |
-| Rear base height | 20 mm | component-driven |
-| Circular base diameter | 86 mm | 80–94 mm |
-| Shell-to-base angle | 2° | 1–3° |
-| Circular grommet diameter | 72 mm | part/material-driven |
-| Grommet recess | 1.2 mm | match selected sheet/part |
-| Printed-part clearance | 0.30 mm per mating side | printer-specific |
+<!-- BEGIN GENERATED PARAMETERS (case/freecad/enclosure.py) -->
+| Parameter | Value | Unit |
+|---|---:|---|
+| PCB width | 108 | mm |
+| PCB depth | 108 | mm |
+| PCB thickness | 1.6 | mm |
+| PCB clearance | 3 | mm |
+| Shell width | 114 | mm |
+| Shell depth | 114 | mm |
+| Corner radius | 6 | mm |
+| Wall | 2.4 | mm |
+| Floor | 2.4 | mm |
+| Front height | 11 | mm |
+| Rear height | 18.97 | mm |
+| Forward slope | 4 | deg |
+| Plate thickness | 1.5 | mm |
+| MX plate cutout | 14.05 | mm |
+| Shell-to-puck angle | 2 | deg |
+| Circular puck radius | 43 | mm |
+| Grommet edge inset | 7 | mm |
+| Grommet stock thickness | 1.59 | mm |
+| Grommet recess | 0.8 | mm |
+| Grommet projection | 0.79 | mm |
+| Fit clearance (non-latching) | 0.3 | mm |
+| Insert boss OD | 9 | mm |
+| Insert pilot diameter | 4 | mm |
+| Insert pilot depth | 5.5 | mm |
+| Plate screw clearance | 2.9 | mm |
+| Battery pocket | 43.0 x 40.0 | mm |
+| Battery pocket floor Z | -2 | mm |
+| Battery cavity depth | 8.64 | mm |
+| USB opening width | 10.14 | mm |
+| Reset pinhole | 2 | mm |
+<!-- END GENERATED PARAMETERS -->
+
+Fit-test ranges for the print iterations: shell clearance per PCB side
+1.0–3.0 mm, wall 2.0–3.0 mm, corner radius 6–15 mm, forward slope 3–6°,
+circular base diameter 80–94 mm, printed-part clearance per printer.
+Heights are component-driven; the grommet recess matches the selected sheet
+stock.
 
 The action-key edge is **front**; the joystick/encoder rail is **rear**. The
 keycap plate slopes downward toward the front. Prefer a continuous internal
 wedge or stepped internal bosses while keeping the exterior side wall smooth.
+
+## Recorded mechanical decisions (Rev A)
+
+- **PCB retention: switch-hung, not boss-supported.** The four Ø9 heat-set
+  insert bosses pass through Ø10.5 corner relief cutouts in the PCB
+  (`hardware/ergogen/config.yaml`, outline `pcb_reliefs`) with 0.75 mm radial
+  clearance. The bosses carry only the M2.5 plate screws; the PCB hangs from
+  the switches clipped into the plate. Rationale: one screw path per corner
+  (a boss cannot take a plate screw and a PCB screw), and no standoff-height
+  tolerance chain against a sloped datum. Consequence: the PCB must never be
+  pressed against while unsupported — see `hardware/ASSEMBLY.md`.
+- **Inserts:** McMaster `94180A321` (M2.5 × 0.45 × 3.4 mm) in blind Ø4.0 ×
+  5.5 mm pilots (recommended pilot ~Ø4.0, ≥4.5 mm deep). Print coupons before
+  ordering.
+- **Plate thickness 1.5 mm** (MX clip nominal) with **14.05 mm** cutouts for
+  MJF PA12. The generic 0.30 mm fit clearance is only for non-latching
+  features; both numbers are coupon-validated before a full print.
+- **Battery:** TinyCircuits ASR00012 (42 × 39 × 5.5 mm) sits in a flat
+  43 × 40 mm pocket sunk into the Ø86 puck (pocket floor at world z = −2.0),
+  giving ≥8 mm of cavity depth below the hot-swap sockets and a ≥2 mm solid
+  web above the grommet recess. A 12 mm-wide JST-SH pigtail bay opens off the
+  pocket's +X wall (provisional side until the connector is placed in KiCad).
+- **USB-C:** opening derived from the GCT `USB4105-GF-A-060` shell
+  (8.94 × 3.26 mm) + 0.6 mm clearance per side; it is an open-top notch in
+  the rear wall closed from above by the plate, because the connector top
+  clears the plate underside by only ~0.24 mm. X position provisional until
+  KiCad edge placement exists.
+- **Reset:** Ø2.0 pinhole through the floor (outside the puck), assuming the
+  B3U-1000P is placed on the PCB bottom side over the hole. Provisional.
+- **Antenna vs. metal fastener:** the rear-right insert boss stays at its
+  corner; the antenna keep-out is positioned inboard so the metal M2.5 insert
+  stays ≥8 mm from the keep-out volume. The keep-out box is still a
+  placeholder to be replaced from the Raytac MDBT50Q datasheet at placement.
+- **Touch coupling:** a conductive-foam pillar (~Ø12, ~5 mm free height)
+  compresses between the PCB electrode and a Ø13 × 0.4 mm underside recess in
+  the plate, so the AT42QT1010 senses through ~1.1 mm of PA12 instead of
+  ~5 mm of plate + air. The top-face witness mark stays 0.2 mm deep.
+  Alternative (plate-bonded electrode + pogo) rejected for Rev A as harder to
+  service.
 
 ## Bottom grommet / foot
 
@@ -51,8 +117,10 @@ seated in the shallow pocket of an 86 mm circular structural puck, not an
 overmold. The puck stays flat on the desk while the rectangular shell intersects
 its upper portion at 2°, producing the subtle angled-base expression.
 
-- Target 1.5–2.0 mm pad thickness and roughly 50–70 Shore A.
-- Keep the installed rubber proud of the base by about 0.6–1.0 mm.
+- Selected stock: 1/16 in (1.59 mm) silicone disc (BOM: McMaster `8525T575`),
+  50–70 Shore A, in a 0.8 mm recess → ~0.8 mm proud, inside the 0.6–1.0 mm
+  projection target. (2.0 mm stock with a 1.2 mm recess is an equivalent
+  alternative.)
 - Add shallow retention nibs only after testing adhesive-backed sheet stock.
 - Do not let the foot trap the battery door, obscure regulatory markings, or
   cover enclosure screws needed for safe LiPo service.
@@ -61,6 +129,9 @@ its upper portion at 2°, producing the subtle angled-base expression.
 
 - First fit prototypes: opaque PLA/PETG for both shells.
 - Visual prototype: translucent/frosted PETG upper shell and dark lower shell.
+- Target process for real units: MJF PA12 (no supports). FDM prints of the
+  bottom shell need supports under the ~35 mm corner overhangs beyond the
+  puck.
 - Production option: CNC polycarbonate upper plus anodized aluminum lower, but
   only with a polymer RF window around the certified module antenna.
 
@@ -79,10 +150,14 @@ its upper portion at 2°, producing the subtle angled-base expression.
 
 ## First-print acceptance gates
 
-- All four corner fasteners engage without forcing or bowing the PCB.
+- All four corner fasteners engage without forcing or bowing the PCB, and
+  every boss passes freely through its PCB corner relief.
 - Switches latch into the plate and hot-swap sockets remain unloaded.
 - Ceramic caps clear adjacent caps and the sloped shell throughout travel.
 - Encoder and joystick can reach their full motion without touching the shell.
 - USB-C inserts straight without using the connector as a structural stop.
-- Battery cannot contact switch pins, screws, or the antenna keep-out.
+- Battery drops into its pocket, cannot contact switch pins, screws, or the
+  antenna keep-out, and its pigtail folds into the relief bay unpinched.
+- A pin reaches the reset switch through the floor pinhole with the case
+  closed.
 - The unit does not rock, and the grommet remains loaded across a flat desk.

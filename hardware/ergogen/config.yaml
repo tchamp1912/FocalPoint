@@ -117,8 +117,44 @@ outlines:
       size: [108, 108]
       fillet: 10
 
+  # Board outline actually used for Edge.Cuts: the pcb silhouette minus four
+  # Ø10.5 corner relief cutouts for the enclosure's heat-set-insert bosses
+  # (WP3-3). The bosses are Ø9 cylinders whose centers sit 1.41 mm diagonal of
+  # the 10 mm corner-fillet arc centers (enclosure-local (12,12)/(102,12)/
+  # (12,102)/(102,102) = KiCad (-15,-56)/(75,-56)/(-15,34)/(75,34); source
+  # space below flips Y). Each subtracted circle lies fully inside the fillet,
+  # so it renders as a routed internal cutout (a through-hole the boss passes
+  # through) leaving a >=3.3 mm rim of board at the corner. Relief radius
+  # 5.25 = boss Ø9/2 + 0.75 mm clearance per side, so a boss never touches
+  # board material. Decision: the PCB is switch-hung from the plate (bosses
+  # carry only the plate screws, not the PCB) — see case/DESIGN.md.
+  pcb_reliefs:
+    - what: outline
+      name: pcb
+    - what: circle
+      radius: 5.25
+      operation: subtract
+      where:
+        shift: [-15, 56]
+    - what: circle
+      radius: 5.25
+      operation: subtract
+      where:
+        shift: [75, 56]
+    - what: circle
+      radius: 5.25
+      operation: subtract
+      where:
+        shift: [-15, -34]
+    - what: circle
+      radius: 5.25
+      operation: subtract
+      where:
+        shift: [75, -34]
+
   # The printed case needs room for a top plate lip and gasket/foam while
-  # retaining the reference's soft, compact outer silhouette.
+  # retaining the reference's soft, compact outer silhouette. Derived from the
+  # relief-free pcb silhouette so the case wall stays smooth.
   case_outer:
     - what: outline
       name: pcb
@@ -130,7 +166,8 @@ pcbs:
     template: kicad8
     outlines:
       edge_cuts:
-        outline: pcb
+        # pcb_reliefs = pcb minus the four boss corner reliefs (WP3-3).
+        outline: pcb_reliefs
         layer: Edge.Cuts
     footprints:
       mx_hotswap:

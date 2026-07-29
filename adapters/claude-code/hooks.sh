@@ -13,6 +13,10 @@
 #   Stop                → done
 #   SessionEnd          → end-session (falls back to sessionless `idle` if
 #                         no session_id could be extracted)
+#   PreCompact          → compacting (transient, greyed-out state — see
+#                         comment above the case below; the daemon reunites
+#                         it with its continuation instead of leaving a
+#                         zombie duplicate, PROTOCOL.md §3)
 #
 # Claude Code's hook JSON includes "session_id" and "cwd" fields (see
 # https://code.claude.com/docs/en/hooks). When present, every set-state call
@@ -150,20 +154,38 @@ extract_stats() {
 }
 
 # Find the nearest ancestor with a controlling terminal, e.g.
-# "/dev/ttys003". An async hook itself normally reports "??"; its Claude Code
-# or shell ancestor retains the terminal. Empty means a background or
-# non-interactive invocation with no terminal anywhere in its ancestry.
+# "/dev/ttys003", AND the nearest ancestor that IS the Claude Code process
+# itself (comm "claude" — confirmed empirically via `ps -o comm=`; it's not
+# wrapped by node/electron on this platform). An async hook itself normally
+# reports "??" for tty and is never "claude" itself (it's the per-invocation
+# bash `hooks.sh` runs as); walking up typically reaches both at once, since
+# Claude Code's own process is usually the nearest ancestor holding the
+# terminal. Empty session_tty means a background/non-interactive invocation
+# with no terminal anywhere in its ancestry; empty claude_pid means the walk
+# hit PID 1 without finding a "claude" process (unexpected, but the pid meta
+# is simply omitted rather than sent wrong).
 session_tty=""
+claude_pid=""
 tty_pid=$$
 while [ -n "$tty_pid" ] && [ "$tty_pid" -gt 1 ] 2>/dev/null; do
-  tty_raw=$(ps -o tty= -p "$tty_pid" 2>/dev/null | tr -d '[:space:]')
-  if [ -n "$tty_raw" ] && [ "$tty_raw" != "??" ] && [ "$tty_raw" != "?" ]; then
-    case "$tty_raw" in
-      /*) session_tty="$tty_raw" ;;
-      *)  session_tty="/dev/$tty_raw" ;;
-    esac
-    break
+  if [ -z "$session_tty" ]; then
+    tty_raw=$(ps -o tty= -p "$tty_pid" 2>/dev/null | tr -d '[:space:]')
+    if [ -n "$tty_raw" ] && [ "$tty_raw" != "??" ] && [ "$tty_raw" != "?" ]; then
+      case "$tty_raw" in
+        /*) session_tty="$tty_raw" ;;
+        *)  session_tty="/dev/$tty_raw" ;;
+      esac
+    fi
   fi
+
+  if [ -z "$claude_pid" ]; then
+    comm=$(ps -o comm= -p "$tty_pid" 2>/dev/null | tr -d '[:space:]')
+    case "$comm" in
+      */claude|claude) claude_pid="$tty_pid" ;;
+    esac
+  fi
+
+  [ -n "$session_tty" ] && [ -n "$claude_pid" ] && break
 
   parent_pid=$(ps -o ppid= -p "$tty_pid" 2>/dev/null | tr -d '[:space:]')
   [ -n "$parent_pid" ] && [ "$parent_pid" != "$tty_pid" ] || break
@@ -207,6 +229,39 @@ case "$event" in
     # the agent is blocked on the user.
     state="waiting"
     ;;
+  PreCompact)
+    # Compaction is always a session-lifecycle transition in Claude Code
+    # (SessionStart fires with source=compact on the continuation), but
+    # Claude Code exposes no field linking that continuation back to this
+    # session — and empirically the session_id doesn't even always change:
+    # a plain interactive/foreground /compact typically keeps the same
+    # session_id (same process throughout), while a background job forced
+    # to auto-compact mid-run forks a whole new `claude` process under a
+    # genuinely new session_id, leaving this one alive forever as an idle
+    # supervisor.
+    #
+    # Rather than guess which case this is, mark the session `compacting`
+    # (a transient, greyed-out state — PROTOCOL.md §1) instead of ending
+    # it. If the *same* session_id sends the next hook event (the common
+    # case), it just transitions state normally and keeps every meta key
+    # (turns/tool_calls/tokens/cost) it had already accumulated — ending
+    # the session here instead, as this hook used to, would wipe all of
+    # that for no reason. If a *different* session_id shows up next with
+    # matching cwd/tty (the fork case), the daemon reunites it with this
+    # same slot instead of leaving a zombie duplicate behind (Registry::
+    # set_state's rekey match, daemon/src/session.rs). Either way, a
+    # session stuck `compacting` for more than a few minutes — compaction
+    # was cancelled, or the continuation never appears — is reaped by the
+    # daemon's own compacting-timeout sweep, independent of
+    # session_ttl_minutes.
+    if [ -n "${session_id:-}" ]; then
+      args=(compacting --session "$session_id" --kind claude --cwd "$cwd")
+      [ -n "$session_tty" ] && args+=(--meta "tty=$session_tty")
+      [ -n "$claude_pid" ] && args+=(--meta "pid=$claude_pid")
+      "$FOCALPOINT" set-state "${args[@]}" 2>/dev/null || true
+    fi
+    exit 0
+    ;;
   *)
     # Unknown event, ignore
     exit 0
@@ -222,6 +277,10 @@ if [ -n "${session_id:-}" ]; then
   [ -n "$label" ] || label="$(basename "${cwd:-.}")"
   args+=(--session "$session_id" --kind claude --cwd "$cwd" --label "$label")
   [ -n "$session_tty" ] && args+=(--meta "tty=$session_tty")
+  # Lets the daemon's dead-process sweep (PROTOCOL.md §3) reap this session
+  # the moment Claude Code itself exits, even if the terminal it ran in
+  # stays open — the tty sweep alone can't see that failure mode.
+  [ -n "$claude_pid" ] && args+=(--meta "pid=$claude_pid")
 
   if [ "$event" = "Stop" ]; then
     stats=$(extract_stats "$transcript_path")

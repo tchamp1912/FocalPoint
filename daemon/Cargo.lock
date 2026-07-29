@@ -160,6 +160,7 @@ dependencies = [
  "clap",
  "dirs",
  "hidapi",
+ "libc",
  "serde",
  "serde_json",
  "tokio",

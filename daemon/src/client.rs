@@ -87,7 +87,9 @@ pub fn set_state(
 ) -> Result<(), CliError> {
     if State::from_name(name).is_none() {
         return Err(CliError::new(
-            format!("unknown state {name:?}; expected one of idle|thinking|running|waiting|done|error"),
+            format!(
+                "unknown state {name:?}; expected one of idle|thinking|running|waiting|done|error|compacting"
+            ),
             2,
         ));
     }
@@ -412,7 +414,7 @@ pub fn styles(json: bool) -> Result<(), CliError> {
     }
     println!("{:<9} {:<15} {:<9} PERIOD_MS", "STATE", "RGB", "PATTERN");
     // Emit in the canonical state order.
-    for state in ["idle", "thinking", "running", "waiting", "done", "error"] {
+    for state in ["idle", "thinking", "running", "waiting", "done", "error", "compacting"] {
         let Some(s) = styles.get(state) else { continue };
         let rgb = s
             .get("rgb")

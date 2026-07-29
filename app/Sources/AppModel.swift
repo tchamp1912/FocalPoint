@@ -175,6 +175,25 @@ final class AppModel: ObservableObject {
             }
         }
     }
+    /// Minutes of no update before a session still showing an
+    /// active-looking state (thinking/running/waiting) is treated as
+    /// probably-stale — almost always because the underlying agent process
+    /// died without a clean Stop/SessionEnd (crash, killed terminal, sleep)
+    /// rather than because it's genuinely still working that long. nil turns
+    /// this off. Deliberately much shorter than the daemon's own
+    /// `session.ttl_minutes` (config.toml, default 60), which is a hard
+    /// cutoff that ends the session outright — this is only an earlier,
+    /// purely-visual heads-up; the daemon still owns actually ending it.
+    /// See `isStale`.
+    @Published var staleThresholdMinutes: Int? {
+        didSet {
+            if let staleThresholdMinutes {
+                UserDefaults.standard.set(staleThresholdMinutes, forKey: "staleThresholdMinutes")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "staleThresholdMinutes")
+            }
+        }
+    }
     /// Assumed context-window size (tokens) for the per-session meter, used
     /// only when a session doesn't carry an explicit `meta.context_window`
     /// (`SessionInfo.reportedContextWindow`, always preferred over this).
@@ -243,6 +262,7 @@ final class AppModel: ObservableObject {
         }
         tokenBudget = d.object(forKey: "tokenBudget") as? Int
         costBudget = d.object(forKey: "costBudget") as? Double
+        staleThresholdMinutes = d.object(forKey: "staleThresholdMinutes") as? Int ?? 5
         // 967_000 seeds the same figure Protocol.swift used to hardcode
         // (Claude Code's own reported "Auto-compact window" for the current
         // model generation, verified live via /context) — same default
@@ -287,6 +307,20 @@ final class AppModel: ObservableObject {
             if cost >= costBudget { return true }
         }
         return false
+    }
+
+    /// True when `s` claims to still be actively working (thinking/running/
+    /// waiting) but hasn't been updated in at least `staleThresholdMinutes`.
+    /// Idle/done/error sessions are excluded — those are already "at rest"
+    /// states where sitting unchanged is normal, not a sign the agent died.
+    /// Purely client-side and purely visual (see `sessionRow` in
+    /// MenuContentView/DesktopOverlay, which dims the row and shows an idle
+    /// look instead of the stale live state) — mirrors `isOverBudget` as a
+    /// layered heuristic, not a real daemon state.
+    func isStale(_ s: SessionInfo) -> Bool {
+        guard let staleThresholdMinutes else { return false }
+        guard [AgentState.thinking, .running, .waiting].contains(s.state) else { return false }
+        return Date().timeIntervalSince(s.lastChange) >= Double(staleThresholdMinutes) * 60
     }
 
     /// Every action's effective binding: the user's override if present,
@@ -366,6 +400,19 @@ final class AppModel: ObservableObject {
                 recordSessionEnded(id)
                 sessions.removeAll { $0.id == id }
                 if focusedSessionID == id { focusedSessionID = nil }
+            }
+        case "session-rekeyed":
+            // A `compacting` session was reunited with its post-compaction
+            // continuation under a new session_id (PROTOCOL.md §3). Relabel
+            // the existing record in place — preserving name/firstSeen/
+            // stats — rather than treat it as an end; the `session` event
+            // that immediately follows carries the continuation's actual
+            // state and merges into this same record via `upsertSession`.
+            if let oldID = e["old_session"] as? String,
+               let newID = e["new_session"] as? String,
+               let idx = sessions.firstIndex(where: { $0.id == oldID }) {
+                sessions[idx].id = newID
+                if focusedSessionID == oldID { focusedSessionID = newID }
             }
         case "usage":
             upsertUsage(e)

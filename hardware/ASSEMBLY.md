@@ -11,14 +11,38 @@ The owner is comfortable with through-hole soldering and wiring, but should not
 need hot-plate, hot-air, or reflow work. The owner should only need to:
 
 1. inspect and electrically test the assembled PCBA;
-2. connect the protected battery after verifying connector polarity;
-3. install the MX switches, keycaps, encoder knob, joystick cap, and enclosure;
-4. flash firmware through the Tag-Connect/debug pads; and
-5. run the functional and charging test plan.
+2. flash firmware through the Tag-Connect/debug pads (before the board goes
+   into the enclosure, while the pads are reachable);
+3. solder the through-hole encoder (and joystick, if the THT variant is
+   chosen — see the sourcing note below);
+4. seat all MX switches into the **plate** first, then mate the loaded
+   plate+switches onto the PCB (switch-installation order below);
+5. place the battery in its enclosure pocket, verify connector polarity, and
+   connect it;
+6. install keycaps, encoder knob, joystick cap, and close the enclosure; and
+7. run the functional and charging test plan.
+
+**Switch-installation order (do not press switches into a mounted board).**
+The PCB is switch-hung: it has no boss support and spans the battery pocket
+void (see `case/DESIGN.md`), so pressing switches into a PCB that is already
+in the case flexes the board and loads the bottom-side hot-swap sockets —
+the classic way to tear a socket's pads off. Instead: clip every switch into
+the bare plate; support the PCB flat on the bench (component-free zones on
+foam, never over the open case); align and press the plate+switch assembly
+down so all pins enter their sockets together while the board is fully
+backed; then drop the joined plate/PCB sandwich into the enclosure and drive
+the four plate screws.
 
 Leave the through-hole encoder and any through-hole joystick/header unpopulated
 for local installation. JLCPCB must populate every SMD part, including hot-swap
 sockets; do not substitute an SMD joystick that requires local reflow.
+
+> **Joystick sourcing note (open, tracked as WP2-6):** the BOM's Alps RKJX2
+> stick is an SMT part, which conflicts with the "no local reflow" rule
+> above. Either the assembler places it (JLC-side SMT) — in which case step 3
+> drops the joystick — or it is substituted with a THT RKJXV-class stick the
+> owner solders locally. The "user installs joystick" step is provisional
+> until that decision lands.
 
 ## Supplier path
 

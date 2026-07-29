@@ -4,7 +4,7 @@
 from pathlib import Path
 import sys
 
-sys.path.insert(0, "/private/tmp/vibekey-pptx")
+sys.path.insert(0, "/private/tmp/focalpoint-pptx")
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
@@ -12,7 +12,7 @@ from pptx.util import Inches, Pt
 
 
 ROOT = Path(__file__).resolve().parents[2]
-OUT = ROOT / "hardware" / "presentation" / "vibekey-rev-a-bom.pptx"
+OUT = ROOT / "hardware" / "presentation" / "focalpoint-rev-a-bom.pptx"
 PREVIEW = ROOT / "case" / "output" / "focalpoint-preview.png"
 
 INK = RGBColor(25, 28, 36)
@@ -82,7 +82,7 @@ s = prs.slides.add_slide(prs.slide_layouts[6])
 shape = s.shapes.add_shape(1, 0, 0, prs.slide_width, prs.slide_height)
 shape.fill.solid(); shape.fill.fore_color.rgb = INK; shape.line.fill.background()
 tb = s.shapes.add_textbox(Inches(.85), Inches(1.1), Inches(7.3), Inches(1.5))
-p = tb.text_frame.paragraphs[0]; p.text = "VibeKey Rev A"; p.font.name = "Avenir Next"; p.font.size = Pt(44); p.font.bold = True; p.font.color.rgb = WHITE
+p = tb.text_frame.paragraphs[0]; p.text = "FocalPoint Rev A"; p.font.name = "Avenir Next"; p.font.size = Pt(44); p.font.bold = True; p.font.color.rgb = WHITE
 p2 = tb.text_frame.add_paragraph(); p2.text = "Two-device bill of materials"; p2.font.name = "Avenir Next"; p2.font.size = Pt(25); p2.font.color.rgb = RGBColor(182, 204, 255)
 bullets(s, ["16 dynamically mapped inputs", "Wireless + USB-C • 1,000 mAh • per-key RGB", "Prototype procurement decision — 28 July 2026"], .9, 3.2, 6.8, 2.1, 17, WHITE)
 if PREVIEW.exists():

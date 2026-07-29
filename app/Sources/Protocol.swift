@@ -8,28 +8,38 @@ import SwiftUI
 
 enum AgentState: String, CaseIterable, Identifiable, Codable {
     case idle, thinking, running, waiting, done, error
+    /// Transient: a Claude Code session between a `PreCompact` hook and its
+    /// post-compaction continuation claiming the slot (PROTOCOL.md §1/§3).
+    /// Never set by a user action — only ever arrives via a `session` event.
+    case compacting
     var id: String { rawValue }
 
-    /// Aggregate ordering: error > waiting > running > thinking > done > idle.
+    /// Aggregate ordering: error > waiting > running > thinking > done >
+    /// compacting > idle. `compacting` sits just above idle — it's
+    /// bookkeeping, not agent work, so it shouldn't read as alarming while a
+    /// session waits (typically under a second) to be reunited with its
+    /// continuation.
     var severity: Int {
         switch self {
-        case .error:    return 5
-        case .waiting:  return 4
-        case .running:  return 3
-        case .thinking: return 2
-        case .done:     return 1
-        case .idle:     return 0
+        case .error:      return 6
+        case .waiting:    return 5
+        case .running:    return 4
+        case .thinking:   return 3
+        case .done:       return 2
+        case .compacting: return 1
+        case .idle:       return 0
         }
     }
 
     var display: String {
         switch self {
-        case .idle:     return "Idle"
-        case .thinking: return "Thinking"
-        case .running:  return "Running"
-        case .waiting:  return "Waiting"
-        case .done:     return "Done"
-        case .error:    return "Error"
+        case .idle:       return "Idle"
+        case .thinking:   return "Thinking"
+        case .running:    return "Running"
+        case .waiting:    return "Waiting"
+        case .done:       return "Done"
+        case .error:      return "Error"
+        case .compacting: return "Compacting"
         }
     }
 
@@ -41,12 +51,13 @@ enum AgentState: String, CaseIterable, Identifiable, Codable {
     /// state's configured color, so "colored" carries over from the dot.
     var symbolName: String {
         switch self {
-        case .idle:     return "moon.zzz"
-        case .thinking: return "brain"
-        case .running:  return "bolt"
-        case .waiting:  return "hourglass"
-        case .done:     return "checkmark"
-        case .error:    return "exclamationmark.triangle"
+        case .idle:       return "moon.zzz"
+        case .thinking:   return "brain"
+        case .running:    return "bolt"
+        case .waiting:    return "hourglass"
+        case .done:       return "checkmark"
+        case .error:      return "exclamationmark.triangle"
+        case .compacting: return "arrow.triangle.2.circlepath"
         }
     }
 }
@@ -80,12 +91,16 @@ struct StateStyle: Equatable {
 // period the app ships as defaults and sends on "reset to defaults". The
 // waiting entry matches the example in PROTOCOL.md §3/§5 (dodger blue blink).
 let defaultStyles: [AgentState: StateStyle] = [
-    .idle:     StateStyle(rgb: [64, 64, 64],   pattern: .breathe, periodMs: 4000),
-    .thinking: StateStyle(rgb: [160, 32, 240], pattern: .breathe, periodMs: 2500),
-    .running:  StateStyle(rgb: [255, 176, 0],  pattern: .breathe, periodMs: 800),
-    .waiting:  StateStyle(rgb: [30, 144, 255], pattern: .blink,   periodMs: 800),
-    .done:     StateStyle(rgb: [0, 200, 0],    pattern: .solid,   periodMs: 1000),
-    .error:    StateStyle(rgb: [255, 0, 0],    pattern: .blink,   periodMs: 250),
+    .idle:       StateStyle(rgb: [64, 64, 64],   pattern: .breathe, periodMs: 4000),
+    .thinking:   StateStyle(rgb: [160, 32, 240], pattern: .breathe, periodMs: 2500),
+    .running:    StateStyle(rgb: [255, 176, 0],  pattern: .breathe, periodMs: 800),
+    .waiting:    StateStyle(rgb: [30, 144, 255], pattern: .blink,   periodMs: 800),
+    .done:       StateStyle(rgb: [0, 200, 0],    pattern: .solid,   periodMs: 1000),
+    .error:      StateStyle(rgb: [255, 0, 0],    pattern: .blink,   periodMs: 250),
+    // Slate/lavender grey — distinct from idle's plain grey, matching the
+    // daemon's default (daemon/src/styles.rs) — but still muted, since it's
+    // transient bookkeeping rather than agent activity.
+    .compacting: StateStyle(rgb: [110, 110, 140], pattern: .breathe, periodMs: 3000),
 ]
 
 func defaultStyle(_ s: AgentState) -> StateStyle {
@@ -175,7 +190,12 @@ private func compactCount(_ value: Double) -> String {
 }
 
 struct SessionInfo: Identifiable, Equatable {
-    let id: String          // session id
+    /// Mutable, unlike most `Identifiable.id`s: a `session-rekeyed` event
+    /// (PROTOCOL.md §3) reunites a `compacting` session with its
+    /// post-compaction continuation under a new id, and the whole point is
+    /// to relabel this record in place — preserving name/history/stats —
+    /// rather than end this one and create a fresh one.
+    var id: String          // session id
     var kind: String
     var label: String?
     /// User-assigned name from `rename-session` (PROTOCOL.md §3). Distinct

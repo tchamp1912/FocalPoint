@@ -111,9 +111,27 @@ esac
 
 # Build the extra session flags. Only attach them when we actually have a
 # thread-id; otherwise keep working exactly as a sessionless adapter.
+# Window identity for the [session] focus action and the daemon's
+# dead-tty/dead-process sweeps (PROTOCOL.md §3). `notify` runs as a direct
+# child of the codex process (the same fact watch_codex_exit bets on), so
+# tty and pid come straight from $PPID — no ancestry walk needed here,
+# unlike the lifecycle-hook adapters. Without a tty meta, focus degrades to
+# the focus script's fuzzy title match, which cannot disambiguate sessions
+# in the same repo.
+session_tty=""
+tty_raw=$(ps -o tty= -p "$PPID" 2>/dev/null | tr -d '[:space:]')
+if [ -n "$tty_raw" ] && [ "$tty_raw" != "??" ] && [ "$tty_raw" != "?" ]; then
+  case "$tty_raw" in
+    /*) session_tty="$tty_raw" ;;
+    *)  session_tty="/dev/$tty_raw" ;;
+  esac
+fi
+
 args=("$state")
 if [ -n "${thread_id:-}" ]; then
   args+=(--session "$thread_id" --kind codex --cwd "$cwd" --label "$(basename "${cwd:-.}")")
+  [ -n "$session_tty" ] && args+=(--meta "tty=$session_tty")
+  args+=(--meta "pid=$PPID")
   watch_codex_exit "$PPID" "$thread_id"
   if [ "$event" = "agent-turn-complete" ]; then
     counter_dir="${XDG_STATE_HOME:-$HOME/.local/state}/focalpoint/counters"

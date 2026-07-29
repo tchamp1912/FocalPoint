@@ -14,7 +14,15 @@
 #      no two sessions ever share a tty — and is what claude-code/hooks.sh
 #      supplies via `--meta tty=$(...)`.
 #   2. Falls back to a fuzzy title/tty-string match on the basename of
-#      $FOCALPOINT_SESSION_CWD, for adapters that don't send tty.
+#      $FOCALPOINT_SESSION_CWD, for adapters that don't send tty. Windows
+#      whose tty is already claimed by a *registered* session are skipped:
+#      the fuzzy path only ever runs for a tty-less session, so a window
+#      some session registered by tty is by definition not ours — without
+#      this, a tty-less session's repo-name needle can land on another
+#      session's window whose generated tab title happens to mention the
+#      repo (confirmed live: a Codex session's "vibekey" needle matched a
+#      Claude Code window titled "Review Vibekey open source hardware
+#      plan").
 #   3. Falls back to just activating whichever of iTerm2/Terminal is running.
 #
 # HONEST LIMITATION: step 2 was this script's ORIGINAL and only strategy, and
@@ -57,6 +65,29 @@ TARGET_TTY="${FOCALPOINT_SESSION_TTY:-}"
 
 # Seconds to wait for any single osascript call before killing it.
 TIMEOUT_SECS="${FOCALPOINT_FOCUS_TIMEOUT:-3}"
+
+# Ttys claimed by registered sessions, for the fuzzy fallback's skip list
+# (strategy 2 above). Only queried when this session itself has no tty —
+# the exact-tty strategies never need it. Extraction is grep/sed, not jq,
+# same as the adapters' fallback JSON parsers; degrades to an empty list
+# (pre-hardening behavior) if the CLI or daemon is unavailable.
+FOCALPOINT="${FOCALPOINT_PATH:-focalpoint}"
+CLAIMED_TTYS=""
+if [ -z "$TARGET_TTY" ] && command -v "$FOCALPOINT" >/dev/null 2>&1; then
+  CLAIMED_TTYS=$("$FOCALPOINT" sessions --json 2>/dev/null \
+    | grep -o '"tty"[[:space:]]*:[[:space:]]*"[^"]*"' \
+    | sed 's/.*"\([^"]*\)"$/\1/' | sort -u)
+fi
+
+# The claimed-tty list as an AppleScript string-list literal, e.g.
+# {"/dev/ttys002", "/dev/ttys003"} — empty list when nothing is claimed.
+osa_claimed_ttys() {
+  local out="" t
+  for t in $CLAIMED_TTYS; do
+    out="${out}\"$(osa_escape "$t")\", "
+  done
+  printf '{%s}' "${out%, }"
+}
 
 # Escape backslashes and double quotes so a value can be embedded inside an
 # AppleScript string literal ("...").
@@ -186,12 +217,13 @@ try_iterm() {
   needle_esc="$(osa_escape "$NEEDLE")"
   script=$(cat <<APPLESCRIPT
 tell application "iTerm2"
+  set claimed to $(osa_claimed_ttys)
   set found to false
   repeat with w in windows
     repeat with t in tabs of w
       repeat with s in sessions of t
         try
-          if (name of s contains "$needle_esc") or (tty of s contains "$needle_esc") then
+          if (claimed does not contain (tty of s)) and ((name of s contains "$needle_esc") or (tty of s contains "$needle_esc")) then
             select t
             select w
             set found to true
@@ -224,11 +256,12 @@ try_terminal() {
   needle_esc="$(osa_escape "$NEEDLE")"
   script=$(cat <<APPLESCRIPT
 tell application "Terminal"
+  set claimed to $(osa_claimed_ttys)
   set found to false
   repeat with w in windows
     repeat with tb in tabs of w
       try
-        if (custom title of tb contains "$needle_esc") or (tty of tb contains "$needle_esc") then
+        if (claimed does not contain (tty of tb)) and ((custom title of tb contains "$needle_esc") or (tty of tb contains "$needle_esc")) then
           set selected of tb to true
           set index of w to 1
           set found to true

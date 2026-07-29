@@ -43,6 +43,14 @@ pub enum State {
     Waiting,
     Done,
     Error,
+    /// Transient: a Claude Code session is between a `PreCompact` hook and
+    /// its post-compaction continuation claiming the slot (see
+    /// `Registry::set_state`'s rekey-by-cwd/tty match in session.rs). Never
+    /// set directly by a user-facing action; not part of the original
+    /// PROTOCOL.md v0.1 six-state table, added additively in v0.2 as id 6 so
+    /// older firmware/clients that don't recognize it simply fail
+    /// `from_id`/`from_name` rather than misrendering it as another state.
+    Compacting,
 }
 
 impl State {
@@ -54,6 +62,7 @@ impl State {
             State::Waiting => 3,
             State::Done => 4,
             State::Error => 5,
+            State::Compacting => 6,
         }
     }
 
@@ -65,6 +74,7 @@ impl State {
             3 => State::Waiting,
             4 => State::Done,
             5 => State::Error,
+            6 => State::Compacting,
             _ => return None,
         })
     }
@@ -77,6 +87,7 @@ impl State {
             State::Waiting => "waiting",
             State::Done => "done",
             State::Error => "error",
+            State::Compacting => "compacting",
         }
     }
 
@@ -88,22 +99,29 @@ impl State {
             "waiting" => State::Waiting,
             "done" => State::Done,
             "error" => State::Error,
+            "compacting" => State::Compacting,
             _ => return None,
         })
     }
 
     /// Aggregation priority (PROTOCOL.md §3): the worst state across live
     /// sessions wins, ordered `error > waiting > running > thinking > done >
-    /// idle`. Note this differs from the numeric [`id`](State::id) ordering
-    /// (`done`/`error` are swapped relative to severity).
+    /// compacting > idle`. Note this differs from the numeric
+    /// [`id`](State::id) ordering (`done`/`error` are swapped relative to
+    /// severity). `compacting` sits just above `idle` — deliberately the
+    /// lowest non-idle priority, since it's bookkeeping (a session between
+    /// identities, not doing agent work) and must never make the aggregate
+    /// (or another session's own key) look alarming while it waits, typically
+    /// under a second, to be reunited with its continuation.
     pub fn priority(self) -> u8 {
         match self {
             State::Idle => 0,
-            State::Done => 1,
-            State::Thinking => 2,
-            State::Running => 3,
-            State::Waiting => 4,
-            State::Error => 5,
+            State::Compacting => 1,
+            State::Done => 2,
+            State::Thinking => 3,
+            State::Running => 4,
+            State::Waiting => 5,
+            State::Error => 6,
         }
     }
 }
@@ -401,7 +419,7 @@ mod tests {
     #[test]
     fn state_priority_orders_by_severity() {
         use State::*;
-        let order = [Idle, Done, Thinking, Running, Waiting, Error];
+        let order = [Idle, Compacting, Done, Thinking, Running, Waiting, Error];
         // Strictly increasing priority in severity order.
         for w in order.windows(2) {
             assert!(w[0].priority() < w[1].priority());
@@ -471,12 +489,12 @@ mod tests {
 
     #[test]
     fn state_name_and_id_roundtrip() {
-        for id in 0..=5u8 {
+        for id in 0..=6u8 {
             let s = State::from_id(id).unwrap();
             assert_eq!(s.id(), id);
             assert_eq!(State::from_name(s.name()), Some(s));
         }
-        assert_eq!(State::from_id(6), None);
+        assert_eq!(State::from_id(7), None);
         assert_eq!(State::from_name("nope"), None);
     }
 

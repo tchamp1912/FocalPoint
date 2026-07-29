@@ -131,7 +131,18 @@ struct MenuContentView: View {
     private func sessionRow(_ s: SessionInfo) -> some View {
         let hasStats = SessionStat.allCases.contains { model.visibleStats.contains($0) && s.stats[$0] != nil }
         let overBudget = model.isOverBudget(s)
-        let swatchColor = overBudget ? budgetWarningColor : (model.styles[s.state] ?? defaultStyle(s.state)).color
+        // A session stuck "thinking"/"running"/"waiting" past the stale
+        // threshold almost always means its agent died without a clean
+        // shutdown, not that it's still working — see AppModel.isStale.
+        // Displayed as idle (icon, color, label) and dimmed, rather than
+        // silently kept looking live indefinitely.
+        let stale = model.isStale(s)
+        let displayState: AgentState = stale ? .idle : s.state
+        // Compacting is transient bookkeeping (PROTOCOL.md §1/§3), not agent
+        // activity — dim it the same as a stale session so it reads as
+        // "don't worry about this" at a glance, distinct from live states.
+        let dimmed = stale || s.state == .compacting
+        let swatchColor = overBudget ? budgetWarningColor : (model.styles[displayState] ?? defaultStyle(displayState)).color
         return VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top, spacing: 10) {
                 slotBadge(s.slot)
@@ -144,8 +155,9 @@ struct MenuContentView: View {
 
                     HStack(spacing: 8) {
                         HStack(spacing: 5) {
-                            StateSwatch(state: s.state, color: swatchColor, size: 7)
-                            Text(s.state.display).font(.caption).foregroundStyle(.secondary)
+                            StateSwatch(state: displayState, color: swatchColor, size: 7)
+                            Text(stale ? "Possibly stale" : s.state.display)
+                                .font(.caption).foregroundStyle(.secondary)
                             if overBudget {
                                 Image(systemName: "exclamationmark.circle.fill")
                                     .font(.caption2)
@@ -187,6 +199,7 @@ struct MenuContentView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
         .contentShape(Rectangle())
+        .opacity(dimmed ? 0.55 : 1)
     }
 
     private func slotBadge(_ slot: Int?) -> some View {

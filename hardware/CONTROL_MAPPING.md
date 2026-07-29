@@ -5,7 +5,7 @@ are stable, but their behavior is not hard-coded:
 
 | Physical ID | Control |
 |---|---|
-| `key_01`…`key_12` | Uniform 4×3 RGB MX grid |
+| `key_01`…`key_12` | Frosted RGB MX selector keys, scattered 1+4+4+3 around the corner controls on the 4×4 lattice below (not a contiguous grid) |
 | `key_13` | Top-row ceramic RGB key; behavior remains assignable |
 | `touch_01` | Capacitive touch region |
 | `encoder_01` | Rotary encoder with push |
@@ -42,15 +42,25 @@ key_10     key_11    key_12   touch
 
 ## Required protocol/firmware work
 
-1. Add a device capability descriptor containing firmware version, physical
-   IDs, supported gestures, LED IDs, and mapping storage limits.
-2. Add get/set/activate mapping-profile messages to USB Raw HID and BLE GATT.
-3. Store one safe fallback profile in nonvolatile device memory; keep the full
-   profile library in the daemon configuration.
-4. Route every hardware event through the same daemon action dispatcher used
-   by configurable global hotkeys.
-5. Add mapping controls to the macOS settings UI with conflict detection and a
-   live “press a control” identification mode.
+The protocol side of this model is now drafted as **`PROTOCOL.md` §6
+(v0.3, DRAFT — not yet implemented)**; the items below map onto it:
 
-Until that protocol extension lands, the existing slot/control codes remain a
+1. Device capability descriptor — firmware version, physical IDs, supported
+   gestures, LED IDs, and mapping storage limits: drafted as the `PONG`
+   extension + `GET_CAPS`/`CAPS` (PROTOCOL.md §6.2), with control IDs 17
+   (`key_13`) and 18 (`touch_01`) added in §6.1.
+2. Get/set/activate mapping-profile messages on USB Raw HID and BLE GATT:
+   drafted as `MAP_BEGIN`/`MAP_DATA`/`MAP_COMMIT`/`MAP_ACTIVATE`/`MAP_ACK`
+   plus socket-API additions (PROTOCOL.md §6.3); the BLE transport itself is
+   PROTOCOL.md §6.4.
+3. Store one safe fallback profile in nonvolatile device memory (profile
+   slot 0 in the §6.3 draft); keep the full profile library in the daemon
+   configuration.
+4. Route every hardware event through the same daemon action dispatcher used
+   by configurable global hotkeys. *(Daemon work; not a wire-protocol item.)*
+5. Add mapping controls to the macOS settings UI with conflict detection and a
+   live “press a control” identification mode. *(App work; not a wire-protocol
+   item.)*
+
+Until that draft is implemented, the existing v0.2 slot/control codes remain a
 compatibility profile rather than permanent electrical assignments.

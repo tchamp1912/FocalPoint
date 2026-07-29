@@ -194,16 +194,26 @@ struct DesktopWidgetView: View {
     private func sessionRow(_ s: SessionInfo) -> some View {
         let hasStats = SessionStat.allCases.contains { model.visibleStats.contains($0) && s.stats[$0] != nil }
         let overBudget = model.isOverBudget(s)
+        // Same stale heuristic as MenuContentView's sessionRow — see that
+        // file (and AppModel.isStale) for the rationale.
+        let stale = model.isStale(s)
+        let displayState: AgentState = stale ? .idle : s.state
+        // Same compacting-dim rationale as MenuContentView's sessionRow —
+        // see that file (and AppModel.isStale) for the rationale.
+        let dimmed = stale || s.state == .compacting
         // Same warning-color swap + elapsed-time tint as MenuContentView's
         // sessionRow — see that file for the rationale.
-        let swatchColor = overBudget ? budgetWarningColor : (model.styles[s.state] ?? defaultStyle(s.state)).color
+        let swatchColor = overBudget ? budgetWarningColor : (model.styles[displayState] ?? defaultStyle(displayState)).color
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
                 Text(s.slot.map(String.init) ?? "—")
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .frame(width: 15, alignment: .center)
                     .foregroundStyle(.secondary)
-                StateSwatch(state: s.state, color: swatchColor, size: 8)
+                StateSwatch(state: displayState, color: swatchColor, size: 8)
+                    .help(stale ? "No update in a while — shown as idle since the agent may have died without a clean shutdown"
+                          : s.state == .compacting ? "Compacting — momentarily between session identities, not agent activity"
+                          : "")
                 SessionTitleField(session: s, model: model,
                                   editingID: $renamingID, font: .system(size: 11))
                 if overBudget {
@@ -251,6 +261,7 @@ struct DesktopWidgetView: View {
         .padding(.horizontal, 5)
         .padding(.vertical, 5)
         .contentShape(Rectangle())
+        .opacity(dimmed ? 0.55 : 1)
     }
 }
 

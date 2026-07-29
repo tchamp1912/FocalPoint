@@ -35,6 +35,41 @@ if [ "$event" = "UserPromptSubmit" ] && [ -n "${prompt:-}" ] && [ -n "${session_
 fi
 [ -n "${event:-}" ] || exit 0
 
+# Find the nearest ancestor with a controlling terminal AND the nearest
+# ancestor that IS the codex process itself, for the [session] focus action
+# and the daemon's dead-tty/dead-process sweeps (PROTOCOL.md §3). Without a
+# tty meta, focus degrades to the focus script's fuzzy title match, which
+# cannot disambiguate sessions in the same repo (and Claude Code's generated
+# tab titles can even steal the match). Mirrors claude-code/hooks.sh's walk;
+# `ps` rather than the `tty` builtin because stdin is the hook-JSON pipe.
+session_tty=""
+codex_pid=""
+tty_pid=$$
+while [ -n "$tty_pid" ] && [ "$tty_pid" -gt 1 ] 2>/dev/null; do
+  if [ -z "$session_tty" ]; then
+    tty_raw=$(ps -o tty= -p "$tty_pid" 2>/dev/null | tr -d '[:space:]')
+    if [ -n "$tty_raw" ] && [ "$tty_raw" != "??" ] && [ "$tty_raw" != "?" ]; then
+      case "$tty_raw" in
+        /*) session_tty="$tty_raw" ;;
+        *)  session_tty="/dev/$tty_raw" ;;
+      esac
+    fi
+  fi
+
+  if [ -z "$codex_pid" ]; then
+    comm=$(ps -o comm= -p "$tty_pid" 2>/dev/null | tr -d '[:space:]')
+    case "$comm" in
+      */codex|codex) codex_pid="$tty_pid" ;;
+    esac
+  fi
+
+  [ -n "$session_tty" ] && [ -n "$codex_pid" ] && break
+
+  parent_pid=$(ps -o ppid= -p "$tty_pid" 2>/dev/null | tr -d '[:space:]')
+  [ -n "$parent_pid" ] && [ "$parent_pid" != "$tty_pid" ] || break
+  tty_pid="$parent_pid"
+done
+
 case "$event" in
   SessionStart|UserPromptSubmit|PostToolUse) state="thinking" ;;
   PreToolUse) state="running" ;;
@@ -60,6 +95,10 @@ if [ -n "${session_id:-}" ]; then
     label="Codex · $(basename "${cwd:-.}")"
   fi
   args+=(--session "$session_id" --kind codex --cwd "$cwd" --label "$label")
+  [ -n "$session_tty" ] && args+=(--meta "tty=$session_tty")
+  # Lets the daemon's dead-process sweep reap this session the moment codex
+  # itself exits, even if the terminal it ran in stays open.
+  [ -n "$codex_pid" ] && args+=(--meta "pid=$codex_pid")
   [ -n "${model:-}" ] && args+=(--meta "model=$model")
 
   if [ "$event" = "Stop" ]; then

@@ -25,6 +25,19 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use std::time::Instant;
 
+/// True if a process with this pid exists, via `kill(pid, 0)` — sends no
+/// signal, just checks. `ESRCH` means it doesn't; any other errno (e.g.
+/// `EPERM`, which would mean it exists but we lack permission to signal it —
+/// not expected here since these are always our own user's descendant
+/// processes) is treated as "still alive" so a transient/unexpected errno
+/// never causes a false-positive reap.
+fn process_is_alive(pid: i32) -> bool {
+    if unsafe { libc::kill(pid as libc::pid_t, 0) } == 0 {
+        return true;
+    }
+    std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
+}
+
 /// Parse an RGB triple from a JSON value (array of 3 integers 0..=255).
 fn parse_rgb(v: Option<&serde_json::Value>) -> Result<[u8; 3], String> {
     let arr = v
@@ -232,6 +245,17 @@ fn session_ended_line(id: &str, slot: Option<u8>) -> String {
     serde_json::json!({ "event": "session-ended", "session": id, "slot": slot }).to_string()
 }
 
+/// JSON line for a `session-rekeyed` event (PROTOCOL.md §3): a `Compacting`
+/// session was reunited with its post-compaction continuation under a new
+/// id. Subscribers should relabel their existing record for `old_session`
+/// in place (preserving name/history/stats) rather than treat it as an end
+/// followed by a new registration.
+#[cfg(unix)]
+fn session_rekeyed_line(old_id: &str, new_id: &str) -> String {
+    serde_json::json!({ "event": "session-rekeyed", "old_session": old_id, "new_session": new_id })
+        .to_string()
+}
+
 /// JSON line for a provider-wide quota snapshot.
 #[cfg(unix)]
 fn usage_event_line(
@@ -325,6 +349,12 @@ fn apply_effects(
                     let _ = host_tx.send(HostCmd::SetKeyState { key, state: None });
                 }
                 ctx.broadcast(&session_ended_line(&id, slot));
+            }
+            Effect::SessionRekeyed { old_id, new_id } => {
+                // No device command: the slot/state don't change here — the
+                // SessionUpsert that immediately follows (Registry::set_state
+                // always emits both together) carries those.
+                ctx.broadcast(&session_rekeyed_line(&old_id, &new_id));
             }
             Effect::AggregateChanged { state } => {
                 let _ = host_tx.send(HostCmd::SetState(state));
@@ -715,6 +745,34 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
         });
     }
 
+    // Periodic compacting-timeout sweep: end any session stuck in
+    // `State::Compacting` (set by the Claude Code adapter's `PreCompact`
+    // hook, session.rs COMPACT_GRACE) whose continuation never claimed the
+    // slot — compaction cancelled, or the continuation genuinely never
+    // appeared. Runs regardless of `session_ttl_minutes` (including "never
+    // expire"): a stuck "compacting" indicator is actively misleading, not
+    // just stale.
+    {
+        let ctx = ctx.clone();
+        let host_tx = host_tx.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
+            loop {
+                tick.tick().await;
+                let effects = {
+                    ctx.shared
+                        .lock()
+                        .unwrap()
+                        .registry
+                        .expire_compacting(Instant::now())
+                };
+                if !effects.is_empty() {
+                    apply_effects(effects, &ctx, &host_tx);
+                }
+            }
+        });
+    }
+
     // Periodic dead-tty sweep: reap a session whose focus target was a real
     // terminal (Claude Code sets `--meta tty=$(tty)`) the moment that pty
     // device stops existing — closing the terminal destroys it, a hard OS
@@ -741,6 +799,50 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
                             let tty = s.tty();
                             !tty.is_empty() && !std::path::Path::new(&tty).exists()
                         })
+                        .map(|s| s.id)
+                        .collect()
+                };
+                if dead.is_empty() {
+                    continue;
+                }
+                let effects: Vec<Effect> = {
+                    let mut shared = ctx.shared.lock().unwrap();
+                    dead.iter()
+                        .flat_map(|id| shared.registry.end_session(id))
+                        .collect()
+                };
+                apply_effects(effects, &ctx, &host_tx);
+            }
+        });
+    }
+
+    // Periodic dead-process sweep: reap a session whose own agent process
+    // has verifiably exited (Claude Code sets `--meta pid=<pid>`, found by
+    // walking the hook's process ancestry to the nearest `claude` process —
+    // see adapters/claude-code/hooks.sh) via kill(pid, 0) — a hard OS fact,
+    // same tier of confidence as the dead-tty sweep above, for the one
+    // failure mode that sweep can't see: the agent crashes (OOM, segfault,
+    // force-quit) but the terminal it ran in stays open, so its pty never
+    // disappears. PID reuse by the OS after the real process exits is a
+    // known, low-probability false-negative — the same class of risk the
+    // tty sweep already accepts for pty reuse — not worth guarding against
+    // at this scale. Sessions with no `pid` meta (Codex, Cursor, or a Claude
+    // session where ancestry-walking failed) are untouched by this and keep
+    // relying on the tty sweep, TTL, or their own end-session signal.
+    {
+        let ctx = ctx.clone();
+        let host_tx = host_tx.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
+            loop {
+                tick.tick().await;
+                let dead: Vec<String> = {
+                    let shared = ctx.shared.lock().unwrap();
+                    shared
+                        .registry
+                        .list()
+                        .into_iter()
+                        .filter(|s| matches!(s.pid(), Some(pid) if !process_is_alive(pid)))
                         .map(|s| s.id)
                         .collect()
                 };
@@ -1118,6 +1220,14 @@ pub async fn run(_opts: DaemonOpts) -> Result<(), String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn process_is_alive_matches_reality() {
+        assert!(process_is_alive(std::process::id() as i32));
+        // Not a real pid on any sane system (max_pid ceilings are far below
+        // this on macOS/Linux) — exercises the ESRCH -> false path.
+        assert!(!process_is_alive(999_999_999));
+    }
 
     #[test]
     fn inject_key_tap_expands_to_press_then_release() {

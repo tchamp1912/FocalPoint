@@ -62,6 +62,7 @@ All adapters map tool events to these canonical states (defined in `PROTOCOL.md`
 | `waiting` | Blocked on user (approval, input) | blue slow blink |
 | `done` | Turn/task finished | green solid |
 | `error` | Failure needing attention | red blink |
+| `compacting` | Transient: session between identities across a Claude Code compaction (`PROTOCOL.md` §3) | slate-grey breathe |
 
 ## Session Model
 
@@ -83,7 +84,7 @@ counts toward the aggregate.
 Single-channel displays (the daemon's own `SET_STATE`, a menu-bar dot, a
 keyboard backlight) can't show 12 states at once, so they show the
 **aggregate**: the worst state across every live session, ranked `error >
-waiting > running > thinking > done > idle`. Displays that *can* show
+waiting > running > thinking > done > compacting > idle`. Displays that *can* show
 per-key state (the numbered keys themselves) show each session's own state
 on its own slot instead, via `SET_KEY_STATE`. Pressing a numbered key with a
 live session runs the `[session] focus` action (config §5) rather than that
@@ -97,7 +98,7 @@ Full details: `PROTOCOL.md` §3 ("Sessions" and "Focus").
 All adapters use a single CLI, provided by the `focalpointd` daemon:
 
 ```bash
-focalpoint set-state <idle|thinking|running|waiting|done|error>
+focalpoint set-state <idle|thinking|running|waiting|done|error|compacting>
         [--session ID] [--kind KIND] [--label LABEL] [--cwd PATH]
         [--meta KEY=VALUE]...
 focalpoint get-state        # aggregate across all live sessions

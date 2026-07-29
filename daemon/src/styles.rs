@@ -48,13 +48,18 @@ pub fn default_style(state: State) -> Style {
         State::Waiting => Style::new([64, 140, 255], Pattern::Blink, 800),
         State::Done => Style::new([51, 204, 89], Pattern::Solid, 1000),
         State::Error => Style::new([242, 64, 64], Pattern::Blink, 250),
+        // Slate/lavender grey — distinct from idle's plain dim white so the
+        // two don't read as identical at a glance, but still deliberately
+        // muted (not one of the "real work" colors) since it's transient
+        // bookkeeping, not agent activity (PROTOCOL.md §1).
+        State::Compacting => Style::new([110, 110, 140], Pattern::Breathe, 3000),
     }
 }
 
-/// All six styles, indexed by state id.
+/// All seven styles, indexed by state id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StyleTable {
-    styles: [Style; 6],
+    styles: [Style; 7],
 }
 
 impl Default for StyleTable {
@@ -67,6 +72,7 @@ impl Default for StyleTable {
                 default_style(State::Waiting),
                 default_style(State::Done),
                 default_style(State::Error),
+                default_style(State::Compacting),
             ],
         }
     }
@@ -81,9 +87,9 @@ impl StyleTable {
         self.styles[state.id() as usize] = style;
     }
 
-    /// Iterate `(state, style)` in state-id order (idle..error).
+    /// Iterate `(state, style)` in state-id order (idle..compacting).
     pub fn iter(&self) -> impl Iterator<Item = (State, Style)> + '_ {
-        (0..6u8).map(move |i| (State::from_id(i).unwrap(), self.styles[i as usize]))
+        (0..7u8).map(move |i| (State::from_id(i).unwrap(), self.styles[i as usize]))
     }
 }
 
@@ -112,7 +118,7 @@ mod tests {
             t.get(State::Error),
             Style::new([242, 64, 64], Pattern::Blink, 250)
         );
-        // iter yields all six in id order.
+        // iter yields all seven in id order.
         let states: Vec<State> = t.iter().map(|(s, _)| s).collect();
         assert_eq!(
             states,
@@ -122,7 +128,8 @@ mod tests {
                 State::Running,
                 State::Waiting,
                 State::Done,
-                State::Error
+                State::Error,
+                State::Compacting,
             ]
         );
     }

@@ -329,6 +329,14 @@ static void vk_paint_state(uint8_t idx, uint8_t state, bool aggregate) {
             if (aggregate) return;         /* Esc: idle = no painting */
             { uint8_t s = vk_breath(); r = g = b = vk_scale(48, s); }
             break;
+        case VK_STATE_COMPACTING:          /* dim slate/lavender breathing */
+            /* Same aggregate-skip as idle: this is bookkeeping (a session
+             * between identities, not agent work), so it must not make the
+             * Esc ambient indicator look alarming — it only shows on the
+             * numbered key of the session actually compacting. */
+            if (aggregate) return;
+            { uint8_t s = vk_breath(); r = vk_scale(110, s); g = vk_scale(110, s); b = vk_scale(140, s); }
+            break;
         default:
             return;                        /* unknown / empty: no painting */
     }
