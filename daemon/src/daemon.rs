@@ -38,6 +38,42 @@ fn process_is_alive(pid: i32) -> bool {
     std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
 }
 
+/// Send `sig` to `pid` (best-effort; ignores the result). Used by the
+/// graceful-quit escalation in the `quit-session` handler.
+#[cfg(unix)]
+fn send_signal(pid: i32, sig: i32) {
+    unsafe {
+        libc::kill(pid as libc::pid_t, sig);
+    }
+}
+
+/// Ask an agent process to exit the way a user pressing its exit key would,
+/// so the tool runs its own teardown and its `SessionEnd` hook fires (which
+/// itself calls `focalpoint end-session`, removing the session through the
+/// real path). Both Claude Code (Ctrl-C twice, alongside its `/exit`) and
+/// Codex ("Ctrl+C to exit" — its only interactive quit) exit on SIGINT, so
+/// this sends SIGINT, gives it a moment, sends a second SIGINT, and only then
+/// escalates to SIGTERM if it's still alive — never SIGKILL, which would skip
+/// the very teardown this exists to trigger. Runs on its own thread (it
+/// sleeps between signals); best-effort throughout — a process that's already
+/// gone just no-ops.
+#[cfg(unix)]
+fn quit_agent_process(pid: i32) {
+    use std::time::Duration;
+    if !process_is_alive(pid) {
+        return;
+    }
+    send_signal(pid, libc::SIGINT);
+    std::thread::sleep(Duration::from_millis(600));
+    if process_is_alive(pid) {
+        send_signal(pid, libc::SIGINT); // Claude's "twice to exit"
+        std::thread::sleep(Duration::from_millis(1200));
+    }
+    if process_is_alive(pid) {
+        send_signal(pid, libc::SIGTERM);
+    }
+}
+
 /// Parse an RGB triple from a JSON value (array of 3 integers 0..=255).
 fn parse_rgb(v: Option<&serde_json::Value>) -> Result<[u8; 3], String> {
     let arr = v
@@ -1425,6 +1461,45 @@ fn dispatch(
             };
             let effects = shared.lock().unwrap().registry.end_session(id);
             apply_effects(effects, ctx, host_tx);
+            Dispatch::Reply(serde_json::json!({ "ok": true }))
+        }
+        "quit-session" => {
+            // Destructively end a session: ask the actual agent process to
+            // exit gracefully (SIGINT→SIGTERM, so its own SessionEnd teardown
+            // runs), then guarantee the session is removed even if that hook
+            // never lands (no hooks installed, a wedged process, or a
+            // pid-less/disconnected session we can't signal). Distinct from
+            // `end-session`, which only removes the row and leaves the agent
+            // running. When we can signal, the removal rides the agent's real
+            // SessionEnd hook; the thread's own end_session is the idempotent
+            // safety net after the process is gone (or the grace elapses).
+            let Some(id) = value.get("session").and_then(|s| s.as_str()) else {
+                return err("quit-session requires 'session'");
+            };
+            let pid = shared
+                .lock()
+                .unwrap()
+                .registry
+                .session_or_tombstone(id)
+                .and_then(|s| s.pid());
+            match pid {
+                Some(pid) => {
+                    let ctx = ctx.clone();
+                    let host_tx = host_tx.clone();
+                    let id = id.to_string();
+                    std::thread::spawn(move || {
+                        quit_agent_process(pid);
+                        let effects = ctx.shared.lock().unwrap().registry.end_session(&id);
+                        apply_effects(effects, &ctx, &host_tx);
+                    });
+                }
+                None => {
+                    // Nothing to signal (no resolved pid) — just remove it,
+                    // same as end-session.
+                    let effects = shared.lock().unwrap().registry.end_session(id);
+                    apply_effects(effects, ctx, host_tx);
+                }
+            }
             Dispatch::Reply(serde_json::json!({ "ok": true }))
         }
         "focus-session" => {

@@ -211,6 +211,12 @@ struct SessionInfo: Identifiable, Equatable {
     /// it, it reconnects/recovers, or its tombstone TTL expires. `state`
     /// holds its last-known state at the moment it was reaped.
     var connected: Bool = true
+    /// True for a row inserted optimistically by History → Resume, before the
+    /// reopened agent's `SessionStart` hook has re-registered it with the
+    /// daemon. Rendered as "Reopening…"; cleared the moment any real `session`
+    /// event for this id arrives (the resumed agent keeps the same id), and
+    /// removed by a timeout if that never happens (resume failed / new id).
+    var pendingReopen: Bool = false
     var cwd: String?
     /// Raw model id reported by the adapter (e.g. "claude-opus-4-8-..."),
     /// straight from `meta["model"]` (PROTOCOL.md §4). Use `modelBadge` for

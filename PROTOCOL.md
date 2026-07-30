@@ -287,6 +287,18 @@ would show; `FOCALPOINT_SESSION_NAME` is empty unless the user renamed it;
 one, else empty.)
 Keys with empty slots fall back to their normal `[actions]` mapping.
 
+`end-session` (`{"cmd":"end-session","session":"id"}`) removes a session from
+the registry **non-destructively** — the underlying agent process is left
+running; it just drops out of FocalPoint (and any tombstone is cleared, so it
+won't be offered for recovery). `quit-session`
+(`{"cmd":"quit-session","session":"id"}`) is the **destructive** counterpart:
+it asks the agent process itself to exit (SIGINT, a second SIGINT after a
+short grace, then SIGTERM — never SIGKILL) so the tool runs its own teardown
+and its `SessionEnd` hook fires (which itself calls `end-session`); the daemon
+also removes the session as an idempotent safety net once the process is gone.
+For a session with no resolved `pid` (Cursor, or one whose identity never
+resolved) `quit-session` degrades to a plain `end-session`.
+
 `focus-session` (`{"cmd":"focus-session","session":"id"}`) runs that same
 `[session] focus` action for a session looked up **by id** rather than by a
 pressed slot — resolving live sessions *and* tombstoned (disconnected) ones.

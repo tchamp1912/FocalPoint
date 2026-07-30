@@ -153,6 +153,32 @@ struct GeneralSettingsView: View {
                 .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
 
                 VStack(alignment: .leading, spacing: 8) {
+                    Text("Terminal").font(.title3).bold()
+                    Text("Which app FocalPoint opens when you launch a session \u{2014} \u{201C}Open in Terminal\u{201D} and History \u{2192} Resume.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Picker("", selection: $model.terminalBundleID) {
+                            Text("System default").tag("")
+                            ForEach(model.installedTerminalApps, id: \.id) { app in
+                                Text(app.name).tag(app.id)
+                            }
+                            // Keep a hand-picked app that isn't in the known
+                            // list selectable so the picker reflects reality.
+                            if !model.terminalBundleID.isEmpty,
+                               !model.installedTerminalApps.contains(where: { $0.id == model.terminalBundleID }) {
+                                Text(model.terminalDisplayName).tag(model.terminalBundleID)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: 220)
+                        Spacer()
+                        Button("Choose\u{2026}") { model.chooseTerminalApp() }
+                    }
+                }
+                .padding(16)
+                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
+
+                VStack(alignment: .leading, spacing: 8) {
                     Text("Reset").font(.title3).bold()
                     HStack {
                         Text("Restore every state's color, pattern, and period to its shipped default.")
@@ -234,6 +260,15 @@ struct SessionHistoryView: View {
                 }
             }
             Spacer(minLength: 8)
+            if model.resumeCommand(for: entry) != nil {
+                Button { model.recoverSession(entry) } label: {
+                    Label("Resume", systemImage: "arrow.clockwise")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Reopen this \(entry.kind) conversation in a new Terminal at its working directory")
+            }
             VStack(alignment: .trailing, spacing: 2) {
                 Text(durationString(entry.endedAt.timeIntervalSince(entry.startedAt)))
                     .font(.caption).foregroundStyle(.secondary).monospacedDigit()
@@ -244,6 +279,10 @@ struct SessionHistoryView: View {
         .padding(.vertical, 6)
         .contentShape(Rectangle())
         .contextMenu {
+            if model.resumeCommand(for: entry) != nil {
+                Button("Resume Session") { model.recoverSession(entry) }
+                Divider()
+            }
             if let cwd = entry.cwd {
                 Button("Open in Terminal") { model.openInTerminal(cwd) }
                 Button("Show in Finder") { model.revealInFinder(cwd) }

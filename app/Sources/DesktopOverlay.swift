@@ -144,8 +144,10 @@ struct DesktopWidgetView: View {
                     .contextMenu {
                         Button("Rename\u{2026}") { renamingID = s.id }
                         Divider()
-                        Button(s.connected ? "End Session" : "Dismiss",
-                               role: .destructive) { model.endSession(s) }
+                        // See MenuContentView: End Session quits the agent
+                        // process; Remove Session just drops the row.
+                        Button("End Session", role: .destructive) { model.quitSession(s) }
+                        Button("Remove Session") { model.removeSession(s) }
                     }
                 }
             }
@@ -191,7 +193,7 @@ struct DesktopWidgetView: View {
         // Same compacting-dim rationale as MenuContentView's sessionRow —
         // see that file (and AppModel.isStale) for the rationale. A
         // disconnected (sweep-reaped) session is dimmed too.
-        let dimmed = stale || s.state == .compacting || !s.connected
+        let dimmed = stale || s.state == .compacting || !s.connected || s.pendingReopen
         // Same warning-color swap + elapsed-time tint as MenuContentView's
         // sessionRow — see that file for the rationale.
         let swatchColor = overBudget ? budgetWarningColor : (model.styles[displayState] ?? defaultStyle(displayState)).color
@@ -201,7 +203,11 @@ struct DesktopWidgetView: View {
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .frame(width: 15, alignment: .center)
                     .foregroundStyle(.secondary)
-                if !s.connected {
+                if s.pendingReopen {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 9)).foregroundStyle(.secondary)
+                        .help("Reopening — waiting for the resumed agent to reconnect")
+                } else if !s.connected {
                     FocalPointMark(color: .secondary, assetName: "focalpoint-disconnected")
                         .frame(width: 12, height: 12)
                         .help("Disconnected — no update in a while. Click to try to reopen its terminal, or dismiss it.")

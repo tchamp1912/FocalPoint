@@ -122,11 +122,13 @@ struct MenuContentView: View {
                         Button("Copy Working Directory") { model.copyToPasteboard(cwd) }
                     }
                     Divider()
-                    // For a disconnected session this is the "manually reap"
-                    // path — clears the tombstone so it stops being offered
-                    // for recovery, same daemon `end-session` call.
-                    Button(s.connected ? "End Session" : "Dismiss",
-                           role: .destructive) { model.endSession(s) }
+                    // "End Session" is destructive — it quits the actual agent
+                    // process (SIGINT→SIGTERM, so its SessionEnd teardown
+                    // runs). "Remove Session" is non-destructive — it just
+                    // drops the row from FocalPoint and leaves the agent
+                    // running (also the way to clear a disconnected row).
+                    Button("End Session", role: .destructive) { model.quitSession(s) }
+                    Button("Remove Session") { model.removeSession(s) }
                 }
                 if s.id != model.sessions.last?.id {
                     Divider().padding(.leading, 44)
@@ -152,7 +154,7 @@ struct MenuContentView: View {
         // "don't worry about this" at a glance, distinct from live states. A
         // disconnected (sweep-reaped) session is dimmed for the same reason:
         // it's kept around for recovery, not actively working.
-        let dimmed = stale || s.state == .compacting || !s.connected
+        let dimmed = stale || s.state == .compacting || !s.connected || s.pendingReopen
         let swatchColor = overBudget ? budgetWarningColor : (model.styles[displayState] ?? defaultStyle(displayState)).color
         return VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top, spacing: 10) {
@@ -166,7 +168,13 @@ struct MenuContentView: View {
 
                     HStack(spacing: 8) {
                         HStack(spacing: 5) {
-                            if !s.connected {
+                            if s.pendingReopen {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                                    .help("Reopening — waiting for the resumed agent to reconnect")
+                                Text("Reopening\u{2026}")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            } else if !s.connected {
                                 FocalPointMark(color: .secondary,
                                                assetName: "focalpoint-disconnected")
                                     .frame(width: 11, height: 11)

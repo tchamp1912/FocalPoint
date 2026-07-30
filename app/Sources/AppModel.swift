@@ -85,6 +85,12 @@ final class AppModel: ObservableObject {
     @Published var coloredIcon: Bool {
         didSet { UserDefaults.standard.set(coloredIcon, forKey: "coloredIcon") }
     }
+    /// Bundle id of the terminal app used to launch sessions ("Open in
+    /// Terminal", History → Resume). Empty string = the system default handler
+    /// for the target (its "Open With" default). Defaults to Terminal.app.
+    @Published var terminalBundleID: String {
+        didSet { UserDefaults.standard.set(terminalBundleID, forKey: "terminalBundleID") }
+    }
     @Published var hotkeysEnabled: Bool {
         didSet { UserDefaults.standard.set(hotkeysEnabled, forKey: "hotkeysEnabled")
                  onHotkeysToggled?(hotkeysEnabled) }
@@ -229,6 +235,7 @@ final class AppModel: ObservableObject {
     private init() {
         let d = UserDefaults.standard
         coloredIcon = d.object(forKey: "coloredIcon") as? Bool ?? false
+        terminalBundleID = d.string(forKey: "terminalBundleID") ?? "com.apple.Terminal"
         hotkeysEnabled = d.object(forKey: "hotkeysEnabled") as? Bool ?? true
         if let data = d.data(forKey: "hotkeyBindings"),
            let decoded = try? JSONDecoder().decode([String: HotkeyBinding].self, from: data) {
@@ -467,6 +474,9 @@ final class AppModel: ObservableObject {
             var s = sessions[idx]
             if s.state != newState { s.state = newState; s.lastChange = Date() }
             s.connected = connected
+            // Any real daemon event confirms the reopened session actually
+            // registered — it's no longer just an optimistic placeholder.
+            s.pendingReopen = false
             s.kind = kind
             if let label = label { s.label = label }
             // Assigned unconditionally, unlike label: a cleared rename comes
@@ -553,8 +563,11 @@ final class AppModel: ObservableObject {
             upsertSession(e)
             if let id = item["session"] as? String { seen.insert(id) }
         }
-        // Drop any session no longer present.
-        sessions.removeAll { !seen.contains($0.id) }
+        // Drop any session no longer present — but keep optimistic
+        // "Reopening…" placeholders, which the daemon doesn't know about yet
+        // (their own timeout in `optimisticallyReopen` clears them if the
+        // resumed agent never registers).
+        sessions.removeAll { !seen.contains($0.id) && !$0.pendingReopen }
         sortSessions()
     }
 
@@ -685,14 +698,27 @@ final class AppModel: ObservableObject {
                      "name": trimmed])
     }
 
-    /// Manually end a session (PROTOCOL.md §3/§4) — a user-triggered escape
-    /// hatch alongside the daemon's own automatic reaping (TTL, the dead-tty
-    /// sweep, the Codex PID watcher). The `"session-ended"` broadcast that
-    /// comes back removes it from `sessions` and records it in
+    /// Remove a session from FocalPoint **without** touching the agent — the
+    /// non-destructive action ("Remove Session"). The agent keeps running; it
+    /// just drops out of FocalPoint's list. The `"session-ended"` broadcast
+    /// that comes back removes it from `sessions` and records it in
     /// `sessionHistory` via the normal `handleEvent` path — no optimistic
-    /// local removal here.
-    func endSession(_ s: SessionInfo) {
+    /// local removal here. Also the "dismiss" action for a disconnected row.
+    func removeSession(_ s: SessionInfo) {
         client.send(["cmd": "end-session", "session": s.id])
+    }
+
+    /// End a session **destructively** ("End Session"): ask the actual agent
+    /// process to exit gracefully (the daemon sends SIGINT→SIGTERM, so the
+    /// tool runs its own teardown and its SessionEnd hook fires — the same
+    /// path as pressing Ctrl-C / typing `/exit`), then remove it. Use when
+    /// you want the agent itself stopped, not just hidden. Falls back to a
+    /// plain remove for a session with no resolved pid (Cursor, or one whose
+    /// identity never resolved). An older daemon that doesn't know
+    /// `quit-session` simply ignores it — pair it with the visible "Remove
+    /// Session" action, which always works.
+    func quitSession(_ s: SessionInfo) {
+        client.send(["cmd": "quit-session", "session": s.id])
     }
 
     /// Manually swap two sessions' numbered-key slots — a user-initiated
@@ -735,18 +761,160 @@ final class AppModel: ObservableObject {
 
     // MARK: - Quick actions (session cwd)
 
-    /// Opens a new Terminal window at `path`. Plain `NSWorkspace`, not
-    /// `osascript` UI-scripting — the latter needs Accessibility access this
-    /// app doesn't (and shouldn't have to) request.
+    /// Well-known terminal apps, in menu order. Only those actually installed
+    /// are offered in Settings (`installedTerminalApps`). VS Code opens a
+    /// folder but not a `.command`, so it's fine for "Open in Terminal" but
+    /// not Resume — an accepted limitation of a free-form app choice.
+    static let knownTerminals: [(id: String, name: String)] = [
+        ("com.apple.Terminal", "Terminal"),
+        ("com.googlecode.iterm2", "iTerm"),
+        ("com.mitchellh.ghostty", "Ghostty"),
+        ("com.github.wez.wezterm", "WezTerm"),
+        ("net.kovidgoyal.kitty", "kitty"),
+        ("dev.warp.Warp-Stable", "Warp"),
+        ("org.alacritty", "Alacritty"),
+    ]
+
+    /// The installed subset of `knownTerminals`, for the Settings picker.
+    var installedTerminalApps: [(id: String, name: String)] {
+        Self.knownTerminals.filter {
+            NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.id) != nil
+        }
+    }
+
+    /// Display name for the currently-selected terminal (for the picker /
+    /// buttons). Falls back to the raw bundle id for a hand-picked app that
+    /// isn't in `knownTerminals`.
+    var terminalDisplayName: String {
+        if terminalBundleID.isEmpty { return "System default" }
+        if let known = Self.knownTerminals.first(where: { $0.id == terminalBundleID }) {
+            return known.name
+        }
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: terminalBundleID) {
+            return url.deletingPathExtension().lastPathComponent
+        }
+        return terminalBundleID
+    }
+
+    /// Resolved URL of the preferred terminal app, or nil to let the system
+    /// pick the default handler (`terminalBundleID` empty, or the chosen app
+    /// no longer installed).
+    private func preferredTerminalURL() -> URL? {
+        guard !terminalBundleID.isEmpty else { return nil }
+        return NSWorkspace.shared.urlForApplication(withBundleIdentifier: terminalBundleID)
+    }
+
+    /// Open `file` (a directory, or a `.command` launcher) in the user's
+    /// chosen terminal — or the system default handler when none is set / it's
+    /// no longer installed. Plain `NSWorkspace`, not `osascript` UI-scripting:
+    /// the latter needs Accessibility access this app doesn't (and shouldn't
+    /// have to) request.
+    private func openWithTerminal(_ file: URL) {
+        let config = NSWorkspace.OpenConfiguration()
+        if let app = preferredTerminalURL() {
+            NSWorkspace.shared.open([file], withApplicationAt: app, configuration: config)
+        } else {
+            NSWorkspace.shared.open(file)
+        }
+    }
+
+    /// Present the macOS app picker (an "Open With"-style chooser scoped to
+    /// /Applications) so the user can select any terminal, then persist it.
+    func chooseTerminalApp() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose Terminal App"
+        panel.prompt = "Choose"
+        panel.allowedContentTypes = [.application]
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+        guard panel.runModal() == .OK, let url = panel.url,
+              let bundle = Bundle(url: url), let id = bundle.bundleIdentifier else { return }
+        terminalBundleID = id
+    }
+
+    /// Opens a new terminal window at `path` in the user's chosen terminal.
     func openInTerminal(_ path: String) {
-        guard let terminalURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") else { return }
-        NSWorkspace.shared.open([URL(fileURLWithPath: path, isDirectory: true)],
-                                 withApplicationAt: terminalURL,
-                                 configuration: NSWorkspace.OpenConfiguration())
+        openWithTerminal(URL(fileURLWithPath: path, isDirectory: true))
     }
 
     func revealInFinder(_ path: String) {
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+    }
+
+    /// The shell command that resumes an ended session's conversation, or nil
+    /// if its tool has no resume-by-id (Cursor/generic). Claude Code and Codex
+    /// both resume by the session id we already store: `claude --resume <id>`
+    /// / `codex resume <id>`. The id is single-quoted for the shell.
+    func resumeCommand(for entry: SessionHistoryEntry) -> String? {
+        let quotedID = "'" + entry.sessionID.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        switch entry.kind {
+        case "claude": return "claude --resume \(quotedID)"
+        case "codex":  return "codex resume \(quotedID)"
+        default:       return nil
+        }
+    }
+
+    /// Recover an ended session from History: reopen its agent conversation in
+    /// a new Terminal window at its working directory. Writes a temporary
+    /// `.command` launcher and opens it with `NSWorkspace` (Terminal is the
+    /// default handler for `.command`) rather than osascript-scripting a
+    /// terminal — so it needs no Automation/Accessibility permission, same
+    /// reasoning as `openInTerminal`. The resumed session re-registers with
+    /// the daemon via its adapter hooks, so it reappears as a live session.
+    func recoverSession(_ entry: SessionHistoryEntry) {
+        guard let cmd = resumeCommand(for: entry) else { return }
+        let cwd = entry.cwd ?? NSHomeDirectory()
+        let quotedCwd = "'" + cwd.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        let script = """
+        #!/bin/bash
+        # FocalPoint session recovery — reopens \(entry.kind) session \(entry.sessionID).
+        cd \(quotedCwd) 2>/dev/null || cd
+        exec \(cmd)
+        """
+        let launcher = FileManager.default.temporaryDirectory
+            .appendingPathComponent("focalpoint-resume-\(entry.sessionID).command")
+        do {
+            try script.write(to: launcher, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700],
+                                                  ofItemAtPath: launcher.path)
+        } catch {
+            log("recoverSession: failed to write launcher: \(error)")
+            return
+        }
+        openWithTerminal(launcher)
+        optimisticallyReopen(entry)
+    }
+
+    /// Put the resumed session back in the list *immediately* (as
+    /// "Reopening…") instead of waiting for its `SessionStart` hook to reach
+    /// the daemon and come back as a `session` event — the resumed agent
+    /// keeps the same id, so `upsertSession` merges into this row and clears
+    /// `pendingReopen`. A timeout removes the placeholder if the real event
+    /// never lands (resume was refused — e.g. a still-running bg agent — or
+    /// the tool assigned a new id).
+    private func optimisticallyReopen(_ entry: SessionHistoryEntry) {
+        if let idx = sessions.firstIndex(where: { $0.id == entry.sessionID }) {
+            sessions[idx].pendingReopen = true
+            sessions[idx].connected = true
+        } else {
+            var s = SessionInfo(id: entry.sessionID, kind: entry.kind, label: entry.title,
+                                name: nil, slot: nil, state: .idle, connected: true,
+                                cwd: entry.cwd, firstSeen: Date(), lastChange: Date(), stats: [:])
+            s.pendingReopen = true
+            sessions.append(s)
+        }
+        sortSessions()
+        let targetID = entry.sessionID
+        DispatchQueue.main.asyncAfter(deadline: .now() + 90) { [weak self] in
+            guard let self else { return }
+            // Only drop it if it's STILL just a placeholder — a real event
+            // (same id) clears `pendingReopen`, in which case it's a genuine
+            // live session now and must stay.
+            if let idx = self.sessions.firstIndex(where: { $0.id == targetID }),
+               self.sessions[idx].pendingReopen {
+                self.sessions.remove(at: idx)
+            }
+        }
     }
 
     func copyToPasteboard(_ text: String) {
