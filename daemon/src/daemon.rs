@@ -245,6 +245,17 @@ fn session_ended_line(id: &str, slot: Option<u8>) -> String {
     serde_json::json!({ "event": "session-ended", "session": id, "slot": slot }).to_string()
 }
 
+/// JSON line for a `session-disconnected` event (PROTOCOL.md §3): a session
+/// was reaped by a sweep rather than explicitly ended. Subscribers keep the
+/// row but mark it disconnected (`connected: false`) rather than removing it
+/// (as `session-ended` means) — it's still recoverable and shown until it's
+/// explicitly ended, dismissed, recovered, or its tombstone TTL expires.
+#[cfg(unix)]
+fn session_disconnected_line(id: &str, slot: Option<u8>) -> String {
+    serde_json::json!({ "event": "session-disconnected", "session": id, "slot": slot })
+        .to_string()
+}
+
 /// JSON line for a `session-rekeyed` event (PROTOCOL.md §3): a `Compacting`
 /// session was reunited with its post-compaction continuation under a new
 /// id. Subscribers should relabel their existing record for `old_session`
@@ -355,6 +366,17 @@ fn apply_effects(
                     let _ = host_tx.send(HostCmd::SetKeyState { key, state: None });
                 }
                 ctx.broadcast(&session_ended_line(&id, slot));
+            }
+            Effect::SessionDisconnected { id, slot } => {
+                // Frees the numbered-key slot on the device exactly like
+                // `SessionEnded` (the slot is now available to a new
+                // session), but subscribers keep the row as *disconnected*
+                // rather than dropping it.
+                session_effect = true;
+                if let Some(key) = slot {
+                    let _ = host_tx.send(HostCmd::SetKeyState { key, state: None });
+                }
+                ctx.broadcast(&session_disconnected_line(&id, slot));
             }
             Effect::SessionRekeyed { old_id, new_id } => {
                 // No device command: the slot/state don't change here — the
@@ -983,18 +1005,29 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
         });
     }
 
-    // Periodic tombstone sweep: drop reaped-but-not-explicitly-ended
+    // Periodic tombstone sweep: age out reaped-but-not-explicitly-ended
     // sessions' recoverable history past `tombstone_ttl_minutes` (no-op when
-    // never-expire). Purely internal bookkeeping — a tombstone is never
-    // visible (`list()`), so this emits no effects/device commands, unlike
-    // every other sweep here.
+    // never-expire). A tombstone is now surfaced as a *disconnected* session
+    // (`list-sessions` `connected: false`), so aging one out emits a
+    // `SessionEnded` to remove that row — "auto-remove after TTL" — unlike
+    // before, when a tombstone was invisible bookkeeping.
     if tombstone_ttl.is_some() {
         let ctx = ctx.clone();
+        let host_tx = host_tx.clone();
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
             loop {
                 tick.tick().await;
-                ctx.shared.lock().unwrap().registry.expire_tombstones(Instant::now());
+                let effects = {
+                    ctx.shared
+                        .lock()
+                        .unwrap()
+                        .registry
+                        .expire_tombstones(Instant::now())
+                };
+                if !effects.is_empty() {
+                    apply_effects(effects, &ctx, &host_tx);
+                }
             }
         });
     }
@@ -1308,8 +1341,30 @@ fn dispatch(
             Dispatch::Reply(serde_json::json!({ "ok": true }))
         }
         "list-sessions" => {
-            let sessions = shared.lock().unwrap().registry.list();
-            let arr: Vec<serde_json::Value> = sessions.iter().map(session_to_json).collect();
+            // Live sessions first (marked `connected: true`), then any
+            // tombstoned ones as `connected: false` (PROTOCOL.md §3) — a
+            // sweep-reaped session stays visible/disconnected here until it's
+            // explicitly ended, dismissed, recovered, or its tombstone TTL
+            // expires. A fresh subscriber gets the full picture (live +
+            // disconnected) from this one poll; live `session-disconnected`
+            // events keep an already-connected subscriber in sync.
+            let (sessions, tombstones) = {
+                let s = shared.lock().unwrap();
+                (s.registry.list(), s.registry.tombstones_snapshot())
+            };
+            let mut arr: Vec<serde_json::Value> = sessions
+                .iter()
+                .map(|s| {
+                    let mut v = session_to_json(s);
+                    v["connected"] = serde_json::json!(true);
+                    v
+                })
+                .collect();
+            for (_id, sess, _reaped_at) in &tombstones {
+                let mut v = session_to_json(sess);
+                v["connected"] = serde_json::json!(false);
+                arr.push(v);
+            }
             Dispatch::Reply(serde_json::json!({ "ok": true, "sessions": arr }))
         }
         "set-usage" => {
@@ -1371,6 +1426,30 @@ fn dispatch(
             let effects = shared.lock().unwrap().registry.end_session(id);
             apply_effects(effects, ctx, host_tx);
             Dispatch::Reply(serde_json::json!({ "ok": true }))
+        }
+        "focus-session" => {
+            // Run the [session] focus action for a session looked up by id —
+            // including a disconnected (tombstoned) one, whose terminal is
+            // usually still open (idle past the TTL, or an agent crash that
+            // left the window). Unlike pressing a numbered key (which resolves
+            // by slot on the device), this can't go through the slot: a
+            // tombstone holds no live slot, and a disconnected session's old
+            // slot may have been reclaimed. Runs on a detached thread so the
+            // focus script's osascript (with its own hard timeouts) never
+            // blocks the socket dispatch.
+            let Some(id) = value.get("session").and_then(|s| s.as_str()) else {
+                return err("focus-session requires 'session'");
+            };
+            let session = shared.lock().unwrap().registry.session_or_tombstone(id);
+            match session {
+                Some(sess) => {
+                    let ctx = ctx.clone();
+                    let slot = sess.slot.unwrap_or(0);
+                    std::thread::spawn(move || run_focus(&ctx, &sess, slot));
+                    Dispatch::Reply(serde_json::json!({ "ok": true }))
+                }
+                None => err(&format!("unknown session: {id}")),
+            }
         }
         "inject" => match parse_inject(&value) {
             Ok(events) => {

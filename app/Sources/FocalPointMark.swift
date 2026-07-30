@@ -6,18 +6,21 @@ import AppKit
 
 struct FocalPointMark: View {
     var color: Color = .primary
+    var assetName: String = "focalpoint-mark"
 
     var body: some View {
-        Image(nsImage: Self.image)
+        Image(nsImage: Self.image(named: assetName))
             .resizable()
-            .aspectRatio(128.0 / 64.0, contentMode: .fit)
+            .scaledToFit()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
             .foregroundStyle(color)
             .accessibilityLabel("FocalPoint")
     }
 
-    private static let image: NSImage = {
+    private static func image(named name: String) -> NSImage {
         guard let url = Bundle.main.url(
-            forResource: "focalpoint-mark",
+            forResource: name,
             withExtension: "svg",
             subdirectory: "Assets"
         ), let image = NSImage(contentsOf: url) else {
@@ -25,5 +28,5 @@ struct FocalPointMark: View {
         }
         image.isTemplate = true
         return image
-    }()
+    }
 }

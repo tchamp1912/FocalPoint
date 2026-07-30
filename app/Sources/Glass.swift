@@ -33,6 +33,8 @@ enum GlassRole {
     case floatingPanel(opacity: Double)
     /// A grouped section inside the settings window.
     case card
+    /// Settings section card — more opaque than `.card` for legibility.
+    case settingsCard
     /// A small inline pill (key-combo readout and similar).
     case chip
     /// The settings window's sidebar column background.
@@ -82,6 +84,10 @@ private struct LiquidGlassSurface: ViewModifier {
             }
         case .menuPanel, .card, .chip:
             content.glassEffect(glass, in: shape)
+        case .settingsCard:
+            content.background {
+                shape.fill(.background.opacity(0.88))
+            }
         }
     }
     #endif
@@ -107,7 +113,12 @@ private struct LiquidGlassSurface: ViewModifier {
                 )
                 .overlay(shape.strokeBorder(.white.opacity(0.14), lineWidth: 1))
         case .card:
-            content.background(shape.fill(.primary.opacity(0.05)))
+            content.background(shape.fill(.primary.opacity(0.10)))
+        case .settingsCard:
+            content.background {
+                shape.fill(Color(nsColor: .windowBackgroundColor).opacity(0.92))
+            }
+            .overlay(shape.strokeBorder(.primary.opacity(0.06), lineWidth: 1))
         case .chip:
             content.background(shape.fill(.primary.opacity(0.08)))
         case .sidebarPane(let opacity):

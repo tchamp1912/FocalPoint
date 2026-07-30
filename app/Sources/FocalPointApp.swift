@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWC: NSWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)   // no Dock icon (belt-and-suspenders with LSUIElement)
+        NSApp.setActivationPolicy(.regular)
 
         hotkeys = HotkeyManager(bindings: model.resolvedHotkeyBindings, inject: { [weak self] cmd in
             // The key1-9 hotkeys tap a slot directly (bypassing focusSession,
@@ -90,8 +90,9 @@ struct MenuBarLabel: View {
     var body: some View {
         let attention = model.attentionCount
         HStack(spacing: 2) {
-            FocalPointMark(color: iconStyle)
-                .frame(width: 18, height: 12)
+            FocalPointMark(color: iconStyle, assetName: "focalpoint-mark-menubar")
+                .frame(width: 14, height: 9)
+                .fixedSize()
             if attention > 0 {
                 // Attention badge: numeric count next to the icon.
                 Text("\(attention)")

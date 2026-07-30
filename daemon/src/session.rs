@@ -194,9 +194,19 @@ pub enum Effect {
         slot: Option<u8>,
         state: State,
     },
-    /// A session ended. `SET_KEY_STATE <slot> 0xFF` if it had a slot; always a
-    /// `session-ended` event.
+    /// A session ended for good — an explicit `end-session`, a user
+    /// dismissing an already-disconnected session, or a tombstone aging out
+    /// past `tombstone_ttl`. `SET_KEY_STATE <slot> 0xFF` if it still held a
+    /// slot; always a `session-ended` event. Subscribers remove it.
     SessionEnded { id: String, slot: Option<u8> },
+    /// A session was reaped by a *sweep* (TTL / dead-tty / dead-pid /
+    /// stuck-compacting) rather than explicitly ended. It moves to a
+    /// recoverable tombstone and frees its numbered-key slot on the device,
+    /// but — unlike `SessionEnded` — subscribers must keep rendering it as a
+    /// *disconnected* session (PROTOCOL.md §3) until it's explicitly ended,
+    /// manually dismissed, recovered, or its tombstone TTL expires. `slot` is
+    /// the slot it just vacated (so the device key can be cleared).
+    SessionDisconnected { id: String, slot: Option<u8> },
     /// A `Compacting` session was reunited with its post-compaction
     /// continuation under a new id (same slot, name, and history) — see
     /// `Registry::set_state`. No device command (the slot doesn't change);
@@ -569,13 +579,24 @@ impl Registry {
     /// with `reap_session`, used by every sweep instead.
     pub fn end_session(&mut self, id: &str) -> Vec<Effect> {
         let mut effects = Vec::new();
-        self.tombstones.remove(id);
+        let tomb = self.tombstones.remove(id);
         if let Some(sess) = self.sessions.remove(id) {
             effects.push(Effect::SessionEnded {
                 id: id.to_string(),
                 slot: sess.slot,
             });
             self.note_aggregate(&mut effects);
+        } else if tomb.is_some() {
+            // Dismissing an already-disconnected (tombstoned) session — the
+            // "user manually reaps them" path. Its device key was already
+            // freed when it was reaped, and a tombstone counts toward neither
+            // slots nor the aggregate, so there's nothing to clear on the
+            // device (slot: None) and no aggregate to recompute — just tell
+            // subscribers to drop the disconnected row.
+            effects.push(Effect::SessionEnded {
+                id: id.to_string(),
+                slot: None,
+            });
         }
         effects
     }
@@ -590,7 +611,12 @@ impl Registry {
     pub fn reap_session(&mut self, id: &str, now: Instant) -> Vec<Effect> {
         let mut effects = Vec::new();
         if let Some(sess) = self.sessions.remove(id) {
-            effects.push(Effect::SessionEnded {
+            // Not `SessionEnded`: a swept session stays visible as
+            // *disconnected* (still rendered until explicitly ended,
+            // dismissed, recovered, or its tombstone TTL expires), while its
+            // device key is freed and it drops out of slots/aggregate — see
+            // `Effect::SessionDisconnected`.
+            effects.push(Effect::SessionDisconnected {
                 id: id.to_string(),
                 slot: sess.slot,
             });
@@ -607,14 +633,31 @@ impl Registry {
     }
 
     /// Drop tombstones past `tombstone_ttl`. No-op when `None` (never).
-    /// Purely internal bookkeeping — a tombstone was never visible
-    /// (`list()`), so expiring one emits no effect.
-    pub fn expire_tombstones(&mut self, now: Instant) {
+    /// A tombstone is now surfaced to subscribers as a *disconnected* session
+    /// (PROTOCOL.md §3, `list-sessions` `connected: false`), so aging one out
+    /// emits a `SessionEnded` to remove that row — the "auto-remove after
+    /// `tombstone_ttl_minutes`" the config knob controls (`0` = never, so this
+    /// returns nothing at all). `slot: None` — the device key was already
+    /// freed when the session was reaped, and the vacated slot may since have
+    /// been reclaimed by a live session we must not clear.
+    pub fn expire_tombstones(&mut self, now: Instant) -> Vec<Effect> {
         let Some(ttl) = self.tombstone_ttl else {
-            return;
+            return Vec::new();
         };
-        self.tombstones
-            .retain(|_, t| now.saturating_duration_since(t.reaped_at) < ttl);
+        let mut expired: Vec<String> = self
+            .tombstones
+            .iter()
+            .filter(|(_, t)| now.saturating_duration_since(t.reaped_at) >= ttl)
+            .map(|(id, _)| id.clone())
+            .collect();
+        expired.sort();
+        expired
+            .into_iter()
+            .map(|id| {
+                self.tombstones.remove(&id);
+                Effect::SessionEnded { id, slot: None }
+            })
+            .collect()
     }
 
     /// Swap the numbered-key slots of two live sessions — manual reorder
@@ -728,6 +771,21 @@ impl Registry {
     /// The live session occupying `slot`, if any (for focus dispatch).
     pub fn session_by_slot(&self, slot: u8) -> Option<&Session> {
         self.sessions.values().find(|s| s.slot == Some(slot))
+    }
+
+    /// A session by id — live, or its last-known record if it's a tombstoned
+    /// (disconnected) session. Used by `focus-session` so a disconnected
+    /// session can still be focused by id: a reap frequently just means "idle
+    /// past the TTL" (the agent and its terminal are still very much alive,
+    /// the user simply hasn't prompted it in a while) or a dead-pid crash
+    /// where the terminal window remains — in both cases the tty is still
+    /// worth switching to. The slot-based `session_by_slot` can't reach a
+    /// tombstone, and its vacated slot may since have been reclaimed.
+    pub fn session_or_tombstone(&self, id: &str) -> Option<Session> {
+        self.sessions
+            .get(id)
+            .cloned()
+            .or_else(|| self.tombstones.get(id).map(|t| t.session.clone()))
     }
 
     /// All current tombstones as `(old_id, session, reaped_at)` — for
@@ -922,7 +980,8 @@ mod tests {
         // Advance past a's deadline but not b's.
         let t_late = t.checked_add(Duration::from_secs(601)).unwrap();
         let effects = r.expire(t_late);
-        assert!(effects.contains(&Effect::SessionEnded {
+        // A TTL sweep disconnects (keeps recoverable/visible), never ends.
+        assert!(effects.contains(&Effect::SessionDisconnected {
             id: "a".into(),
             slot: Some(1),
         }));
@@ -1264,8 +1323,8 @@ mod tests {
         let reap_effects = r.reap_session("old", now);
         assert!(reap_effects
             .iter()
-            .any(|e| matches!(e, Effect::SessionEnded { id, .. } if id == "old")));
-        assert!(r.list().is_empty(), "tombstone must not be visible in list()");
+            .any(|e| matches!(e, Effect::SessionDisconnected { id, .. } if id == "old")));
+        assert!(r.list().is_empty(), "tombstone must not be in live list()");
 
         let later = now.checked_add(Duration::from_secs(5)).unwrap();
         let mut m2 = meta("/repo", "/dev/ttys009");
@@ -1378,11 +1437,47 @@ mod tests {
         r.reap_session("old", now);
         assert_eq!(r.tombstones.len(), 1);
 
-        r.expire_tombstones(now.checked_add(Duration::from_secs(30)).unwrap());
+        let early = r.expire_tombstones(now.checked_add(Duration::from_secs(30)).unwrap());
         assert_eq!(r.tombstones.len(), 1, "well within ttl");
+        assert!(early.is_empty(), "nothing expired yet -> no effects");
 
-        r.expire_tombstones(now.checked_add(Duration::from_secs(61)).unwrap());
+        let late = r.expire_tombstones(now.checked_add(Duration::from_secs(61)).unwrap());
         assert_eq!(r.tombstones.len(), 0, "past ttl");
+        // Aging out a (now-visible) tombstone must tell subscribers to drop
+        // the disconnected row — with slot None, since the device key was
+        // freed at reap and its old slot may have been reclaimed.
+        assert!(late.contains(&Effect::SessionEnded {
+            id: "old".into(),
+            slot: None,
+        }));
+    }
+
+    #[test]
+    fn dismissing_a_disconnected_session_ends_it() {
+        // The "user manually reaps them" path: a reaped (disconnected)
+        // session, then an explicit end-session, must remove the row and
+        // leave nothing recoverable behind.
+        let mut r = Registry::new(None);
+        let now = t0();
+        let mut m = meta("/repo", "/dev/ttys004");
+        m.insert("pid".into(), Value::from(555));
+        r.set_state(Some("old"), State::Running, None, Some("Chat".into()), Some(m), now);
+        r.reap_session("old", now);
+        assert_eq!(r.tombstones.len(), 1);
+
+        let effects = r.end_session("old");
+        assert!(effects.contains(&Effect::SessionEnded {
+            id: "old".into(),
+            slot: None,
+        }));
+        assert_eq!(r.tombstones.len(), 0, "dismiss clears the tombstone");
+
+        // A later identical registration is fresh (no recovery).
+        let later = now.checked_add(Duration::from_secs(5)).unwrap();
+        let mut m2 = meta("/repo", "/dev/ttys004");
+        m2.insert("pid".into(), Value::from(555));
+        let e = r.set_state(Some("new"), State::Thinking, None, Some("Chat".into()), Some(m2), later);
+        assert!(!e.iter().any(|x| matches!(x, Effect::SessionRekeyed { .. })));
     }
 
     #[test]
@@ -1461,7 +1556,8 @@ mod tests {
 
         let past_grace = t.checked_add(COMPACT_GRACE + Duration::from_secs(1)).unwrap();
         let effects = r.expire_compacting(past_grace);
-        assert!(effects.contains(&Effect::SessionEnded {
+        // A stuck-compacting reap disconnects (recoverable), never ends.
+        assert!(effects.contains(&Effect::SessionDisconnected {
             id: "a".into(),
             slot: Some(1),
         }));

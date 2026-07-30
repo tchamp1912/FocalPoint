@@ -203,6 +203,14 @@ struct SessionInfo: Identifiable, Equatable {
     var name: String?
     var slot: Int?          // 1-12, or nil for slotless
     var state: AgentState
+    /// False when the daemon reaped this session via a sweep (TTL/dead-tty/
+    /// dead-pid/stuck-compacting) rather than an explicit end — a
+    /// `session-disconnected` event or a `connected: false` row from
+    /// `list-sessions` (PROTOCOL.md §3). It stays rendered (dimmed, with a
+    /// disconnected glyph) until it's explicitly ended, the user dismisses
+    /// it, it reconnects/recovers, or its tombstone TTL expires. `state`
+    /// holds its last-known state at the moment it was reaped.
+    var connected: Bool = true
     var cwd: String?
     /// Raw model id reported by the adapter (e.g. "claude-opus-4-8-..."),
     /// straight from `meta["model"]` (PROTOCOL.md §4). Use `modelBadge` for
@@ -238,39 +246,33 @@ struct SessionInfo: Identifiable, Equatable {
     /// or nil when no model has been reported yet.
     var modelBadge: String? { model.map(shortModelLabel) }
 
-    /// How full the model's context window currently is, 0...1, or nil when
+    /// How full the model's context window currently is, 0...1+, or nil when
     /// either `contextTokens` or a window size is unknown — or, critically,
-    /// when `contextTokens` already *exceeds* the assumed window. That's not
-    /// just "cap it at 100%": a session actively running past an assumed
-    /// window is proof the assumption is wrong (observed in practice — a
-    /// session ran fine at ~389k tokens against a hardcoded 200k guess this
-    /// used to ship with), and clamping to 1.0 would render a false "danger,
-    /// about to truncate" red bar off an assumption already known to be
-    /// broken. Falling back to `contextTokensDisplay` (a plain count, no
-    /// implied ceiling) is more honest than a percentage we can't stand
-    /// behind — see MenuContentView/DesktopOverlay for the fallback.
+    /// when `contextTokens` already *exceeds* the adapter-reported window
+    /// (but not a user-set per-kind override — see below).
     ///
-    /// `defaultWindow` is `AppModel.contextWindowOverride` (Settings →
-    /// Agent Integrations) — a user-editable fallback rather than a
-    /// hardcoded per-model-name guess, specifically because that guess kept
-    /// going stale: it doesn't know a model's real window, and a new
-    /// generation shipping a different one used to require a FocalPoint
-    /// rebuild to correct, not just a Settings edit.
-    func contextFraction(defaultWindow: Int?) -> Double? {
+    /// `kindOverride` is the user's per-provider cap from Settings (rot
+    /// preference). When set it wins over `reportedContextWindow`. When only
+    /// the adapter-reported window is available and occupancy exceeds it,
+    /// returns nil and callers fall back to `contextTokensDisplay` — proof
+    /// the assumption is wrong. A user override always renders the bar,
+    /// capping the fill at 100% once past their chosen limit.
+    func contextFraction(kindOverride: Int?) -> Double? {
         guard let tokens = contextTokens,
-              let window = effectiveContextWindow(defaultWindow: defaultWindow),
-              window > 0,
-              tokens <= window else {
+              let window = effectiveContextWindow(kindOverride: kindOverride),
+              window > 0 else {
             return nil
         }
+        if kindOverride == nil && tokens > window { return nil }
         return tokens / window
     }
 
-    /// The window value `contextFraction` would use, exposed separately so
-    /// `ContextMeterView` can place its fixed-token tick marks against the
-    /// same number rather than re-deriving it.
-    func effectiveContextWindow(defaultWindow: Int?) -> Double? {
-        reportedContextWindow ?? defaultWindow.map(Double.init)
+    /// Window size used by `contextFraction` / `ContextMeterView`.
+    /// Precedence: user per-kind override → adapter report → none.
+    func effectiveContextWindow(kindOverride: Int?) -> Double? {
+        if let kindOverride { return Double(kindOverride) }
+        if let reported = reportedContextWindow, reported > 0 { return reported }
+        return nil
     }
 
     /// Plain "389k ctx" formatting of `contextTokens`, shown when

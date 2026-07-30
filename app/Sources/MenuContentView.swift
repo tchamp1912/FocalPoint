@@ -42,9 +42,8 @@ struct MenuContentView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            StateSwatch(state: model.aggregate, color: model.aggregateStyle.color, size: 13)
-            FocalPointMark(color: model.aggregateStyle.color)
-                .frame(width: 22, height: 14)
+            FocalPointMark(color: model.aggregateStyle.color, assetName: "focalpoint-mark-menu")
+                .frame(width: 36, height: 24)
             VStack(alignment: .leading, spacing: 1) {
                 Text("FocalPoint").font(.headline)
                 Text(model.aggregate.display)
@@ -88,7 +87,11 @@ struct MenuContentView: View {
                             sessionRow(s)
                         }
                         .buttonStyle(.plain)
-                        .disabled(s.slot == nil)
+                        // A live slotless session (>12 live) has no numbered
+                        // key to tap; a disconnected one is still focusable by
+                        // id (its terminal is usually still open), so only a
+                        // *connected* slotless row is truly un-focusable.
+                        .disabled(s.connected && s.slot == nil)
                     }
                 }
                 .hoverHighlight()
@@ -119,7 +122,11 @@ struct MenuContentView: View {
                         Button("Copy Working Directory") { model.copyToPasteboard(cwd) }
                     }
                     Divider()
-                    Button("End Session", role: .destructive) { model.endSession(s) }
+                    // For a disconnected session this is the "manually reap"
+                    // path — clears the tombstone so it stops being offered
+                    // for recovery, same daemon `end-session` call.
+                    Button(s.connected ? "End Session" : "Dismiss",
+                           role: .destructive) { model.endSession(s) }
                 }
                 if s.id != model.sessions.last?.id {
                     Divider().padding(.leading, 44)
@@ -142,8 +149,10 @@ struct MenuContentView: View {
         let displayState: AgentState = stale ? .idle : s.state
         // Compacting is transient bookkeeping (PROTOCOL.md §1/§3), not agent
         // activity — dim it the same as a stale session so it reads as
-        // "don't worry about this" at a glance, distinct from live states.
-        let dimmed = stale || s.state == .compacting
+        // "don't worry about this" at a glance, distinct from live states. A
+        // disconnected (sweep-reaped) session is dimmed for the same reason:
+        // it's kept around for recovery, not actively working.
+        let dimmed = stale || s.state == .compacting || !s.connected
         let swatchColor = overBudget ? budgetWarningColor : (model.styles[displayState] ?? defaultStyle(displayState)).color
         return VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top, spacing: 10) {
@@ -157,9 +166,18 @@ struct MenuContentView: View {
 
                     HStack(spacing: 8) {
                         HStack(spacing: 5) {
-                            StateSwatch(state: displayState, color: swatchColor, size: 7)
-                            Text(stale ? "Possibly stale" : s.state.display)
-                                .font(.caption).foregroundStyle(.secondary)
+                            if !s.connected {
+                                FocalPointMark(color: .secondary,
+                                               assetName: "focalpoint-disconnected")
+                                    .frame(width: 11, height: 11)
+                                    .help("Disconnected — no update in a while (often just idle past the timeout). Kept for recovery; click to try to reopen its terminal, or dismiss it.")
+                                Text("Disconnected")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            } else {
+                                StateSwatch(state: displayState, color: swatchColor, size: 7)
+                                Text(stale ? "Possibly stale" : s.state.display)
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
                             if overBudget {
                                 Image(systemName: "exclamationmark.circle.fill")
                                     .font(.caption2)
@@ -189,13 +207,16 @@ struct MenuContentView: View {
                     }
                 }
             }
-            if let fraction = s.contextFraction(defaultWindow: model.contextWindowOverride),
-               let window = s.effectiveContextWindow(defaultWindow: model.contextWindowOverride) {
-                ContextMeterView(fraction: fraction, window: window)
-                    .padding(.top, 3)
-            } else if let raw = s.contextTokensDisplay {
-                Text(raw).font(.caption2).foregroundStyle(.tertiary)
-                    .padding(.top, 1)
+            if let tokens = s.contextTokens {
+                let kindOverride = model.contextWindowOverride(for: s.kind)
+                if let fraction = s.contextFraction(kindOverride: kindOverride),
+                   let window = s.effectiveContextWindow(kindOverride: kindOverride) {
+                    ContextMeterView(fraction: fraction, occupancy: tokens, window: window)
+                        .padding(.top, 3)
+                } else if let raw = s.contextTokensDisplay {
+                    Text(raw).font(.caption2).foregroundStyle(.tertiary)
+                        .padding(.top, 1)
+                }
             }
         }
         .padding(.horizontal, 8)
@@ -259,17 +280,7 @@ struct MenuContentView: View {
     }
 
     private func usageMeter(label: String, percent: Double, reset: Date?) -> some View {
-        HStack(spacing: 7) {
-            Text(label).font(.caption2).frame(width: 32, alignment: .leading)
-            ProgressView(value: min(max(percent, 0), 100), total: 100)
-                .tint(percent >= 90 ? .orange : .accentColor)
-            Text("\(Int(percent.rounded()))%")
-                .font(.caption2).monospacedDigit().frame(width: 30, alignment: .trailing)
-            if let reset {
-                Text("→ \(reset.formatted(date: .omitted, time: .shortened))")
-                    .font(.caption2).foregroundStyle(.tertiary)
-            }
-        }
+        UsageMeterBar(label: label, labelWidth: 32, percent: percent, reset: reset, style: .menu)
     }
 
     // MARK: Empty state — calm, not error-like
@@ -295,6 +306,8 @@ struct MenuContentView: View {
 
     private var footer: some View {
         HStack {
+            FocalPointMark(color: model.aggregateStyle.color, assetName: "focalpoint-mark-menu")
+                .frame(width: 18, height: 12)
             Button { onSettings() } label: {
                 Label("Settings", systemImage: "gearshape")
             }

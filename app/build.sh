@@ -29,6 +29,12 @@ echo "==> compiling"
 rm -rf "$APP"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR/Assets"
 
+ICONSET_DIR="$(mktemp -d /tmp/focalpoint-iconset.XXXXXX)"
+trap 'rm -rf "$ICONSET_DIR"' EXIT
+swiftc -O -framework AppKit -o "$ICONSET_DIR/make-appicon" tools/make-appicon.swift
+"$ICONSET_DIR/make-appicon" "$(pwd)/Assets/AppIcon.icon" "$ICONSET_DIR/AppIcon.iconset"
+iconutil --convert icns --output "$RESOURCES_DIR/AppIcon.icns" "$ICONSET_DIR/AppIcon.iconset"
+
 # shellcheck disable=SC2086  # GLASS_FLAGS is intentionally word-split (empty = no flag)
 swiftc -O \
     -parse-as-library \
@@ -40,7 +46,12 @@ swiftc -O \
 
 echo "==> assembling bundle"
 cp Info.plist "$APP/Contents/Info.plist"
+cp -R Assets/AppIcon.icon "$APP/Contents/Resources/AppIcon.icon"
 cp Assets/focalpoint-mark.svg "$RESOURCES_DIR/Assets/focalpoint-mark.svg"
+cp Assets/focalpoint-mark-menubar.svg "$RESOURCES_DIR/Assets/focalpoint-mark-menubar.svg"
+cp Assets/focalpoint-mark-menu.svg "$RESOURCES_DIR/Assets/focalpoint-mark-menu.svg"
+cp Assets/focalpoint-mark-widget.svg "$RESOURCES_DIR/Assets/focalpoint-mark-widget.svg"
+cp Assets/focalpoint-disconnected.svg "$RESOURCES_DIR/Assets/focalpoint-disconnected.svg"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 echo "==> ad-hoc codesign"

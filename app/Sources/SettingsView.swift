@@ -76,14 +76,14 @@ struct SettingsView: View {
         // without touching the legibility of the list text. Goes through
         // Glass.swift like every other surface so macOS 26 gets real Liquid
         // Glass here too, instead of always the pre-26 vibrancy material.
-        .liquidGlass(.sidebarPane(opacity: model.interfaceTranslucency), radius: 0)
+        .liquidGlass(.sidebarPane(opacity: Metrics.settingsPaneOpacity), radius: 0)
     }
 
     @ViewBuilder
     private var detail: some View {
         ZStack {
             Color.clear
-                .liquidGlass(.detailPane(opacity: model.interfaceTranslucency), radius: 0)
+                .liquidGlass(.detailPane(opacity: Metrics.settingsPaneOpacity), radius: 0)
                 .ignoresSafeArea()
             // Groups the section's cards so macOS 26 renders them as one
             // material; a pass-through on older systems.
@@ -139,18 +139,18 @@ struct GeneralSettingsView: View {
                     Divider()
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
-                            Text("Translucency").font(.subheadline).bold()
+                            Text("Desktop widget translucency").font(.subheadline).bold()
                             Spacer()
                             Text("\(Int(model.interfaceTranslucency * 100))%")
                                 .font(.caption).monospacedDigit().foregroundStyle(.secondary)
                         }
                         Slider(value: $model.interfaceTranslucency, in: 0.05...1.0, step: 0.01)
-                        Text("Fades only the frosted background — text and icons stay fully readable.")
+                        Text("Fades only the widget's frosted background — text and icons stay fully readable. Settings stays opaque for legibility.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 .padding(16)
-                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Reset").font(.title3).bold()
@@ -162,7 +162,7 @@ struct GeneralSettingsView: View {
                     }
                 }
                 .padding(16)
-                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
 
                 Spacer(minLength: 0)
             }
@@ -192,7 +192,7 @@ struct SessionHistoryView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 28)
-                    .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+                    .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
                 } else {
                     VStack(spacing: 0) {
                         ForEach(model.sessionHistory) { entry in
@@ -201,7 +201,7 @@ struct SessionHistoryView: View {
                         }
                     }
                     .padding(16)
-                    .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+                    .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
 
                     HStack {
                         Text("\(model.sessionHistory.count) session\(model.sessionHistory.count == 1 ? "" : "s") kept, most recent first.")
@@ -210,7 +210,7 @@ struct SessionHistoryView: View {
                         Button("Clear History", role: .destructive) { model.clearSessionHistory() }
                     }
                     .padding(16)
-                    .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+                    .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
                 }
 
                 Spacer(minLength: 0)
@@ -271,6 +271,21 @@ struct IntegrationsSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
 
                 VStack(alignment: .leading, spacing: 14) {
+                    Text("Context window").font(.subheadline).bold()
+                    Text("Per-provider cap for the meter under each session row. Leave on Auto to use the adapter-reported window when available. Set a lower number to match your compact/rot preference — the bar turns red at 100% of your cap even if the model allows more.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Divider()
+                    contextWindowField(kind: "claude", title: "Claude Code",
+                                       hint: "Run /context and use Auto-compact window. Default 967k on first install.")
+                    contextWindowField(kind: "codex", title: "Codex CLI",
+                                       hint: "Usually reported automatically (~258k). Override to warn earlier.")
+                    contextWindowField(kind: "cursor", title: "Cursor",
+                                       hint: "Cursor does not report occupancy yet; set a cap if you add context data later.")
+                }
+                .padding(16)
+                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
+
+                VStack(alignment: .leading, spacing: 14) {
                     Text("Session stat badges").font(.subheadline).bold()
                     Text("Shown next to a session's elapsed time when the adapter reports them. A stat you enable here simply stays hidden for sessions that don't have data for it yet — nothing to configure per-adapter.")
                         .font(.caption).foregroundStyle(.secondary)
@@ -289,7 +304,7 @@ struct IntegrationsSettingsView: View {
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
                 .padding(16)
-                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
 
                 VStack(alignment: .leading, spacing: 10) {
                     Toggle("Show account usage monitor", isOn: $model.showUsage)
@@ -312,25 +327,7 @@ struct IntegrationsSettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 .padding(16)
-                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
-
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("Context window").font(.subheadline).bold()
-                    Text("Assumed total context size for the meter under each session row, used only when a session doesn't report its real window itself. Not tied to a specific model on purpose — a new generation shipping a different window is a number to update here, not a FocalPoint release to wait on. Run /context in Claude Code and use the \u{201C}Auto-compact window\u{201D} figure. Leave blank to hide the meter for sessions with no explicit report.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Divider()
-                    HStack {
-                        Label("Assumed window", systemImage: "arrow.left.and.right.square")
-                        Spacer()
-                        TextField("Off", text: contextWindowText)
-                            .textFieldStyle(.roundedBorder)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 100)
-                        Text("tokens").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                .padding(16)
-                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
 
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Budget alerts").font(.subheadline).bold()
@@ -356,7 +353,7 @@ struct IntegrationsSettingsView: View {
                     }
                 }
                 .padding(16)
-                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
 
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Stale sessions").font(.subheadline).bold()
@@ -374,7 +371,7 @@ struct IntegrationsSettingsView: View {
                     }
                 }
                 .padding(16)
-                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
 
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Ideas / roadmap").font(.subheadline).bold()
@@ -397,7 +394,7 @@ struct IntegrationsSettingsView: View {
                     }
                 }
                 .padding(16)
-                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
 
                 Spacer(minLength: 0)
             }
@@ -451,14 +448,32 @@ struct IntegrationsSettingsView: View {
         )
     }
 
-    /// String shim for `model.contextWindowOverride: Int?`, same clearable
-    /// treatment as the budget fields.
-    private var contextWindowText: Binding<String> {
+    @ViewBuilder
+    private func contextWindowField(kind: String, title: String, hint: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label(title, systemImage: "arrow.left.and.right.square")
+                Spacer()
+                TextField("Auto", text: contextWindowBinding(kind))
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 100)
+                Text("tokens").font(.caption).foregroundStyle(.secondary)
+            }
+            Text(hint).font(.caption2).foregroundStyle(.tertiary)
+        }
+    }
+
+    private func contextWindowBinding(_ kind: String) -> Binding<String> {
         Binding(
-            get: { model.contextWindowOverride.map(String.init) ?? "" },
+            get: { model.contextWindowByKind[kind].map(String.init) ?? "" },
             set: { newValue in
                 let digits = newValue.filter(\.isNumber)
-                model.contextWindowOverride = digits.isEmpty ? nil : Int(digits)
+                if digits.isEmpty {
+                    model.contextWindowByKind.removeValue(forKey: kind)
+                } else if let value = Int(digits) {
+                    model.contextWindowByKind[kind] = value
+                }
             }
         )
     }
@@ -520,7 +535,7 @@ struct StateStyleDetail: View {
                     }
                 }
                 .padding(16)
-                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
 
                 Spacer(minLength: 0)
             }
@@ -608,7 +623,7 @@ struct HotkeysSettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 .padding(16)
-                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
 
                 VStack(spacing: 0) {
                     ForEach(HotkeyActionID.allCases) { action in
@@ -619,7 +634,7 @@ struct HotkeysSettingsView: View {
                     }
                 }
                 .padding(12)
-                .liquidGlass(.card, radius: Metrics.rowRadius * 1.5)
+                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
 
                 Spacer(minLength: 0)
             }

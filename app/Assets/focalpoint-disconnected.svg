@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <!-- Disconnected-plug glyph (template): a plug split by a diagonal gap so
+       it reads as "unplugged / disconnected" at small sizes. Single-color;
+       the app tints it via NSImage template rendering. -->
+  <!-- Prongs -->
+  <rect x="8.4" y="2" width="1.7" height="4.2" rx="0.85" fill="currentColor"/>
+  <rect x="13.9" y="2" width="1.7" height="4.2" rx="0.85" fill="currentColor"/>
+  <!-- Upper half of the plug body, sliced off on a diagonal -->
+  <path d="M6.6 6.4 H17.4 V10.6 L6.6 13.1 Z" fill="currentColor"/>
+  <!-- Lower half (socket + cord), the parallel diagonal gap between them -->
+  <path d="M6.6 15.1 L17.4 12.6 V16.8 H6.6 Z" fill="currentColor"/>
+  <rect x="11" y="16.6" width="2" height="4.2" rx="1" fill="currentColor"/>
+</svg>

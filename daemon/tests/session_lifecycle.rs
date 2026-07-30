@@ -253,16 +253,20 @@ fn dead_pid_sweep_reaps_and_tombstone_is_recoverable() {
     // it to actually reap this session, rather than asserting the mechanism
     // in isolation. This is the one test in this file that genuinely proves
     // the periodic sweep is wired to `reap_session` end to end in a live
-    // running daemon.
+    // running daemon. A reaped session is no longer dropped from the list —
+    // it stays visible as `connected: false` (disconnected) until ended,
+    // dismissed, recovered, or its tombstone TTL expires.
     d.wait_until(Duration::from_secs(45), || {
         d.cli_json(&["sessions", "--json"])
             .as_array()
             .unwrap()
-            .is_empty()
+            .iter()
+            .any(|s| s["session"] == "old" && s["connected"] == serde_json::json!(false))
     });
 
     // Recover via pid+cwd (2 signals) — a different tty, as if reattached
-    // in a new terminal.
+    // in a new terminal. Recovery consumes the tombstone, so only the
+    // reconnected session remains.
     d.cli_ok(&[
         "set-state", "thinking", "--session", "new", "--kind", "generic",
         "--cwd", "/tmp/proj",
@@ -289,11 +293,13 @@ fn label_and_cwd_recovery_after_dead_tty_reap() {
 
     // Dead-tty sweep: the pty device never existed, so reap is deterministic
     // once the 30s interval fires — same cadence as the dead-pid test above.
+    // The reaped session stays visible as `connected: false`.
     d.wait_until(Duration::from_secs(45), || {
         d.cli_json(&["sessions", "--json"])
             .as_array()
             .unwrap()
-            .is_empty()
+            .iter()
+            .any(|s| s["session"] == "old" && s["connected"] == serde_json::json!(false))
     });
 
     // Different pid *and* tty — only label+cwd can match (2-of-4 pooled rule).
@@ -348,9 +354,14 @@ fn restart_preserves_tombstone_for_recovery() {
     // Restart while the session is still "live" on disk — startup
     // reconciliation reaps the dead pid into a tombstone immediately (no
     // 30s sweep wait), and Part 4 must persist that tombstone across the
-    // same load path a real reboot uses.
+    // same load path a real reboot uses. The reaped session stays visible
+    // as a disconnected (`connected: false`) row rather than vanishing.
     d.restart();
-    assert_eq!(d.cli_json(&["sessions", "--json"]).as_array().unwrap().len(), 0);
+    let after = d.cli_json(&["sessions", "--json"]);
+    let after = after.as_array().unwrap();
+    assert_eq!(after.len(), 1);
+    assert_eq!(after[0]["session"], "old");
+    assert_eq!(after[0]["connected"], serde_json::json!(false));
 
     d.cli_ok(&[
         "set-state", "thinking", "--session", "new", "--kind", "generic",

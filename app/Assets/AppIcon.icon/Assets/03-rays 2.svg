@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <title>FocalPoint Liquid Glass RGB rays</title>
+  <g transform="translate(-17 144) scale(11.5)" stroke-width=".7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 16H43Q46 16 48 17.778L82 48" stroke="#e53935"/>
+    <path d="M10 16L82 48" stroke="#1976d2"/>
+    <path d="M10 16L43.8 45.8Q46.275 48 49 48H82" stroke="#43a047"/>
+  </g>
+</svg>

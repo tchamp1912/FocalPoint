@@ -149,13 +149,21 @@ off of). A `set-meta` still counts as session activity for
 - **Two removal paths.** An explicit `end-session` (adapter `SessionEnd`, or
   a user running `focalpoint end-session`) removes the session outright and
   **never** leaves a recoverable trace — not a tombstone, not a persisted
-  snapshot entry worth matching against later. Every other end reason above
-  (TTL idle timeout, dead-tty sweep, dead-pid sweep, or a session stuck in
-  `compacting` past its grace period — see below) routes through an internal
-  **reap** instead: the session is removed from the live list and its last
-  full record is stashed as a **tombstone** for possible recovery. Tombstones
-  are invisible to `list-sessions` and carry no slot; they expire after
-  `tombstone_ttl_minutes` (config, default 30, `0` = never — see §5).
+  snapshot entry worth matching against later. It emits `session-ended`;
+  front-ends drop the row. Every other end reason above (TTL idle timeout,
+  dead-tty sweep, dead-pid sweep, or a session stuck in `compacting` past its
+  grace period — see below) routes through an internal **reap** instead: the
+  session drops out of the aggregate and frees its device slot, and its last
+  full record is stashed as a **tombstone** for possible recovery — but it
+  **stays visible** as a *disconnected* session rather than vanishing. A reap
+  emits `session-disconnected` (below); front-ends keep the row, dimmed and
+  marked disconnected, until it's recovered, explicitly ended, dismissed by
+  the user (an `end-session` on it, which clears the tombstone), or its
+  tombstone expires. `list-sessions` includes tombstoned sessions with
+  `"connected": false` (live sessions carry `"connected": true`); a tombstone
+  reports the slot it last held but no longer occupies it. Tombstones expire
+  after `tombstone_ttl_minutes` (config, default 30, `0` = never — see §5);
+  an expiring tombstone emits `session-ended` so front-ends drop the row.
 - **Compaction (Claude Code adapter only).** Compaction is always a
   session-lifecycle transition in Claude Code (`SessionStart` fires with
   `source: "compact"` on the continuation), but Claude Code exposes no field
@@ -279,6 +287,14 @@ would show; `FOCALPOINT_SESSION_NAME` is empty unless the user renamed it;
 one, else empty.)
 Keys with empty slots fall back to their normal `[actions]` mapping.
 
+`focus-session` (`{"cmd":"focus-session","session":"id"}`) runs that same
+`[session] focus` action for a session looked up **by id** rather than by a
+pressed slot — resolving live sessions *and* tombstoned (disconnected) ones.
+Front-ends use it to focus a session with no live slot to press: a
+disconnected session (its terminal is usually still open — idle past the TTL,
+or an agent crash that left the window), or a slotless overflow session (>12
+live). Same env vars as above, from the session's last-known values.
+
 `inject` feeds a synthetic device event through the same dispatch path as real
 hardware input (actions fire, subscribers see the event). It exists for
 testing and for virtual-device front-ends (e.g. hotkeys standing in for
@@ -292,18 +308,26 @@ Responses / events:
 {"ok": true, "state": "thinking"}
 {"ok": true, "sessions": [{"session": "id", "kind": "claude", "label": "focalpoint",
                            "name": "Backend", "slot": 1, "state": "waiting",
-                           "meta": {"cwd": "/path"}}]}
+                           "connected": true, "meta": {"cwd": "/path"}}]}
 {"event": "state", "state": "thinking"}
 {"event": "session", "session": "id", "kind": "claude", "label": "focalpoint",
  "name": "Backend", "slot": 1, "state": "waiting", "meta": {"cwd": "/path"}}
 {"event": "session-ended", "session": "id", "slot": 1}
+{"event": "session-disconnected", "session": "id", "slot": 1}
 {"event": "session-rekeyed", "old_session": "old-id", "new_session": "new-id"}
 {"event": "key", "control": "accept", "pressed": true}
 {"event": "dial", "delta": 2}
 {"event": "joy", "gesture": "north"}
 ```
 
-`list-sessions` returns live sessions in slot order (slotless ones last).
+`list-sessions` returns live sessions (`"connected": true`) in slot order
+(slotless ones last), followed by any tombstoned sessions (`"connected":
+false`) — sweep-reaped sessions kept visible for recovery until ended,
+dismissed, recovered, or expired. `session-ended` removes a row;
+`session-disconnected` marks it disconnected (kept, dimmed) rather than
+removing it; a live `session` event on that id reconnects it. A
+`session-disconnected` event omits `"connected"` (the event name says it);
+only `list-sessions` rows carry the explicit boolean.
 
 ### Account usage
 

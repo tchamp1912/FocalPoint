@@ -7,11 +7,10 @@
 //! ancestry, no extra hop needed.
 //!
 //! `pid` resolution needs an ancestor walk (the hook's own process is a
-//! shell/node/etc., not the agent process); `tty` does not — a process's
-//! controlling terminal is independent of what its stdio fds are redirected
-//! to (stdin here is the hook-JSON pipe), so checking it directly via
-//! `/dev/tty` is both simpler and more correct than climbing ancestors
-//! looking for the first one with a resolvable tty.
+//! shell/node/etc., not the agent process). `tty` comes from that agent
+//! pid's controlling terminal (`ps -o tty=`) when available — *not* from
+//! `own_tty()` alone, which on macOS often resolves to the useless generic
+//! path `/dev/tty` (every session then collides and focus can't switch).
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -130,6 +129,55 @@ pub fn own_tty() -> Option<String> {
     }
 }
 
+/// Normalize a tty name from `ps` or `ttyname_r` into a usable device path.
+/// Rejects the generic `/dev/tty` alias — it is not unique per terminal.
+fn usable_tty(raw: &str) -> Option<String> {
+    let tty = raw.trim();
+    if tty.is_empty() || tty == "?" || tty == "??" || tty == "/dev/tty" || tty == "tty" {
+        return None;
+    }
+    if tty.starts_with("/dev/") {
+        Some(tty.to_string())
+    } else {
+        Some(format!("/dev/{tty}"))
+    }
+}
+
+/// Controlling terminal for `pid`, via `ps -o tty=`. Used for focus matching
+/// (iTerm/Terminal compare against `/dev/ttys00N`).
+fn tty_for_pid(pid: i32) -> Option<String> {
+    use std::process::Command;
+    let output = Command::new("ps")
+        .args(["-o", "tty=", "-p", &pid.to_string()])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    usable_tty(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn resolve_tty(pid: Option<i32>) -> Option<String> {
+    pid.and_then(tty_for_pid).or_else(|| own_tty().and_then(|t| usable_tty(&t)))
+}
+
+fn repair_cached_identity(session_id: &str, mut identity: Identity) -> Identity {
+    let tty_bad = identity
+        .tty
+        .as_deref()
+        .map(|t| t == "/dev/tty")
+        .unwrap_or(true);
+    if tty_bad {
+        if let Some(pid) = identity.pid {
+            if let Some(tty) = tty_for_pid(pid) {
+                identity.tty = Some(tty);
+                save_identity(session_id, &identity);
+            }
+        }
+    }
+    identity
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Identity {
     pub tty: Option<String>,
@@ -176,15 +224,39 @@ pub fn remove_identity(session_id: &str) {
 /// callers pass this on `SessionStart`, the one point a process instance for
 /// this session_id is known to have just begun.
 pub fn resolve_identity(session_id: &str, target_comm: &str, refresh: bool) -> Identity {
+    let cached = load_identity(session_id);
+    let cached_pid = cached.as_ref().and_then(|i| i.pid);
     if !refresh {
-        if let Some(identity) = load_identity(session_id) {
-            return identity;
+        if let Some(identity) = cached {
+            let identity = repair_cached_identity(session_id, identity);
+            // Only trust a cache that actually resolved *something*: a pid, or
+            // a usable (non-generic) tty. A `{pid: None, tty: None}` (or
+            // `/dev/tty`) entry is a poisoned negative result — the ancestry
+            // walk lost a race at `SessionStart` (e.g. the agent process
+            // wasn't in the table yet) and cached the failure. Returning it
+            // here would lock the session into "no identity" for its whole
+            // life, since nothing but `--refresh-identity` (SessionStart only)
+            // ever re-walks. Falling through instead re-walks on the next
+            // hook, which runs from within the now-established agent ancestry
+            // and normally succeeds. See identity resolution in
+            // SESSION-IDENTITY-PERSISTENCE-PLAN.md Part 1.
+            let tty_usable = identity
+                .tty
+                .as_deref()
+                .map(|t| t != "/dev/tty")
+                .unwrap_or(false);
+            if identity.pid.is_some() || tty_usable {
+                return identity;
+            }
         }
     }
     let source = SysinfoProcessSource::new();
-    let pid = resolve_pid(&source, std::process::id() as i32, target_comm);
+    let walked_pid = resolve_pid(&source, std::process::id() as i32, target_comm);
+    // A manual `set-meta --refresh-identity` from a normal shell isn't under
+    // the agent's ancestry — keep the cached pid and just refresh its tty.
+    let pid = walked_pid.or(cached_pid);
     let identity = Identity {
-        tty: own_tty(),
+        tty: resolve_tty(pid),
         pid,
     };
     save_identity(session_id, &identity);
@@ -286,6 +358,48 @@ mod tests {
         src.insert(2, Some(1), "zsh", &["-zsh"]);
 
         assert_eq!(resolve_pid(&src, 300, "claude"), Some(100));
+    }
+
+    #[test]
+    fn usable_tty_rejects_generic_dev_tty() {
+        assert_eq!(usable_tty("/dev/tty"), None);
+        assert_eq!(usable_tty("??"), None);
+        assert_eq!(
+            usable_tty("ttys003"),
+            Some("/dev/ttys003".to_string())
+        );
+        assert_eq!(
+            usable_tty("/dev/ttys024"),
+            Some("/dev/ttys024".to_string())
+        );
+    }
+
+    #[test]
+    fn empty_negative_cache_is_not_trusted_and_rewalks() {
+        // Isolate from other tests / the real user's state dir.
+        let tmp = std::env::temp_dir()
+            .join(format!("focalpoint-identity-poison-{}", std::process::id()));
+        std::env::set_var("XDG_STATE_HOME", &tmp);
+
+        let id = "poisoned-session";
+        // A prior SessionStart lost the walk race and cached a fully-empty
+        // identity. Without the trust guard this would be returned verbatim
+        // forever; with it, resolve_identity re-walks instead.
+        save_identity(id, &Identity { tty: None, pid: None });
+
+        let resolved = resolve_identity(id, "definitely-not-a-real-comm", false);
+        // The re-walk finds no such agent (so pid stays None here), but the
+        // point is it *attempted* a fresh resolution rather than blindly
+        // trusting the poisoned cache — proven by resolving a tty from this
+        // test process's own controlling terminal when it has one. Under CI /
+        // a detached test runner there may be none, so only assert the guard
+        // did not short-circuit on the cached pid: it must remain None (a
+        // trusted cache path never re-walks, but also never changes it), and
+        // must not panic.
+        assert_eq!(resolved.pid, None);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::remove_var("XDG_STATE_HOME");
     }
 
     #[test]

@@ -76,9 +76,8 @@ struct DesktopWidgetView: View {
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(.tertiary)
-            StateSwatch(state: model.aggregate, color: model.aggregateStyle.color, size: 10)
-            FocalPointMark(color: model.aggregateStyle.color)
-                .frame(width: 16, height: 10)
+            FocalPointMark(color: model.aggregateStyle.color, assetName: "focalpoint-mark-widget")
+                .frame(width: 28, height: 18)
             Text("FocalPoint").font(.system(size: 12, weight: .semibold))
             Spacer()
             Text(model.connected ? model.aggregate.display : "Offline")
@@ -118,7 +117,10 @@ struct DesktopWidgetView: View {
                                 sessionRow(s)
                             }
                             .buttonStyle(.plain)
-                            .disabled(s.slot == nil)
+                            // See MenuContentView: a disconnected session is
+                            // still focusable by id; only a connected slotless
+                            // row is truly un-focusable.
+                            .disabled(s.connected && s.slot == nil)
                         }
                     }
                     // Persistent outline for the last session FocalPoint itself
@@ -142,7 +144,8 @@ struct DesktopWidgetView: View {
                     .contextMenu {
                         Button("Rename\u{2026}") { renamingID = s.id }
                         Divider()
-                        Button("End Session", role: .destructive) { model.endSession(s) }
+                        Button(s.connected ? "End Session" : "Dismiss",
+                               role: .destructive) { model.endSession(s) }
                     }
                 }
             }
@@ -174,23 +177,8 @@ struct DesktopWidgetView: View {
     }
 
     private func usageRow(_ provider: String, label: String, percent: Double, reset: Date?) -> some View {
-        HStack(spacing: 5) {
-            // Fixed-width label so every provider's gauge starts at the same
-            // x regardless of how long "<Provider> <label>" is (e.g. "Codex
-            // P" is shorter than "Claude Wk") — otherwise each ProgressView
-            // is pushed left/right by its own row's text width.
-            Text("\(provider.capitalized) \(label)")
-                .font(.system(size: 9)).foregroundStyle(.secondary)
-                .lineLimit(1)
-                .frame(width: 54, alignment: .leading)
-            ProgressView(value: min(max(percent, 0), 100), total: 100)
-            Text("\(Int(percent.rounded()))%")
-                .font(.system(size: 9)).monospacedDigit().frame(width: 25, alignment: .trailing)
-            if let reset {
-                Text(reset.formatted(date: .omitted, time: .shortened))
-                    .font(.system(size: 9)).foregroundStyle(.tertiary)
-            }
-        }
+        UsageMeterBar(label: "\(provider.capitalized) \(label)",
+                      labelWidth: 54, percent: percent, reset: reset, style: .widget)
     }
 
     private func sessionRow(_ s: SessionInfo) -> some View {
@@ -201,8 +189,9 @@ struct DesktopWidgetView: View {
         let stale = model.isStale(s)
         let displayState: AgentState = stale ? .idle : s.state
         // Same compacting-dim rationale as MenuContentView's sessionRow —
-        // see that file (and AppModel.isStale) for the rationale.
-        let dimmed = stale || s.state == .compacting
+        // see that file (and AppModel.isStale) for the rationale. A
+        // disconnected (sweep-reaped) session is dimmed too.
+        let dimmed = stale || s.state == .compacting || !s.connected
         // Same warning-color swap + elapsed-time tint as MenuContentView's
         // sessionRow — see that file for the rationale.
         let swatchColor = overBudget ? budgetWarningColor : (model.styles[displayState] ?? defaultStyle(displayState)).color
@@ -212,10 +201,16 @@ struct DesktopWidgetView: View {
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .frame(width: 15, alignment: .center)
                     .foregroundStyle(.secondary)
-                StateSwatch(state: displayState, color: swatchColor, size: 8)
-                    .help(stale ? "No update in a while — shown as idle since the agent may have died without a clean shutdown"
-                          : s.state == .compacting ? "Compacting — momentarily between session identities, not agent activity"
-                          : "")
+                if !s.connected {
+                    FocalPointMark(color: .secondary, assetName: "focalpoint-disconnected")
+                        .frame(width: 12, height: 12)
+                        .help("Disconnected — no update in a while. Click to try to reopen its terminal, or dismiss it.")
+                } else {
+                    StateSwatch(state: displayState, color: swatchColor, size: 8)
+                        .help(stale ? "No update in a while — shown as idle since the agent may have died without a clean shutdown"
+                              : s.state == .compacting ? "Compacting — momentarily between session identities, not agent activity"
+                              : "")
+                }
                 SessionTitleField(session: s, model: model,
                                   editingID: $renamingID, font: .system(size: 11))
                 if overBudget {
@@ -247,17 +242,20 @@ struct DesktopWidgetView: View {
             // filled circle, so it has a few points of built-in inset the
             // meter otherwise lacks) — without it the meter reads as
             // starting a touch too far left of everything above it.
-            if let fraction = s.contextFraction(defaultWindow: model.contextWindowOverride),
-               let window = s.effectiveContextWindow(defaultWindow: model.contextWindowOverride) {
-                ContextMeterView(fraction: fraction, window: window)
-                    .padding(.leading, 8)
-                    .padding(.top, 3)
-            } else if let raw = s.contextTokensDisplay {
-                // Window unknown/exceeded — an honest count beats a
-                // percentage against a guess we no longer trust.
-                Text(raw).font(.system(size: 9)).foregroundStyle(.tertiary)
-                    .padding(.leading, 8)
-                    .padding(.top, 1)
+            if let tokens = s.contextTokens {
+                let kindOverride = model.contextWindowOverride(for: s.kind)
+                if let fraction = s.contextFraction(kindOverride: kindOverride),
+                   let window = s.effectiveContextWindow(kindOverride: kindOverride) {
+                    ContextMeterView(fraction: fraction, occupancy: tokens, window: window)
+                        .padding(.leading, 8)
+                        .padding(.top, 3)
+                } else if let raw = s.contextTokensDisplay {
+                    // Window unknown/exceeded — an honest count beats a
+                    // percentage against a guess we no longer trust.
+                    Text(raw).font(.system(size: 9)).foregroundStyle(.tertiary)
+                        .padding(.leading, 8)
+                        .padding(.top, 1)
+                }
             }
         }
         .padding(.horizontal, 5)

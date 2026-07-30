@@ -43,6 +43,9 @@ enum Metrics {
     static let badgeRadius: CGFloat = 6
     static let hPad: CGFloat = 14
     static let vPad: CGFloat = 10
+    /// Settings sidebar/detail backgrounds — kept high for legibility. The
+    /// desktop widget has its own user-controlled translucency slider.
+    static let settingsPaneOpacity: Double = 0.94
 }
 
 // MARK: - Budget alert color (client-only; not an AgentState)
@@ -228,6 +231,55 @@ struct SessionStatsView: View {
 
 // MARK: - Context-window meter (thin bar under a session row)
 
+// MARK: - Provider account usage meter
+
+/// Shared quota bar for menu dropdown and desktop widget. The trailing
+/// percent and reset-time columns are fixed-width so every row's gauge
+/// starts and ends at the same x; the bar itself takes all remaining space.
+struct UsageMeterBar: View {
+    enum Style { case menu, widget }
+
+    let label: String
+    let labelWidth: CGFloat
+    let percent: Double
+    let reset: Date?
+    var style: Style = .menu
+
+    private var clamped: Double { min(max(percent, 0), 100) }
+
+    var body: some View {
+        HStack(spacing: style == .menu ? 7 : 5) {
+            Text(label)
+                .font(style == .menu ? .caption2 : .system(size: 9))
+                .foregroundStyle(style == .menu ? .primary : .secondary)
+                .lineLimit(1)
+                .frame(width: labelWidth, alignment: .leading)
+            ProgressView(value: clamped, total: 100)
+                .tint(clamped >= 90 ? .orange : .accentColor)
+                .frame(maxWidth: .infinity)
+                .layoutPriority(-1)
+            Text("\(Int(clamped.rounded()))%")
+                .font(style == .menu ? .caption2 : .system(size: 9))
+                .monospacedDigit()
+                .lineLimit(1)
+                .frame(width: 30, alignment: .trailing)
+            if let reset {
+                Text(resetLabel(reset))
+                    .font(style == .menu ? .caption2 : .system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .frame(width: style == .menu ? 56 : 48, alignment: .leading)
+            }
+        }
+    }
+
+    private func resetLabel(_ reset: Date) -> String {
+        let time = reset.formatted(date: .omitted, time: .shortened)
+        return style == .menu ? "→ \(time)" : time
+    }
+}
+
 /// Color-grading thresholds for `ContextMeterView`, named so the cutoffs
 /// read as intent rather than magic numbers: green below 60% full, amber
 /// 60-85%, red above 85% (approaching a compaction/truncation risk).
@@ -245,11 +297,20 @@ private enum ContextMeterThresholds {
 /// this view itself just renders whatever fraction/window it's given.
 struct ContextMeterView: View {
     let fraction: Double
+    /// Current prompt occupancy in tokens — shown beside the window size so
+    /// the bar isn't confused with the cumulative tokens-out badge.
+    let occupancy: Double
     /// The absolute token window `fraction` is relative to — needed only for
     /// placing tick marks at fixed token intervals (see `ticks`), not for
     /// the fill itself.
     let window: Double
     var barHeight: CGFloat = 3
+
+    private static func formatTokenCount(_ value: Double) -> String {
+        if value >= 1_000_000 { return String(format: "%.1fM", value / 1_000_000) }
+        if value >= 1000 { return String(format: "%.0fk", (value / 1000).rounded()) }
+        return String(Int(value))
+    }
 
     private var fillColor: Color {
         if fraction >= ContextMeterThresholds.red { return .red }
@@ -282,21 +343,29 @@ struct ContextMeterView: View {
     }
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(.secondary.opacity(0.15))
-                    .frame(height: barHeight)
-                Capsule().fill(fillColor)
-                    .frame(width: geo.size.width * CGFloat(min(max(fraction, 0), 1)), height: barHeight)
-                ForEach(ticks, id: \.x) { tick in
-                    Rectangle()
-                        .fill(Color.primary.opacity(tick.big ? 0.4 : 0.2))
-                        .frame(width: tick.big ? 1.5 : 1, height: tick.big ? barHeight + 4 : barHeight + 2)
-                        .offset(x: geo.size.width * tick.x)
+        VStack(alignment: .leading, spacing: 2) {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.secondary.opacity(0.15))
+                        .frame(height: barHeight)
+                    Capsule().fill(fillColor)
+                        .frame(width: geo.size.width * CGFloat(min(max(fraction, 0), 1)), height: barHeight)
+                    ForEach(ticks, id: \.x) { tick in
+                        Rectangle()
+                            .fill(Color.primary.opacity(tick.big ? 0.4 : 0.2))
+                            .frame(width: tick.big ? 1.5 : 1, height: tick.big ? barHeight + 4 : barHeight + 2)
+                            .offset(x: geo.size.width * tick.x)
+                    }
                 }
             }
+            .frame(height: barHeight + 4)
+            Text("\(Self.formatTokenCount(occupancy)) / \(Self.formatTokenCount(window)) ctx")
+                .font(.system(size: 8))
+                .foregroundStyle(.tertiary)
+                .monospacedDigit()
+                .lineLimit(1)
         }
-        .frame(height: barHeight + 4)
+        .help("Current prompt size in the model's context window. The tokens-out badge is cumulative across the whole session, including compacted history.")
     }
 }
 

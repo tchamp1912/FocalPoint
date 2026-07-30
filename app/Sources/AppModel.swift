@@ -113,9 +113,9 @@ final class AppModel: ObservableObject {
     /// setting. Deliberately not persisted: it resets on relaunch so the
     /// configured mode is what you get back.
     @Published var desktopWidgetHotkeyHidden = false
-    /// Shared translucency for the desktop widget and settings window (1.0 =
-    /// opaque, lower = more see-through). Applied as NSWindow.alphaValue by
-    /// the controllers that own those windows.
+    /// Desktop widget frosted-background opacity (1.0 = opaque, lower =
+    /// more see-through). Settings uses a fixed high opacity instead — see
+    /// Metrics.settingsPaneOpacity.
     @Published var interfaceTranslucency: Double {
         didSet { UserDefaults.standard.set(interfaceTranslucency, forKey: "interfaceTranslucency") }
     }
@@ -194,22 +194,21 @@ final class AppModel: ObservableObject {
             }
         }
     }
-    /// Assumed context-window size (tokens) for the per-session meter, used
-    /// only when a session doesn't carry an explicit `meta.context_window`
-    /// (`SessionInfo.reportedContextWindow`, always preferred over this).
-    /// User-editable specifically so a new model generation shipping a
-    /// different window is a Settings edit, not a FocalPoint rebuild — the
-    /// previous hardcoded-per-model-name guess (Protocol.swift) went stale
-    /// the moment a current model exceeded it. nil turns the meter off
-    /// entirely for sessions with no explicit report.
-    @Published var contextWindowOverride: Int? {
+    /// Per-adapter context-window cap for the session meter (Settings → Agent
+    /// Integrations). When set, takes precedence over the adapter-reported
+    /// `context_window` so you can align the bar with your own compact/rot
+    /// threshold. Blank for a provider uses its reported window when available.
+    @Published var contextWindowByKind: [String: Int] = [:] {
         didSet {
-            if let contextWindowOverride {
-                UserDefaults.standard.set(contextWindowOverride, forKey: "contextWindowOverride")
-            } else {
-                UserDefaults.standard.removeObject(forKey: "contextWindowOverride")
+            if let data = try? JSONEncoder().encode(contextWindowByKind) {
+                UserDefaults.standard.set(data, forKey: "contextWindowByKind")
             }
         }
+    }
+
+    /// Resolved context-window override for a session `kind` (e.g. claude/codex).
+    func contextWindowOverride(for kind: String) -> Int? {
+        contextWindowByKind[kind.lowercased()]
     }
 
     // Wiring set by the app delegate.
@@ -263,12 +262,14 @@ final class AppModel: ObservableObject {
         tokenBudget = d.object(forKey: "tokenBudget") as? Int
         costBudget = d.object(forKey: "costBudget") as? Double
         staleThresholdMinutes = d.object(forKey: "staleThresholdMinutes") as? Int ?? 5
-        // 967_000 seeds the same figure Protocol.swift used to hardcode
-        // (Claude Code's own reported "Auto-compact window" for the current
-        // model generation, verified live via /context) — same default
-        // behavior on first run, but now a Settings edit away from staying
-        // current instead of a rebuild.
-        contextWindowOverride = d.object(forKey: "contextWindowOverride") as? Int ?? 967_000
+        if let data = d.data(forKey: "contextWindowByKind"),
+           let decoded = try? JSONDecoder().decode([String: Int].self, from: data) {
+            contextWindowByKind = decoded
+        } else {
+            // Migrate the old single global override into a Claude default.
+            let legacy = d.object(forKey: "contextWindowOverride") as? Int ?? 967_000
+            contextWindowByKind = ["claude": legacy]
+        }
         codexUsageMonitor = CodexUsageMonitor(model: self)
         cursorUsageMonitor = CursorUsageMonitor(model: self)
         if let data = d.data(forKey: "sessionHistory"),
@@ -401,6 +402,19 @@ final class AppModel: ObservableObject {
                 sessions.removeAll { $0.id == id }
                 if focusedSessionID == id { focusedSessionID = nil }
             }
+        case "session-disconnected":
+            // A sweep reaped the session (PROTOCOL.md §3). Unlike
+            // `session-ended`, keep the row — just mark it disconnected so it
+            // renders dimmed with the disconnected glyph. It stays until it's
+            // explicitly ended, dismissed, reconnects, or its tombstone TTL
+            // expires. A reconnect arrives as a normal `session` event, which
+            // flips `connected` back to true via `upsertSession`.
+            if let id = e["session"] as? String,
+               let idx = sessions.firstIndex(where: { $0.id == id }) {
+                sessions[idx].connected = false
+                if focusedSessionID == id { focusedSessionID = nil }
+                sortSessions()
+            }
         case "session-rekeyed":
             // A `compacting` session was reunited with its post-compaction
             // continuation under a new session_id (PROTOCOL.md §3). Relabel
@@ -444,10 +458,15 @@ final class AppModel: ObservableObject {
         let contextTokens = (meta?["context_tokens"] as? NSNumber)?.doubleValue
         let reportedContextWindow = (meta?["context_window"] as? NSNumber)?.doubleValue
         let stats = Self.parseStats(meta)
+        // A live `session` event carries no `connected` key and means the
+        // session is active — default true. `list-sessions` includes the flag
+        // explicitly (false for tombstoned/disconnected rows).
+        let connected = e["connected"] as? Bool ?? true
 
         if let idx = sessions.firstIndex(where: { $0.id == id }) {
             var s = sessions[idx]
             if s.state != newState { s.state = newState; s.lastChange = Date() }
+            s.connected = connected
             s.kind = kind
             if let label = label { s.label = label }
             // Assigned unconditionally, unlike label: a cleared rename comes
@@ -466,7 +485,8 @@ final class AppModel: ObservableObject {
             sessions[idx] = s
         } else {
             var s = SessionInfo(id: id, kind: kind, label: label, name: name,
-                                 slot: slot, state: newState, cwd: cwd,
+                                 slot: slot, state: newState, connected: connected,
+                                 cwd: cwd,
                                  firstSeen: Date(), lastChange: Date(), stats: stats)
             s.model = model
             s.contextTokens = contextTokens
@@ -477,8 +497,11 @@ final class AppModel: ObservableObject {
     }
 
     private func sortSessions() {
-        // Slot order; slotless sessions last (PROTOCOL.md §3 list-sessions).
+        // Connected first, then slot order; slotless sessions last
+        // (PROTOCOL.md §3 list-sessions). Disconnected (tombstoned) sessions
+        // sink below every live one so the active work stays at the top.
         sessions.sort { a, b in
+            if a.connected != b.connected { return a.connected }
             switch (a.slot, b.slot) {
             case let (x?, y?): return x < y
             case (_?, nil):    return true
@@ -583,9 +606,19 @@ final class AppModel: ObservableObject {
 
     /// Focus/bounce a session by tapping its numbered key (PROTOCOL.md §3 Focus).
     func focusSession(_ s: SessionInfo) {
-        guard let slot = s.slot else { return }
         focusedSessionID = s.id
-        client.send(["cmd": "inject", "kind": "key", "control": "key\(slot)", "action": "tap"])
+        if s.connected, let slot = s.slot {
+            // Live session with a slot: same path a numbered-key press takes.
+            client.send(["cmd": "inject", "kind": "key", "control": "key\(slot)", "action": "tap"])
+        } else {
+            // Disconnected (or slotless) — focus by id. The daemon looks the
+            // session up in live sessions or tombstones and runs the focus
+            // action against its last-known tty/cwd. A reaped session's
+            // terminal is usually still open (idle past the TTL, or an agent
+            // crash that left the window), so trying to switch to it is worth
+            // it even though it's no longer reporting.
+            client.send(["cmd": "focus-session", "session": s.id])
+        }
     }
 
     // MARK: - Focus-navigation hotkeys (attention-next/prev, session-next/prev)
@@ -594,7 +627,7 @@ final class AppModel: ObservableObject {
     /// `attentionCycleOrder`. Slotless sessions are excluded — there's no
     /// numbered key to tap for them.
     private var orderedAttentionSessions: [SessionInfo] {
-        let candidates = sessions.filter { $0.state.needsAttention && $0.slot != nil }
+        let candidates = sessions.filter { $0.connected && $0.state.needsAttention && $0.slot != nil }
         switch attentionCycleOrder {
         case .oldestFirst:
             return candidates.sorted { $0.lastChange < $1.lastChange }
@@ -609,7 +642,7 @@ final class AppModel: ObservableObject {
     /// Every focusable session in registration (slot) order — `sessions` is
     /// already kept sorted that way by `sortSessions()`.
     private var orderedAllSessions: [SessionInfo] {
-        sessions.filter { $0.slot != nil }
+        sessions.filter { $0.connected && $0.slot != nil }
     }
 
     func focusNextAttentionSession() { advanceFocus(in: orderedAttentionSessions, cursor: \.lastAttentionFocusID, delta: 1) }
