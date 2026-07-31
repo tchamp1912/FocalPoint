@@ -101,6 +101,14 @@ fi
 # Path to focalpoint CLI
 FOCALPOINT="${FOCALPOINT_PATH:-focalpoint}"
 
+# Pull is intentionally separate from the daemon's optional wake. The body is
+# returned only through this hook boundary; it is never typed into a pane.
+channel_pull() {
+  [ -n "${FOCALPOINT_CHANNEL_ID:-}" ] || return 0
+  command -v fpctl-agent >/dev/null 2>&1 || return 0
+  fpctl-agent channel read --channel "$FOCALPOINT_CHANNEL_ID" 2>/dev/null || true
+}
+
 # Read the full hook JSON from stdin; if anything fails, silently exit 0
 hook_json=$(cat 2>/dev/null) || exit 0
 
@@ -285,8 +293,15 @@ case "$event" in
       # a missing `tmux` binary is handled by `command -v` below. When not
       # in tmux, add nothing — the session is unmanaged, identical to
       # today's behavior.
-      "$FOCALPOINT" set-meta --session "$session_id" --kind claude \
-        --meta "managed=$managed_value" --meta "mux_pane=$mux_pane" >/dev/null 2>&1 || true
+      if [ -n "${FOCALPOINT_CHANNEL_ID:-}" ]; then
+        "$FOCALPOINT" set-meta --session "$session_id" --kind claude \
+          --meta "managed=$managed_value" --meta "mux_pane=$mux_pane" \
+          --meta "channel_id=$FOCALPOINT_CHANNEL_ID" >/dev/null 2>&1 || true
+      else
+        "$FOCALPOINT" set-meta --session "$session_id" --kind claude \
+          --meta "managed=$managed_value" --meta "mux_pane=$mux_pane" >/dev/null 2>&1 || true
+      fi
+      channel_pull
     fi
     exit 0
     ;;
@@ -380,6 +395,7 @@ if [ -n "${session_id:-}" ]; then
     args+=(--meta "orchestration_role=$FOCALPOINT_ORCHESTRATION_ROLE")
   [ -n "${FOCALPOINT_MANAGER_TASK_ID:-}" ] && \
     args+=(--meta "manager_task_id=$FOCALPOINT_MANAGER_TASK_ID")
+  [ -n "${FOCALPOINT_CHANNEL_ID:-}" ] && args+=(--meta "channel_id=$FOCALPOINT_CHANNEL_ID")
 
   if [ "$event" = "Stop" ]; then
     stats=$(extract_stats "$transcript_path")
@@ -407,5 +423,6 @@ fi
 
 # Call focalpoint set-state, silently fail if daemon is not running
 "$FOCALPOINT" set-state "${args[@]}" 2>/dev/null || true
+if [ "$event" = "Stop" ]; then channel_pull; fi
 
 exit 0

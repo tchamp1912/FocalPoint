@@ -44,6 +44,14 @@ if [ "${1:-}" = "--deferred-wait" ]; then
 fi
 
 FOCALPOINT="${FOCALPOINT_PATH:-focalpoint}"
+
+channel_pull() {
+  [ -n "${FOCALPOINT_CHANNEL_ID:-}" ] || return 0
+  command -v fpctl-agent >/dev/null 2>&1 || return 0
+  # Codex's hook protocol reserves stdout, so this is notification-only until
+  # Codex offers an additional-context field; never consume unread mail here.
+  true
+}
 payload=$(cat 2>/dev/null) || exit 0
 
 field() {
@@ -161,6 +169,7 @@ if [ -n "${session_id:-}" ]; then
     args+=(--meta "orchestration_role=$FOCALPOINT_ORCHESTRATION_ROLE")
   [ -n "${FOCALPOINT_MANAGER_TASK_ID:-}" ] && \
     args+=(--meta "manager_task_id=$FOCALPOINT_MANAGER_TASK_ID")
+  [ -n "${FOCALPOINT_CHANNEL_ID:-}" ] && args+=(--meta "channel_id=$FOCALPOINT_CHANNEL_ID")
   # SessionStart means "a fresh process instance for this session_id just
   # began" — force the CLI to re-walk instead of trusting a (possibly stale,
   # possibly nonexistent) cached identity (identity.rs).
@@ -234,4 +243,5 @@ fi
 
 # Hook stdout is part of Codex's hook protocol; never write to it.
 "$FOCALPOINT" set-state "${args[@]}" >/dev/null 2>&1 || true
+if [ "$event" = "SessionStart" ] || [ "$event" = "Stop" ]; then channel_pull; fi
 exit 0
