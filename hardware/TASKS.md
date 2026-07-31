@@ -4,7 +4,10 @@ Last updated: 2026-07-31
 
 Authoritative electrical sources:
 
-- Schematic: `kicad/focalpoint.kicad_sch`
+- Schematic root: `kicad/focalpoint.kicad_sch`
+- Schematic children: `kicad/focalpoint_power.kicad_sch`,
+  `kicad/focalpoint_signals.kicad_sch`, and
+  `kicad/focalpoint_peripherals.kicad_sch`
 - PCB: `kicad/focalpoint_rev_a_release_candidate.kicad_pcb`
 - Project: `kicad/focalpoint_rev_a_release_candidate.kicad_pro`
 - Native DRC evidence: `kicad/DRC_release_candidate_native.rpt`
@@ -15,7 +18,14 @@ release. Keep this file current as checks are completed or reopened.
 ## Release checklist
 
 - [x] Capture the Rev A schematic.
-  - Evidence: `kicad/erc.rpt` reports 0 errors and 0 warnings.
+  - Evidence: `kicad/erc_release_candidate.rpt` reports 0 violations.
+- [x] Refactor the flat capture into functional hierarchical sheets.
+  - Evidence: `kicad/hierarchical_schematic_equivalence.txt` reports 107
+    components, 80 nets, and zero component, net-node, or PCB pin/net
+    mismatches.
+  - Layout evidence: `kicad/hierarchical_schematic_layout_validation.txt`
+    reports zero overlapping pairs, full printable-area containment, and
+    preserved connection-grid alignment.
 - [x] Route the six-layer PCB with no ratsnest.
   - Evidence: native DRC reports 0 unconnected pads.
 - [x] Compare numbered schematic pins with PCB pad nets.

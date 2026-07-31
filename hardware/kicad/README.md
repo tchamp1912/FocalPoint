@@ -1,13 +1,32 @@
 # FocalPoint KiCad Rev A
 
 This directory is the persistent KiCad 10 workspace. The verified schematic is
-`focalpoint.kicad_sch`; the current PCB is
+the hierarchical root `focalpoint.kicad_sch` and its three child sheets; the current PCB is
 `focalpoint_rev_a_release_candidate.kicad_pcb`. It is a fully routed six-layer
 prototype candidate. Native KiCad DRC reports zero errors and zero unconnected
 pads and zero violations. Thirty-seven intentionally modified embedded
 footprints are locked to `FocalPoint.pretty` and independently audited. It is
-not orderable until the enclosure interference defects are resolved, an
-independent review is completed, and the JLCPCB upload is checked.
+not orderable until an independent review, purchased-part enclosure fit check,
+and JLCPCB upload review are completed.
+
+## Schematic hierarchy
+
+- `focalpoint_power.kicad_sch`: USB power entry, charging, battery monitoring,
+  3.3 V conversion, 5 V boost, and LED-rail switching.
+- `focalpoint_signals.kicad_sch`: nRF52840 module, USB data protection,
+  programming/debug, reset, and signal-conditioning parts.
+- `focalpoint_peripherals.kicad_sch`: 13 keys and RGB LEDs, encoder, joystick,
+  and capacitive-touch input.
+
+Cross-sheet connections retain their reviewed global net names. This makes the
+design a navigable file hierarchy without changing the electrical graph. The
+locked pre-refactor capture is `focalpoint_flat_reference.kicad_sch`; running
+`hierarchize_schematic.py` regenerates the hierarchy from that reference.
+The generator also replaces the original stretched placeholder bodies with
+conventional resistor, capacitor, inductor, TVS, switch, battery, and
+power-flag notation. Each A2 child sheet uses a checked fixed-cell layout;
+`hierarchical_schematic_layout_validation.txt` records zero overlapping block
+pairs and confirms that every block remains inside the printable area.
 
 The production stack-up, internal-plane policy, routing classes, and mandatory
 USB impedance confirmation are defined in [PCB_FABRICATION.md](PCB_FABRICATION.md).

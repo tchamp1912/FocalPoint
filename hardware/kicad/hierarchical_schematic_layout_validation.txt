@@ -1,0 +1,19 @@
+FocalPoint hierarchical schematic layout validation
+==================================================
+
+page=A2
+placement=checked fixed-cell grid
+minimum_block_gap_mm=1.27
+power_blocks=45
+power_grid=6x8
+power_overlapping_block_pairs=0
+signals_blocks=13
+signals_grid=4x4
+signals_overlapping_block_pairs=0
+peripherals_blocks=52
+peripherals_grid=7x8
+peripherals_overlapping_block_pairs=0
+total_blocks=110
+total_overlapping_block_pairs=0
+all_blocks_inside_printable_cells=yes
+connection_grid_preserved=yes

@@ -1,0 +1,5063 @@
+(kicad_sch
+	(version 20251024)
+	(generator "focalpoint_hierarchy")
+	(generator_version "10.0")
+	(uuid "05413334-0ff6-40b8-bb78-ae7a4e0b5ff5")
+	(paper "A2")
+	(title_block
+		(title "FocalPoint Rev A — Power Electronics")
+		(rev "A-hierarchical-standard")
+	)
+	(lib_symbols
+		(symbol "focalpoint:R"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "R"
+				(at 0 -7.62 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "R_1_1"
+				(polyline
+					(pts (xy 0 -2.54) (xy 2.54 -2.54) (xy 3.81 -1.27)
+						(xy 5.08 -3.81) (xy 6.35 -1.27) (xy 7.62 -3.81)
+						(xy 8.89 -1.27) (xy 10.16 -3.81) (xy 11.43 -1.27)
+						(xy 12.7 -2.54) (xy 15.24 -2.54))
+					(stroke (width 0.254) (type default))
+					(fill (type none))
+				)
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "1" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "2" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:C"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "C"
+				(at 0 -7.62 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "C_1_1"
+				(polyline
+					(pts (xy 0 -2.54) (xy 6.35 -2.54))
+					(stroke (width 0.254) (type default))
+					(fill (type none))
+				)
+				(polyline
+					(pts (xy 8.89 -2.54) (xy 15.24 -2.54))
+					(stroke (width 0.254) (type default))
+					(fill (type none))
+				)
+				(polyline
+					(pts (xy 6.35 -5.08) (xy 6.35 0))
+					(stroke (width 0.508) (type default))
+					(fill (type none))
+				)
+				(polyline
+					(pts (xy 8.89 -5.08) (xy 8.89 0))
+					(stroke (width 0.508) (type default))
+					(fill (type none))
+				)
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "1" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "2" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:L"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "L"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "L"
+				(at 0 -7.62 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "L_1_1"
+				(polyline
+					(pts (xy 0 -2.54) (xy 2.54 -2.54))
+					(stroke (width 0.254) (type default))
+					(fill (type none))
+				)
+				(arc (start 2.54 -2.54) (mid 3.81 -1.27) (end 5.08 -2.54)
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(arc (start 5.08 -2.54) (mid 6.35 -1.27) (end 7.62 -2.54)
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(arc (start 7.62 -2.54) (mid 8.89 -1.27) (end 10.16 -2.54)
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(arc (start 10.16 -2.54) (mid 11.43 -1.27) (end 12.7 -2.54)
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(polyline
+					(pts (xy 12.7 -2.54) (xy 15.24 -2.54))
+					(stroke (width 0.254) (type default))
+					(fill (type none))
+				)
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "1" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "2" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:D_TVS"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "D"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "D_TVS"
+				(at 0 -7.62 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "D_TVS_1_1"
+				(polyline
+					(pts (xy 0 -2.54) (xy 5.08 -2.54))
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(polyline
+					(pts (xy 5.08 -5.08) (xy 5.08 0) (xy 10.16 -2.54) (xy 5.08 -5.08))
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(polyline
+					(pts (xy 10.16 -5.08) (xy 10.16 -3.81) (xy 11.43 -2.54)
+						(xy 10.16 -1.27) (xy 10.16 0))
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(polyline
+					(pts (xy 10.16 -2.54) (xy 15.24 -2.54))
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "A" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "K" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:SW2"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "SW"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "SW2"
+				(at 0 -7.62 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "SW2_1_1"
+				(circle (center 3.81 -2.54) (radius 0.635)
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(circle (center 11.43 -2.54) (radius 0.635)
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(polyline
+					(pts (xy 0 -2.54) (xy 3.175 -2.54))
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(polyline
+					(pts (xy 4.445 -2.54) (xy 10.16 -0.635))
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(polyline
+					(pts (xy 12.065 -2.54) (xy 15.24 -2.54))
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "1" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "2" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:LED4"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "LED"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "LED4"
+				(at 0 -10.16 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "LED4_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -7.62)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin power_in line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "VDD" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin output line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "DOUT" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_in line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "VSS" (effects (font (size 1.27 1.27))))
+					(number "3" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "DIN" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:PWR_FLAG"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "#FLG"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "PWR_FLAG"
+				(at 0 -7.62 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "PWR_FLAG_1_1"
+				(polyline
+					(pts (xy 0 -2.54) (xy 5.08 -2.54) (xy 5.08 -6.35)
+						(xy 10.16 -5.08) (xy 5.08 -3.81))
+					(stroke (width 0.254) (type default))
+					(fill (type none))
+				)
+				(pin power_out line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "flag" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:BT_CELL"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "BT"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "BT_CELL"
+				(at 0 -7.62 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "BT_CELL_1_1"
+				(polyline
+					(pts (xy 0 -2.54) (xy 6.35 -2.54))
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(polyline
+					(pts (xy 8.89 -2.54) (xy 15.24 -2.54))
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(polyline
+					(pts (xy 6.35 -5.08) (xy 6.35 0))
+					(stroke (width 0.508) (type default)) (fill (type none)))
+				(polyline
+					(pts (xy 8.89 -3.81) (xy 8.89 -1.27))
+					(stroke (width 0.508) (type default)) (fill (type none)))
+				(text "+" (at 5.08 -6.35 0)
+					(effects (font (size 1.27 1.27))))
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "+" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "-" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:J_BATT"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "J_BATT"
+				(at 0 -7.62 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "J_BATT_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -5.08)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "1" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "2" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:J_SWD"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "J_SWD"
+				(at 0 -12.7 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "J_SWD_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -10.16)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "VCC" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "SWDIO" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "SWDCLK" (effects (font (size 1.27 1.27))))
+					(number "3" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "RESET" (effects (font (size 1.27 1.27))))
+					(number "5" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -7.62 180)
+					(length 2.54)
+					(name "SWO" (effects (font (size 1.27 1.27))))
+					(number "6" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:J_USBC"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "J_USBC"
+				(at 0 -25.4 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "J_USBC_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -22.86)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "A1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "VBUS" (effects (font (size 1.27 1.27))))
+					(number "A4" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "CC1" (effects (font (size 1.27 1.27))))
+					(number "A5" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -10.16 0)
+					(length 2.54)
+					(name "D+" (effects (font (size 1.27 1.27))))
+					(number "A6" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -12.7 0)
+					(length 2.54)
+					(name "D-" (effects (font (size 1.27 1.27))))
+					(number "A7" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -15.239999999999998 0)
+					(length 2.54)
+					(name "SBU1" (effects (font (size 1.27 1.27))))
+					(number "A8" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -17.78 0)
+					(length 2.54)
+					(name "VBUS" (effects (font (size 1.27 1.27))))
+					(number "A9" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -20.32 0)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "A12" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "B1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "VBUS" (effects (font (size 1.27 1.27))))
+					(number "B4" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -7.62 180)
+					(length 2.54)
+					(name "CC2" (effects (font (size 1.27 1.27))))
+					(number "B5" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -10.16 180)
+					(length 2.54)
+					(name "D+" (effects (font (size 1.27 1.27))))
+					(number "B6" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -12.7 180)
+					(length 2.54)
+					(name "D-" (effects (font (size 1.27 1.27))))
+					(number "B7" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -15.239999999999998 180)
+					(length 2.54)
+					(name "SBU2" (effects (font (size 1.27 1.27))))
+					(number "B8" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -17.78 180)
+					(length 2.54)
+					(name "VBUS" (effects (font (size 1.27 1.27))))
+					(number "B9" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -20.32 180)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "B12" (effects (font (size 1.27 1.27))))
+					)
+					(pin passive line (at -2.54 -2.54 0) (length 2.54)
+						(name "SHIELD" (effects (font (size 1.27 1.27))))
+						(number "SH" (effects (font (size 1.27 1.27)))))
+	
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:ENC_EC11"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "ENC"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "ENC_EC11"
+				(at 0 -12.7 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "ENC_EC11_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -10.16)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "A" (effects (font (size 1.27 1.27))))
+					(number "A" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "B" (effects (font (size 1.27 1.27))))
+					(number "B" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "COMMON" (effects (font (size 1.27 1.27))))
+					(number "C" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "SW1" (effects (font (size 1.27 1.27))))
+					(number "S1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "SW2" (effects (font (size 1.27 1.27))))
+					(number "S2" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:JOY_ALPS"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "JS"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "JOY_ALPS"
+				(at 0 -12.7 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "JOY_ALPS_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -10.16)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "VCC" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "X" (effects (font (size 1.27 1.27))))
+					(number "3" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "Y" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "SW" (effects (font (size 1.27 1.27))))
+					(number "5" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:U1_MODULE"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "U1_MODULE"
+				(at 0 -50.8 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "U1_MODULE_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 20.32 -48.26)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin power_in line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "VDD" (effects (font (size 1.27 1.27))))
+					(number "28" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_in line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "KEY1" (effects (font (size 1.27 1.27))))
+					(number "47" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -10.16 0)
+					(length 2.54)
+					(name "KEY2" (effects (font (size 1.27 1.27))))
+					(number "61" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -12.7 0)
+					(length 2.54)
+					(name "KEY3" (effects (font (size 1.27 1.27))))
+					(number "50" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -15.239999999999998 0)
+					(length 2.54)
+					(name "KEY4" (effects (font (size 1.27 1.27))))
+					(number "60" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -17.78 0)
+					(length 2.54)
+					(name "KEY5" (effects (font (size 1.27 1.27))))
+					(number "56" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -20.32 0)
+					(length 2.54)
+					(name "KEY6" (effects (font (size 1.27 1.27))))
+					(number "59" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -22.86 0)
+					(length 2.54)
+					(name "KEY7" (effects (font (size 1.27 1.27))))
+					(number "57" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -25.4 0)
+					(length 2.54)
+					(name "KEY8" (effects (font (size 1.27 1.27))))
+					(number "58" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -27.939999999999998 0)
+					(length 2.54)
+					(name "KEY9" (effects (font (size 1.27 1.27))))
+					(number "25" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -30.48 0)
+					(length 2.54)
+					(name "KEY10" (effects (font (size 1.27 1.27))))
+					(number "26" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -33.02 0)
+					(length 2.54)
+					(name "KEY11" (effects (font (size 1.27 1.27))))
+					(number "3" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -35.56 0)
+					(length 2.54)
+					(name "KEY12" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -38.1 0)
+					(length 2.54)
+					(name "KEY13" (effects (font (size 1.27 1.27))))
+					(number "5" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -40.64 0)
+					(length 2.54)
+					(name "JOY_X_AIN0" (effects (font (size 1.27 1.27))))
+					(number "11" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -43.18 0)
+					(length 2.54)
+					(name "JOY_Y_AIN1" (effects (font (size 1.27 1.27))))
+					(number "9" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -45.72 0)
+					(length 2.54)
+					(name "JOY_SW" (effects (font (size 1.27 1.27))))
+					(number "38" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -2.54 180)
+					(length 2.54)
+					(name "ENC_A" (effects (font (size 1.27 1.27))))
+					(number "41" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -5.08 180)
+					(length 2.54)
+					(name "ENC_B" (effects (font (size 1.27 1.27))))
+					(number "42" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -7.62 180)
+					(length 2.54)
+					(name "ENC_SW" (effects (font (size 1.27 1.27))))
+					(number "44" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -10.16 180)
+					(length 2.54)
+					(name "TOUCH_OUT" (effects (font (size 1.27 1.27))))
+					(number "39" (effects (font (size 1.27 1.27))))
+					)
+				(pin output line
+					(at 22.86 -12.7 180)
+					(length 2.54)
+					(name "RGB_DATA" (effects (font (size 1.27 1.27))))
+					(number "22" (effects (font (size 1.27 1.27))))
+					)
+				(pin output line
+					(at 22.86 -15.239999999999998 180)
+					(length 2.54)
+					(name "RGB_PWR_EN" (effects (font (size 1.27 1.27))))
+					(number "24" (effects (font (size 1.27 1.27))))
+					)
+				(pin output line
+					(at 22.86 -17.78 180)
+					(length 2.54)
+					(name "BOOST_EN" (effects (font (size 1.27 1.27))))
+					(number "6" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -20.32 180)
+					(length 2.54)
+					(name "CHG_STAT" (effects (font (size 1.27 1.27))))
+					(number "29" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -22.86 180)
+					(length 2.54)
+					(name "PGOOD" (effects (font (size 1.27 1.27))))
+					(number "36" (effects (font (size 1.27 1.27))))
+					)
+				(pin bidirectional line
+					(at 22.86 -25.4 180)
+					(length 2.54)
+					(name "FG_SDA" (effects (font (size 1.27 1.27))))
+					(number "8" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -27.939999999999998 180)
+					(length 2.54)
+					(name "FG_SCL" (effects (font (size 1.27 1.27))))
+					(number "14" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -30.48 180)
+					(length 2.54)
+					(name "FG_ALRT" (effects (font (size 1.27 1.27))))
+					(number "48" (effects (font (size 1.27 1.27))))
+					)
+				(pin bidirectional line
+					(at 22.86 -33.02 180)
+					(length 2.54)
+					(name "USB_DP" (effects (font (size 1.27 1.27))))
+					(number "35" (effects (font (size 1.27 1.27))))
+					)
+				(pin bidirectional line
+					(at 22.86 -35.56 180)
+					(length 2.54)
+					(name "USB_DN" (effects (font (size 1.27 1.27))))
+					(number "34" (effects (font (size 1.27 1.27))))
+					)
+				(pin bidirectional line
+					(at 22.86 -38.1 180)
+					(length 2.54)
+					(name "SWDIO" (effects (font (size 1.27 1.27))))
+					(number "51" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -40.64 180)
+					(length 2.54)
+					(name "SWDCLK" (effects (font (size 1.27 1.27))))
+					(number "53" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -43.18 180)
+					(length 2.54)
+					(name "DFU_P013" (effects (font (size 1.27 1.27))))
+					(number "37" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -45.72 180)
+					(length 2.54)
+					(name "nRESET_P018" (effects (font (size 1.27 1.27))))
+					(number "40" (effects (font (size 1.27 1.27))))
+					)
+					(pin power_in line (at -2.54 -5.08 0) (length 2.54)
+						(name "GND2" (effects (font (size 1.27 1.27))))
+						(number "2" (effects (font (size 1.27 1.27)))))
+					(pin power_in line (at -2.54 -5.08 0) (length 2.54)
+						(name "GND15" (effects (font (size 1.27 1.27))))
+						(number "15" (effects (font (size 1.27 1.27)))))
+					(pin power_in line (at -2.54 -5.08 0) (length 2.54)
+						(name "GND33" (effects (font (size 1.27 1.27))))
+						(number "33" (effects (font (size 1.27 1.27)))))
+					(pin power_in line (at -2.54 -5.08 0) (length 2.54)
+						(name "GND55" (effects (font (size 1.27 1.27))))
+						(number "55" (effects (font (size 1.27 1.27)))))
+					(pin power_in line (at 22.86 -48.26 180) (length 2.54)
+						(name "VBUS" (effects (font (size 1.27 1.27))))
+						(number "32" (effects (font (size 1.27 1.27)))))
+	
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:U2_ESD"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "U2_ESD"
+				(at 0 -12.7 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "U2_ESD_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -10.16)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+					(pin passive line (at -2.54 -2.54 0) (length 2.54)
+						(name "D+" (effects (font (size 1.27 1.27))))
+						(number "1" (effects (font (size 1.27 1.27)))))
+					(pin passive line (at -2.54 -5.08 0) (length 2.54)
+						(name "D-" (effects (font (size 1.27 1.27))))
+						(number "2" (effects (font (size 1.27 1.27)))))
+					(pin passive line (at -2.54 -7.62 0) (length 2.54)
+						(name "GND" (effects (font (size 1.27 1.27))))
+						(number "3" (effects (font (size 1.27 1.27)))))
+	
+				)
+	
+	
+	
+	
+	(embedded_fonts no)
+			)
+		(symbol "focalpoint:U3_CHARGER"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "U3_CHARGER"
+				(at 0 -22.86 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "U3_CHARGER_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -20.32)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin power_in line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "IN" (effects (font (size 1.27 1.27))))
+					(number "13" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_out line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "SYS" (effects (font (size 1.27 1.27))))
+					(number "10" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "BAT" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -10.16 0)
+					(length 2.54)
+					(name "ISET" (effects (font (size 1.27 1.27))))
+					(number "16" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -12.7 0)
+					(length 2.54)
+					(name "ILIM" (effects (font (size 1.27 1.27))))
+					(number "12" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -15.239999999999998 0)
+					(length 2.54)
+					(name "ITERM" (effects (font (size 1.27 1.27))))
+					(number "15" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -17.78 0)
+					(length 2.54)
+					(name "TMR" (effects (font (size 1.27 1.27))))
+					(number "14" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "TS" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin open_collector line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "nCHG" (effects (font (size 1.27 1.27))))
+					(number "9" (effects (font (size 1.27 1.27))))
+					)
+				(pin open_collector line
+					(at 17.78 -7.62 180)
+					(length 2.54)
+					(name "nPGOOD" (effects (font (size 1.27 1.27))))
+					(number "7" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 17.78 -10.16 180)
+					(length 2.54)
+					(name "EN1" (effects (font (size 1.27 1.27))))
+					(number "6" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 17.78 -12.7 180)
+					(length 2.54)
+					(name "EN2" (effects (font (size 1.27 1.27))))
+					(number "5" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_in line
+					(at 17.78 -15.239999999999998 180)
+					(length 2.54)
+					(name "VSS" (effects (font (size 1.27 1.27))))
+					(number "8" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -17.78 180)
+					(length 2.54)
+					(name "CE" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+					(pin passive line (at -2.54 -7.62 0) (length 2.54)
+						(name "BAT" (effects (font (size 1.27 1.27))))
+						(number "3" (effects (font (size 1.27 1.27)))))
+					(pin passive line (at -2.54 -5.08 0) (length 2.54)
+						(name "OUT" (effects (font (size 1.27 1.27))))
+						(number "11" (effects (font (size 1.27 1.27)))))
+					(pin power_in line (at 17.78 -15.24 180) (length 2.54)
+						(name "VSS" (effects (font (size 1.27 1.27))))
+						(number "17" (effects (font (size 1.27 1.27)))))
+	
+				)
+	
+	
+	
+	
+	(embedded_fonts no)
+			)
+		(symbol "focalpoint:U4_BUCKBOOST"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "U4_BUCKBOOST"
+				(at 0 -15.239999999999998 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "U4_BUCKBOOST_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -12.7)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin power_in line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "VIN" (effects (font (size 1.27 1.27))))
+					(number "5" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "L1" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "L2" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_out line
+					(at -2.54 -10.16 0)
+					(length 2.54)
+					(name "VOUT" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "FB" (effects (font (size 1.27 1.27))))
+					(number "10" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "EN" (effects (font (size 1.27 1.27))))
+					(number "6" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 17.78 -7.62 180)
+					(length 2.54)
+					(name "PS_SYNC" (effects (font (size 1.27 1.27))))
+					(number "7" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_in line
+					(at 17.78 -10.16 180)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "9" (effects (font (size 1.27 1.27))))
+					)
+					(pin power_in line (at -2.54 -2.54 0) (length 2.54)
+						(name "VINA" (effects (font (size 1.27 1.27))))
+						(number "8" (effects (font (size 1.27 1.27)))))
+	
+					(pin power_in line (at 17.78 -10.16 180) (length 2.54)
+						(name "PGND" (effects (font (size 1.27 1.27))))
+						(number "3" (effects (font (size 1.27 1.27)))))
+	
+					(pin power_in line (at 17.78 -10.16 180) (length 2.54)
+						(name "EP" (effects (font (size 1.27 1.27))))
+						(number "11" (effects (font (size 1.27 1.27)))))
+	
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:U5_BOOST"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "U5_BOOST"
+				(at 0 -12.7 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "U5_BOOST_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -10.16)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin power_in line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "VIN" (effects (font (size 1.27 1.27))))
+					(number "3" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "SW" (effects (font (size 1.27 1.27))))
+					(number "5" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_out line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "VOUT" (effects (font (size 1.27 1.27))))
+					(number "6" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "FB" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "EN" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_in line
+					(at 17.78 -7.62 180)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:U6_LOADSW"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "U6_LOADSW"
+				(at 0 -12.7 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "U6_LOADSW_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -10.16)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin power_in line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "VIN" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_out line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "VOUT" (effects (font (size 1.27 1.27))))
+					(number "6" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "ON" (effects (font (size 1.27 1.27))))
+					(number "3" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "QOD" (effects (font (size 1.27 1.27))))
+					(number "5" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "CT" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_in line
+					(at 17.78 -7.62 180)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:U7_BUFFER"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "U7_BUFFER"
+				(at 0 -12.7 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "U7_BUFFER_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -10.16)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin power_in line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "VCC" (effects (font (size 1.27 1.27))))
+					(number "5" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "IN" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "OE" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin output line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "OUT" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_in line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "3" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:U8_TOUCH"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "U8_TOUCH"
+				(at 0 -12.7 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "U8_TOUCH_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -10.16)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin power_in line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "VDD" (effects (font (size 1.27 1.27))))
+					(number "5" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_in line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "VSS" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "SNS1" (effects (font (size 1.27 1.27))))
+					(number "3" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "SNS2" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+				(pin output line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "OUT" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+					(pin input line (at -2.54 -5.08 0) (length 2.54)
+						(name "SYNC_MODE" (effects (font (size 1.27 1.27))))
+						(number "6" (effects (font (size 1.27 1.27)))))
+	
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:U9_FUELGAUGE"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "U9_FUELGAUGE"
+				(at 0 -12.7 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "U9_FUELGAUGE_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 16.51 -10.16)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin power_in line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "CELL_VDD" (effects (font (size 1.27 1.27))))
+					(number "3" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_in line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+				(pin bidirectional line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "SDA" (effects (font (size 1.27 1.27))))
+					(number "8" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 19.05 -2.54 180)
+					(length 2.54)
+					(name "SCL" (effects (font (size 1.27 1.27))))
+					(number "7" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 19.05 -5.08 180)
+					(length 2.54)
+					(name "ALRT" (effects (font (size 1.27 1.27))))
+					(number "5" (effects (font (size 1.27 1.27))))
+					)
+					(pin power_in line (at -2.54 -2.54 0) (length 2.54)
+						(name "CELL" (effects (font (size 1.27 1.27))))
+						(number "2" (effects (font (size 1.27 1.27)))))
+	
+					(pin power_in line (at -2.54 -5.08 0) (length 2.54)
+						(name "CTG" (effects (font (size 1.27 1.27))))
+						(number "1" (effects (font (size 1.27 1.27)))))
+	
+					(pin input line (at -2.54 -5.08 0) (length 2.54)
+						(name "QSTRT" (effects (font (size 1.27 1.27))))
+						(number "6" (effects (font (size 1.27 1.27)))))
+	
+					(pin power_in line (at -2.54 -5.08 0) (length 2.54)
+						(name "EP" (effects (font (size 1.27 1.27))))
+						(number "9" (effects (font (size 1.27 1.27)))))
+	
+				)
+			(embedded_fonts no)
+			)
+	
+			(symbol "focalpoint:D_TVS_DUAL_CA"
+				(exclude_from_sim no) (in_bom yes) (on_board yes)
+				(property "Reference" "D" (at 0 2.54 0) (effects (font (size 1.27 1.27))))
+				(property "Value" "D_TVS_DUAL_CA" (at 0 -10.16 0) (effects (font (size 1.27 1.27))))
+				(property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+				(property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+				(symbol "D_TVS_DUAL_CA_1_1"
+					(rectangle (start 0 0) (end 15.24 -7.62) (stroke (width 0.254) (type default)) (fill (type background)))
+					(pin passive line (at -2.54 -2.54 0) (length 2.54) (name "K1" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))
+					(pin passive line (at -2.54 -5.08 0) (length 2.54) (name "K2" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27)))))
+					(pin power_in line (at 17.78 -2.54 180) (length 2.54) (name "A" (effects (font (size 1.27 1.27)))) (number "3" (effects (font (size 1.27 1.27))))))
+				(embedded_fonts no))
+		)
+	(symbol
+			(lib_id "focalpoint:PWR_FLAG")
+			(at 50.8000 35.5600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom no)
+			(on_board no)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "5236eaf2-7ca0-4570-8046-cd03d81c4157")
+			(property "Reference" "#FLG01"
+				(at 50.8000 31.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "PWR_FLAG"
+				(at 50.8000 29.2100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 50.8000 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 50.8000 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "2807b4d8-7700-4961-bb79-d202a8e06d7e"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "#FLG01")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 48.2600 38.1000) (xy 43.1800 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "dc98d51d-c042-4466-b9be-ef291afe7406")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 43.1800 38.1000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "c65b0a99-37cf-4313-b658-a2fb4de22718")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 43.1800 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:PWR_FLAG")
+			(at 116.8400 35.5600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom no)
+			(on_board no)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "af84ef15-d51e-4308-833e-52153f5aa1a4")
+			(property "Reference" "#FLG06"
+				(at 116.8400 31.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "PWR_FLAG"
+				(at 116.8400 29.2100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 116.8400 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 116.8400 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "7bc7dba5-537c-4a01-a899-c6b2a3c6cc40"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "#FLG06")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 114.3000 38.1000) (xy 109.2200 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "4e034182-83aa-4765-91b0-dc3133627a17")
+			)
+	(global_label "VBUS"
+			(shape passive)
+			(at 109.2200 38.1000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "74914e3f-e164-4aa4-9aee-af23ec4618f9")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 109.2200 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:PWR_FLAG")
+			(at 180.3400 35.5600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom no)
+			(on_board no)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "7d872641-3a1b-4f05-8973-9c41e30a7b0e")
+			(property "Reference" "#FLG07"
+				(at 180.3400 31.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "PWR_FLAG"
+				(at 180.3400 29.2100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 180.3400 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 180.3400 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "84c503f6-147b-4ffd-9c6a-5fe50aace3c2"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "#FLG07")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 177.8000 38.1000) (xy 172.7200 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "411ed2d6-2a89-466f-98c8-87ebb6552509")
+			)
+	(global_label "+BAT"
+			(shape passive)
+			(at 172.7200 38.1000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "64ceded7-b3f3-4b73-b967-556777eeffe7")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 172.7200 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:J_BATT")
+			(at 233.6800 35.5600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "122b3083-723d-400a-88a2-75cbdddf17a8")
+			(property "Reference" "J2"
+				(at 233.6800 31.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "SM02B-SRSS-TB"
+				(at 233.6800 29.2100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Connector_JST:JST_SH_SM02B-SRSS-TB_1x02-1MP_P1.00mm_Horizontal"
+				(at 233.6800 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 233.6800 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "88e79376-1a32-4ece-b35c-32468399f202"))
+			(pin "2" (uuid "b85d9470-3bad-4e7f-acd1-a5f1a151c68c"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "J2")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 231.1400 38.1000) (xy 226.0600 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "066825fe-51ae-4b6c-b3c6-d0e82a649a70")
+			)
+	(global_label "+BAT"
+			(shape passive)
+			(at 226.0600 38.1000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "0e4d6b5c-41d3-4d8d-b884-d752115be5fa")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 226.0600 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 251.4600 38.1000) (xy 256.5400 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "6bd04781-05d9-4a5c-bdce-a13f6a547549")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 256.5400 38.1000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "792cdb2e-09c9-42da-8822-e1012874e10f")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 256.5400 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:BT_CELL")
+			(at 299.7200 35.5600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board no)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "dba44b81-f86c-4ff3-8bf9-473c0dafc79f")
+			(property "Reference" "BT1"
+				(at 299.7200 31.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "ASR00012"
+				(at 299.7200 29.2100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 299.7200 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 299.7200 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "ff714f75-42a9-4fe3-8bf2-d7a575ddae02"))
+			(pin "2" (uuid "c748cf64-f51a-4ce3-a268-9a3af1a358cc"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "BT1")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 297.1800 38.1000) (xy 292.1000 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "d3fbce0e-03e6-4354-a7a8-7d35b126a0a3")
+			)
+	(global_label "+BAT"
+			(shape passive)
+			(at 292.1000 38.1000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "8bbe3bc0-04f9-4c62-a01e-eacb87933065")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 292.1000 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 317.5000 38.1000) (xy 322.5800 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "401ee6d3-1acd-490b-ab22-2dee2d4a3551")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 322.5800 38.1000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "d3865c4a-6278-4715-be74-3f8a04c47d5c")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 322.5800 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:D_TVS")
+			(at 363.2200 35.5600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "7620a47c-383a-4ff8-80b5-15a508aba6f3")
+			(property "Reference" "D14"
+				(at 363.2200 31.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "PESD5V0S1UL"
+				(at 363.2200 29.2100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Diode_SMD:D_SOD-882"
+				(at 363.2200 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 363.2200 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "8883b8fd-d1a0-47f6-afa1-47eafb7304c4"))
+			(pin "2" (uuid "040de651-eaa4-4200-b790-b251c40726ee"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "D14")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 360.6800 38.1000) (xy 355.6000 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "93e92726-050f-4a93-be31-476e0d42ddf0")
+			)
+	(global_label "VBUS"
+			(shape passive)
+			(at 355.6000 38.1000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "ea5b3c03-c038-480e-8ae1-23761f0a619b")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 355.6000 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 381.0000 38.1000) (xy 386.0800 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "389f9728-0cbf-4bd8-824e-e3f85be09dbc")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 386.0800 38.1000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "21e1f12a-77d0-45e8-980a-096bd7cc5b19")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 386.0800 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:U3_CHARGER")
+			(at 40.6400 60.9600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "dba3b82a-7170-40b4-b30b-6c8bc0728382")
+			(property "Reference" "U3"
+				(at 40.6400 57.1500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "BQ24074RGTR"
+				(at 40.6400 54.6100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Package_DFN_QFN:VQFN-16-1EP_3x3mm_P0.5mm_EP1.68x1.68mm_ThermalVias"
+				(at 40.6400 60.9600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 40.6400 60.9600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "13" (uuid "5fedb107-030e-4022-809d-caa7b2cdf8b6"))
+			(pin "10" (uuid "ac3dfb87-a9d3-4c33-bcc5-4f2c1f80ac6a"))
+			(pin "11" (uuid "707d24d4-39b8-4494-8633-3345cda17df4"))
+			(pin "2" (uuid "7ca8c272-5d8a-467b-830a-84f572b097ba"))
+			(pin "3" (uuid "c5a857bc-2f22-4be3-a9d6-8d229bd8bc97"))
+			(pin "16" (uuid "260f5f90-1148-47e7-ae53-c24cede4d3ec"))
+			(pin "12" (uuid "b917350d-008b-4fbc-8f3b-d420ea5a0342"))
+			(pin "15" (uuid "7e5bc451-4ce9-4c2e-8270-8ba63076c392"))
+			(pin "14" (uuid "35793585-2f75-4b15-ba98-4617bbfdd64c"))
+			(pin "1" (uuid "261a7a7b-16b6-4402-91d3-b8b7228d3a23"))
+			(pin "9" (uuid "4398ac74-417a-4b71-b1b0-81884ca0e2d4"))
+			(pin "7" (uuid "98e44ec5-40f1-46eb-801a-394678ce1835"))
+			(pin "6" (uuid "001065ae-f3ca-4e44-baf0-4292c77479aa"))
+			(pin "5" (uuid "cf2b4fbd-bb27-468d-994d-171c8c1368d4"))
+			(pin "8" (uuid "333ea11f-017a-4913-8bba-a57f7924be20"))
+			(pin "17" (uuid "15a8579d-229b-481f-aa2c-d6501ceeba14"))
+			(pin "4" (uuid "db799a1e-3cfd-4d29-9f5c-04577493f5c4"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "U3")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 38.1000 63.5000) (xy 33.0200 63.5000))
+			(stroke (width 0) (type default))
+			(uuid "f1db9ffc-6f03-477f-b2e1-7b6e41e7fbcc")
+			)
+	(global_label "VBUS"
+			(shape passive)
+			(at 33.0200 63.5000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "50e7d200-5896-4680-b039-cdca20ba1403")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 33.0200 63.5000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 38.1000 66.0400) (xy 33.0200 66.0400))
+			(stroke (width 0) (type default))
+			(uuid "d360b188-42a0-4410-afed-7ff7bf2fb988")
+			)
+	(global_label "SYS"
+			(shape passive)
+			(at 33.0200 66.0400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "4368e1ba-f023-424e-bb38-dd9ff123bf31")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 33.0200 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 38.1000 68.5800) (xy 33.0200 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "2a836b10-2c44-4253-940c-33a5d96b8639")
+			)
+	(global_label "+BAT"
+			(shape passive)
+			(at 33.0200 68.5800 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "65d98a35-c048-48cc-8fde-f8ab0966612d")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 33.0200 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 38.1000 71.1200) (xy 33.0200 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "399dc865-76b4-444f-953c-d9dd71646fba")
+			)
+	(global_label "BQ_ISET"
+			(shape passive)
+			(at 33.0200 71.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "4b9a1643-da25-4175-8379-c974313aad76")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 33.0200 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 38.1000 73.6600) (xy 33.0200 73.6600))
+			(stroke (width 0) (type default))
+			(uuid "4218547b-9238-47ec-a260-72e3a20c1ea8")
+			)
+	(global_label "BQ_ILIM"
+			(shape passive)
+			(at 33.0200 73.6600 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "797b9cd9-0f8a-4956-838c-e6b51911e3d1")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 33.0200 73.6600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 38.1000 76.2000) (xy 33.0200 76.2000))
+			(stroke (width 0) (type default))
+			(uuid "0510aa86-015a-4dcf-8ad8-c693e79a9511")
+			)
+	(global_label "BQ_ITERM"
+			(shape passive)
+			(at 33.0200 76.2000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "51afa1dc-bd5b-4193-bd21-c0391701f985")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 33.0200 76.2000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 38.1000 78.7400) (xy 33.0200 78.7400))
+			(stroke (width 0) (type default))
+			(uuid "9fbd0e96-5fd6-41ee-bd17-94b4ea14868b")
+			)
+	(global_label "BQ_TMR"
+			(shape passive)
+			(at 33.0200 78.7400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "c3dd8616-96b3-49a3-90b9-c64ece3c3e57")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 33.0200 78.7400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 58.4200 63.5000) (xy 63.5000 63.5000))
+			(stroke (width 0) (type default))
+			(uuid "03029a34-0f6e-4038-b2ff-a177948264a0")
+			)
+	(global_label "BQ_TS"
+			(shape passive)
+			(at 63.5000 63.5000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "2577a49b-0974-4a21-a52f-1341120223ac")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 63.5000 63.5000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 58.4200 66.0400) (xy 63.5000 66.0400))
+			(stroke (width 0) (type default))
+			(uuid "46f73447-8025-4a5f-9d1d-c78a645b578e")
+			)
+	(global_label "CHG_STAT"
+			(shape passive)
+			(at 63.5000 66.0400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "b2a62fe0-4f73-4e07-b424-e4e1c853e7c1")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 63.5000 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 58.4200 68.5800) (xy 63.5000 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "7999268f-0131-4a97-9d44-48b6573974d6")
+			)
+	(global_label "PGOOD"
+			(shape passive)
+			(at 63.5000 68.5800 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "4be41e09-8b1c-4f27-8e9a-5b241ecce360")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 63.5000 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 58.4200 71.1200) (xy 63.5000 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "5d47e7fc-3755-465c-b0dd-6c3ad86cfe3e")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 63.5000 71.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "5c33c1b7-b768-45dd-8b01-87e377064b6f")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 63.5000 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 58.4200 73.6600) (xy 63.5000 73.6600))
+			(stroke (width 0) (type default))
+			(uuid "b9ad7441-3fd2-4041-bd47-4c752f8046a0")
+			)
+	(global_label "+3V3"
+			(shape passive)
+			(at 63.5000 73.6600 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "261c602e-8795-44e8-8488-ec1c11f3e87a")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 63.5000 73.6600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 58.4200 76.2000) (xy 63.5000 76.2000))
+			(stroke (width 0) (type default))
+			(uuid "4e9eeb5b-2080-4bb8-b8a3-e14c6d296c0b")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 63.5000 76.2000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "c7054e4e-f141-489c-8551-3d1668f99681")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 63.5000 76.2000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 58.4200 78.7400) (xy 63.5000 78.7400))
+			(stroke (width 0) (type default))
+			(uuid "cfcfc2b9-888a-4df9-b81a-c11869e026c9")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 63.5000 78.7400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "501cb4e6-cc96-46c7-9965-ba57e3008eff")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 63.5000 78.7400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:U4_BUCKBOOST")
+			(at 104.1400 63.5000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "de6aba50-dd55-4bae-8232-38350a6d185e")
+			(property "Reference" "U4"
+				(at 104.1400 59.6900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "TPS63031DSKT"
+				(at 104.1400 57.1500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Package_SON:WSON-10-1EP_2.5x2.5mm_P0.5mm_EP1.2x2mm_ThermalVias"
+				(at 104.1400 63.5000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 104.1400 63.5000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "e9897408-7df0-45db-9576-0c7ddbff0df9"))
+			(pin "2" (uuid "89a4e899-3ce5-4670-8b8e-974881ebc93d"))
+			(pin "3" (uuid "48ec0098-4c73-45d5-bddb-328f69fefcc1"))
+			(pin "4" (uuid "62a600ff-7793-428f-832b-a0cab3085066"))
+			(pin "5" (uuid "28cd8709-8c0d-42ec-992a-f4c19d0c26da"))
+			(pin "6" (uuid "7d3bd49b-63e1-43d5-893d-685608297284"))
+			(pin "7" (uuid "d04de900-c2e6-4749-b0c9-b1eb5dc4b5bc"))
+			(pin "8" (uuid "fb6dc041-2aed-4344-b3e3-357da1d3116b"))
+			(pin "9" (uuid "a8015422-4eff-4fcb-acd0-4b5602d6c9e8"))
+			(pin "10" (uuid "d950b9d2-d380-447e-a5f4-9c7e9bb31099"))
+			(pin "11" (uuid "3c7a77f7-475f-4a13-8826-6ef30be39f1c"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "U4")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 101.6000 66.0400) (xy 96.5200 66.0400))
+			(stroke (width 0) (type default))
+			(uuid "27961e9e-32d6-41fc-81cf-472ebc3f6401")
+			)
+	(global_label "SYS"
+			(shape passive)
+			(at 96.5200 66.0400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "837b4d41-5878-4198-bcf6-9ab90c1e7b44")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 96.5200 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 101.6000 68.5800) (xy 96.5200 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "1fb5a3bc-1245-40ac-8ed0-9639c426add1")
+			)
+	(global_label "BB_L1"
+			(shape passive)
+			(at 96.5200 68.5800 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "2b614aa8-1256-4461-9dcc-b8557e6470b0")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 96.5200 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 101.6000 71.1200) (xy 96.5200 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "5f3c8a27-d7d7-4a67-87e7-7950ff3eb05e")
+			)
+	(global_label "BB_L2"
+			(shape passive)
+			(at 96.5200 71.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "e122a709-63e8-4574-9886-2c8130280f64")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 96.5200 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 101.6000 73.6600) (xy 96.5200 73.6600))
+			(stroke (width 0) (type default))
+			(uuid "be606ede-31e5-4e1c-bd00-b023ba7e01d6")
+			)
+	(global_label "+3V3"
+			(shape passive)
+			(at 96.5200 73.6600 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "7c32fd49-e879-4723-9803-95fc4c2d8498")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 96.5200 73.6600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 121.9200 66.0400) (xy 127.0000 66.0400))
+			(stroke (width 0) (type default))
+			(uuid "199886a5-6d65-4407-9eac-6261c6e23035")
+			)
+	(global_label "+3V3"
+			(shape passive)
+			(at 127.0000 66.0400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "015adce4-9da5-4acb-948a-20ea41e82f67")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 127.0000 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 121.9200 68.5800) (xy 127.0000 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "4d3a7206-d002-4f08-9b42-e48fdb4dede6")
+			)
+	(global_label "+3V3"
+			(shape passive)
+			(at 127.0000 68.5800 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "627d615d-f869-4b12-b8c4-7a218be2fd89")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 127.0000 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 121.9200 71.1200) (xy 127.0000 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "ee5ed37c-f636-42dd-b650-04a9c7b4feed")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 127.0000 71.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "8ebd8b86-f7ac-4fd5-9939-0ef856e0ec29")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 127.0000 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 121.9200 73.6600) (xy 127.0000 73.6600))
+			(stroke (width 0) (type default))
+			(uuid "4d465207-682a-4b4a-be3b-943a8884e3e3")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 127.0000 73.6600 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "8024667a-c424-4127-a366-140355553251")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 127.0000 73.6600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:U5_BOOST")
+			(at 170.1800 66.0400 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "351975f3-9e30-4fe3-af51-11da99e8deb4")
+			(property "Reference" "U5"
+				(at 170.1800 62.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "TPS61023DRLR"
+				(at 170.1800 59.6900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Package_TO_SOT_SMD:SOT-563"
+				(at 170.1800 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 170.1800 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "eb04cde3-2657-45ba-bb95-c4e1923a635e"))
+			(pin "2" (uuid "51af27cd-74df-4bd1-a242-611897695344"))
+			(pin "3" (uuid "bb957a7b-809f-49de-88b1-87fcf103b119"))
+			(pin "4" (uuid "32c52a3d-a524-4aea-9699-3e77157b4a57"))
+			(pin "5" (uuid "d86c7bb9-642e-4fd5-a83f-2cd8aace7dec"))
+			(pin "6" (uuid "a3dfc387-4aa4-47b0-a5ee-bf08d95a2efa"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "U5")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 167.6400 68.5800) (xy 162.5600 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "55eee614-8bf4-4322-968d-9d8591372dc0")
+			)
+	(global_label "SYS"
+			(shape passive)
+			(at 162.5600 68.5800 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "f43bfb53-22be-48c4-858c-7b9e969d82d9")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 162.5600 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 167.6400 71.1200) (xy 162.5600 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "89b239a7-6639-4e37-b821-2bb273ee512a")
+			)
+	(global_label "L2_SW"
+			(shape passive)
+			(at 162.5600 71.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "a05063dd-6fd1-4b2b-abba-25a679fa6e1a")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 162.5600 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 167.6400 73.6600) (xy 162.5600 73.6600))
+			(stroke (width 0) (type default))
+			(uuid "2e4d8861-fa2f-4159-b7f6-c28f38e65425")
+			)
+	(global_label "+5V"
+			(shape passive)
+			(at 162.5600 73.6600 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "5f0ec350-7692-4954-a9fb-09e724e21ed7")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 162.5600 73.6600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 187.9600 68.5800) (xy 193.0400 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "c517d569-5ccc-4b02-8b49-440a1a09ad32")
+			)
+	(global_label "BOOST_FB"
+			(shape passive)
+			(at 193.0400 68.5800 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "2a014f07-871d-482b-b7b5-7153b81c736a")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 193.0400 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 187.9600 71.1200) (xy 193.0400 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "bf1da46d-3f9e-4138-9392-f35eb7709c01")
+			)
+	(global_label "BOOST_EN"
+			(shape passive)
+			(at 193.0400 71.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "7ecc0812-8fa3-4961-b4f5-dd080c728fc2")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 193.0400 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 187.9600 73.6600) (xy 193.0400 73.6600))
+			(stroke (width 0) (type default))
+			(uuid "9eed6ca4-1991-474c-b0ad-67a3dbf9c28b")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 193.0400 73.6600 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "d176d013-32db-41d6-ad60-8b369fc9d060")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 193.0400 73.6600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:U6_LOADSW")
+			(at 233.6800 66.0400 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "1bb75dcb-a0c3-4150-9c50-de3a1a6072d9")
+			(property "Reference" "U6"
+				(at 233.6800 62.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "TPS22918DBVR"
+				(at 233.6800 59.6900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Package_TO_SOT_SMD:SOT-23-6"
+				(at 233.6800 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 233.6800 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "1852f9b1-8732-4030-bd94-f1dd0890a285"))
+			(pin "2" (uuid "faa38569-0249-4ec5-bd27-034ed531f929"))
+			(pin "3" (uuid "e16b4a0a-857b-4ffb-88e8-8fe23a0d5783"))
+			(pin "4" (uuid "92f17f24-205a-499d-b6ba-3e4a76dcb7ca"))
+			(pin "5" (uuid "57de2027-b5eb-4414-949f-505ef346d447"))
+			(pin "6" (uuid "3f37ef6c-ee41-4565-b445-6f9954789f8b"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "U6")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 231.1400 68.5800) (xy 226.0600 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "7eadeb9e-5fcf-4e91-8c34-a688be2a95fc")
+			)
+	(global_label "+5V"
+			(shape passive)
+			(at 226.0600 68.5800 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "bef69d63-14c4-46a9-8704-0f79c8873164")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 226.0600 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 231.1400 71.1200) (xy 226.0600 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "4cce0542-808f-4109-9260-3c0fd6770264")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 226.0600 71.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "1bbd8f03-160f-4bae-8e5c-19fc663e339f")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 226.0600 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 231.1400 73.6600) (xy 226.0600 73.6600))
+			(stroke (width 0) (type default))
+			(uuid "fa952df9-a261-400f-baf3-91db43ecbeca")
+			)
+	(global_label "RGB_PWR_EN"
+			(shape passive)
+			(at 226.0600 73.6600 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "ef61a760-a80b-4617-aec7-9948c005bc53")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 226.0600 73.6600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 251.4600 68.5800) (xy 256.5400 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "9ae67799-858e-4c00-b4e2-29ef7e081e94")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 256.5400 68.5800 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "90d930eb-9188-425c-b23b-e94b7e037850")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 256.5400 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 251.4600 71.1200) (xy 256.5400 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "0dfa0a6b-e713-43e3-ab69-e34e3e4b4f63")
+			)
+	(global_label "U6_CT"
+			(shape passive)
+			(at 256.5400 71.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "d1ada37c-ac59-4f4e-91db-33c5c9ec83f5")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 256.5400 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 251.4600 73.6600) (xy 256.5400 73.6600))
+			(stroke (width 0) (type default))
+			(uuid "cdb9e4f6-a6a0-4acd-ae64-8682511da908")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 256.5400 73.6600 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "6614719b-ccaf-4778-846c-66d695df9e78")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 256.5400 73.6600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:U9_FUELGAUGE")
+			(at 299.7200 66.0400 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "0c61166a-3a5d-4aee-81dd-15fbf34fa6ca")
+			(property "Reference" "U9"
+				(at 299.7200 62.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "MAX17048G+T10"
+				(at 299.7200 59.6900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Package_DFN_QFN:TDFN-8-1EP_2x2mm_P0.5mm_EP0.8x1.2mm"
+				(at 299.7200 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 299.7200 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "c0ad1d77-602b-49dd-8165-2ea688cf88a8"))
+			(pin "2" (uuid "27b79079-3f6d-4609-bb1e-212b0bb19bde"))
+			(pin "3" (uuid "f380ce47-f036-40ed-ac16-05beeea52a0e"))
+			(pin "4" (uuid "d7d85cf3-c9d6-4eae-b76d-7954116c2e4b"))
+			(pin "5" (uuid "21c3358a-73e5-498e-aa18-7ecdf2084e1b"))
+			(pin "6" (uuid "f4d64c74-0f50-4b6c-9c64-0b55d3842074"))
+			(pin "7" (uuid "b28d8dc5-2d38-4791-9bc9-f6bb763e1bf2"))
+			(pin "8" (uuid "8b946849-28f3-489d-b3f6-52585d7f5780"))
+			(pin "9" (uuid "21fd7020-3d15-4967-b8f0-3c7212f61b93"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "U9")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 297.1800 68.5800) (xy 292.1000 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "7eb742fc-f35a-45f1-a82f-5e8d0f050d81")
+			)
+	(global_label "+BAT"
+			(shape passive)
+			(at 292.1000 68.5800 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "a17bee36-48cf-41a3-b6c7-742a8d703c4b")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 292.1000 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 297.1800 71.1200) (xy 292.1000 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "2372a065-f169-47c2-98e4-ccf69ec90d65")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 292.1000 71.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "ad0f3114-f041-419c-9c91-f6aa18dc66d1")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 292.1000 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 297.1800 73.6600) (xy 292.1000 73.6600))
+			(stroke (width 0) (type default))
+			(uuid "d0f2f134-3ad3-4edf-8f80-bb130095c0b2")
+			)
+	(global_label "FG_SDA"
+			(shape passive)
+			(at 292.1000 73.6600 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "0d8fc087-6b9b-46e5-b5cf-c74569b475a3")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 292.1000 73.6600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 318.7700 68.5800) (xy 323.8500 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "d72b42eb-02ce-497f-ae5d-5d9ee5e58eba")
+			)
+	(global_label "FG_SCL"
+			(shape passive)
+			(at 323.8500 68.5800 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "75389833-1714-42a8-afef-14e20730c8bb")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 323.8500 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 318.7700 71.1200) (xy 323.8500 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "ac0f6c7a-8b83-4feb-abb2-99445d2770ac")
+			)
+	(global_label "FG_ALRT"
+			(shape passive)
+			(at 323.8500 71.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "fd36b5c0-1ce9-4166-9da7-c83cc260b80b")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 323.8500 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:L")
+			(at 363.2200 68.5800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "f900dd81-2937-4418-9f90-d3974a299e77")
+			(property "Reference" "L1"
+				(at 363.2200 64.7700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "1.5uH"
+				(at 363.2200 62.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Inductor_SMD:L_Sunlord_SWPA3015S"
+				(at 363.2200 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 363.2200 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "d3e31ed7-ee8f-4fdf-b888-7c724ce83d00"))
+			(pin "2" (uuid "7121fd3b-1f64-4bef-9880-f1ae681421bd"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "L1")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 360.6800 71.1200) (xy 355.6000 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "04c96e48-05a1-43f2-be3b-916fee1acd63")
+			)
+	(global_label "BB_L1"
+			(shape passive)
+			(at 355.6000 71.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "529f1e09-486e-4fb8-baeb-4aa8e86c8ea4")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 355.6000 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 381.0000 71.1200) (xy 386.0800 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "ec4d69e5-7996-4751-8a2c-cdf5d6c5a3b3")
+			)
+	(global_label "BB_L2"
+			(shape passive)
+			(at 386.0800 71.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "9703d8bc-b030-4cf7-8498-e1b6d8938bfb")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 386.0800 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:L")
+			(at 40.6400 99.0600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "578c2f4e-a296-4468-8291-1524ab216b59")
+			(property "Reference" "L2"
+				(at 40.6400 95.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "1.0uH"
+				(at 40.6400 92.7100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Inductor_SMD:L_Sunlord_MWSA0402S"
+				(at 40.6400 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 40.6400 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "33c2cd7e-f9ca-46e6-9e6c-9941e78b941a"))
+			(pin "2" (uuid "c346c7d1-94a0-4afe-b5ee-c50453760029"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "L2")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 38.1000 101.6000) (xy 33.0200 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "b79d422f-82b3-4d46-b351-47166d77649e")
+			)
+	(global_label "L2_SW"
+			(shape passive)
+			(at 33.0200 101.6000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "15eade56-dbd5-4e2d-a444-fff3f81daf14")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 33.0200 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 58.4200 101.6000) (xy 63.5000 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "b2e0f41e-3709-41a5-80dd-021ac2f8ff01")
+			)
+	(global_label "SYS"
+			(shape passive)
+			(at 63.5000 101.6000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "c43e1135-3695-4d33-8bc3-0d2a5c316a74")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 63.5000 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:R")
+			(at 104.1400 99.0600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "eed4f3b2-fb3c-49a8-910b-a59d4686df71")
+			(property "Reference" "R10"
+				(at 104.1400 95.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100k"
+				(at 104.1400 92.7100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+				(at 104.1400 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 104.1400 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "9780a93b-ed30-4806-8432-32c630437bcf"))
+			(pin "2" (uuid "62c6f21e-ead0-41fe-80eb-e36848915f9c"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "R10")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 101.6000 101.6000) (xy 96.5200 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "56630c33-3fe9-405d-a30c-a86ad6fa85ee")
+			)
+	(global_label "BOOST_FB"
+			(shape passive)
+			(at 96.5200 101.6000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "af909269-2612-4cf4-a46b-0fda4fde4400")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 96.5200 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 121.9200 101.6000) (xy 127.0000 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "4b9e5338-8b18-4a80-a56b-1018867d7795")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 127.0000 101.6000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "c73c8a94-33e8-4790-824f-0ba8b0462f99")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 127.0000 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:R")
+			(at 170.1800 99.0600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "f1c38678-ecaf-4545-90bb-471985f0d9a2")
+			(property "Reference" "R11"
+				(at 170.1800 95.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100k"
+				(at 170.1800 92.7100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+				(at 170.1800 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 170.1800 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "a6bdcb0c-0e4b-4191-85a1-f873feababab"))
+			(pin "2" (uuid "7625e8b0-46c4-41ca-91f5-1f662f7b9874"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "R11")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 167.6400 101.6000) (xy 162.5600 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "dc981632-da9f-421c-9acc-393ba8b4e91e")
+			)
+	(global_label "BOOST_EN"
+			(shape passive)
+			(at 162.5600 101.6000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "f5296aeb-6e16-4dd7-8e36-5664801b4942")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 162.5600 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 187.9600 101.6000) (xy 193.0400 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "7d3138e2-ab48-461d-92e8-16b741c89d61")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 193.0400 101.6000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "20feee50-eb27-4159-afe6-da969b3b1e59")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 193.0400 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:R")
+			(at 233.6800 99.0600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "20de1827-ece2-4048-9963-902f75ba0209")
+			(property "Reference" "R12"
+				(at 233.6800 95.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100k"
+				(at 233.6800 92.7100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+				(at 233.6800 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 233.6800 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "0d2748a8-4dc0-4a6c-a135-49b30b4938f9"))
+			(pin "2" (uuid "7728dff0-27d0-40e0-b752-252a725ffba9"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "R12")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 231.1400 101.6000) (xy 226.0600 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "520dda8a-5085-4588-bf3e-b8795ddadc1f")
+			)
+	(global_label "RGB_PWR_EN"
+			(shape passive)
+			(at 226.0600 101.6000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "f578e5c3-758f-4ae0-a709-bf9b5184abca")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 226.0600 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 251.4600 101.6000) (xy 256.5400 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "805edebe-5fae-44a3-b46c-729fa82a8785")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 256.5400 101.6000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "a10627d1-3e90-4ae5-8f14-c0ada7885345")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 256.5400 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:R")
+			(at 299.7200 99.0600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "66f5ceb5-7e9c-41bf-ab1a-936d68e8cf94")
+			(property "Reference" "R14"
+				(at 299.7200 95.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "10k"
+				(at 299.7200 92.7100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+				(at 299.7200 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 299.7200 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "395f1f46-c221-42c3-b7d0-398bde43ed9b"))
+			(pin "2" (uuid "3f4e85d6-fd62-42dd-9e83-d556f9b16f92"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "R14")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 297.1800 101.6000) (xy 292.1000 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "6fd6250a-8cfe-4e59-a16f-48fb6df40510")
+			)
+	(global_label "BQ_TS"
+			(shape passive)
+			(at 292.1000 101.6000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "01484b60-6535-4250-8627-c1fa19806283")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 292.1000 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 317.5000 101.6000) (xy 322.5800 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "cb4e6533-784c-4b7c-b7cb-e6dc42dde16e")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 322.5800 101.6000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "8608a4e5-4a9d-4312-b835-d17c58b38c98")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 322.5800 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:R")
+			(at 363.2200 99.0600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "e88a8d91-9659-49b9-9098-e6a7c63fdce0")
+			(property "Reference" "R15"
+				(at 363.2200 95.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "10k"
+				(at 363.2200 92.7100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+				(at 363.2200 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 363.2200 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "9757784b-82ac-44ac-8cf6-adb63607d415"))
+			(pin "2" (uuid "a9c5bdab-3580-4713-8d25-7baf4f4c526f"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "R15")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 360.6800 101.6000) (xy 355.6000 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "74389d5d-75f8-4394-8d73-3647c194d93f")
+			)
+	(global_label "CHG_STAT"
+			(shape passive)
+			(at 355.6000 101.6000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "1436d0b3-ebf0-450a-9c1e-02bc5381e921")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 355.6000 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 381.0000 101.6000) (xy 386.0800 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "21a1ef15-a1c1-4995-a1bc-847f57f819cd")
+			)
+	(global_label "+3V3"
+			(shape passive)
+			(at 386.0800 101.6000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "b3acae8b-eaef-4c6a-bf47-da55c9a5890e")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 386.0800 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:R")
+			(at 40.6400 132.0800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "555bd58c-2be3-40b5-a0ff-9b0d67e2a431")
+			(property "Reference" "R16"
+				(at 40.6400 128.2700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "10k"
+				(at 40.6400 125.7300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+				(at 40.6400 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 40.6400 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "80776af8-06dc-4ff6-abd7-24e8bbf000b6"))
+			(pin "2" (uuid "2c795104-5d3f-4067-ae7b-7c0bb00c5abb"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "R16")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 38.1000 134.6200) (xy 33.0200 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "edd2034b-c091-4529-8827-0041d1c341d5")
+			)
+	(global_label "PGOOD"
+			(shape passive)
+			(at 33.0200 134.6200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "a3fd4815-08c4-423e-8031-fb5014b59298")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 33.0200 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 58.4200 134.6200) (xy 63.5000 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "e06cf9ee-3cc0-4449-97a8-455d89dd8613")
+			)
+	(global_label "+3V3"
+			(shape passive)
+			(at 63.5000 134.6200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "fa673c7e-2623-4719-b3e0-1773f5912a81")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 63.5000 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:R")
+			(at 104.1400 132.0800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "059422b5-c892-41a0-bf0f-4818766e4eb8")
+			(property "Reference" "R18"
+				(at 104.1400 128.2700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "4.7k"
+				(at 104.1400 125.7300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+				(at 104.1400 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 104.1400 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "26ffff52-6be1-47cb-8b19-3c6e19b7c8d5"))
+			(pin "2" (uuid "6feea00c-3236-437c-81a4-3a8cfd0297d7"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "R18")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 101.6000 134.6200) (xy 96.5200 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "a5bcd1af-5258-4247-a974-8f45e1275eac")
+			)
+	(global_label "FG_SDA"
+			(shape passive)
+			(at 96.5200 134.6200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "17d8a535-3b8c-41e0-8e49-6aa1e4f3843a")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 96.5200 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 121.9200 134.6200) (xy 127.0000 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "ff393adb-e5ac-4b50-b1ff-3fb3f086cb97")
+			)
+	(global_label "+3V3"
+			(shape passive)
+			(at 127.0000 134.6200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "97c62030-20e8-40eb-bcf8-4f7005fdc6b4")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 127.0000 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:R")
+			(at 170.1800 132.0800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "5ce26acc-e49f-4753-9eb3-a0823aa8b485")
+			(property "Reference" "R19"
+				(at 170.1800 128.2700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "4.7k"
+				(at 170.1800 125.7300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+				(at 170.1800 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 170.1800 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "efce5ced-6422-48e5-83fa-fba65cb5475b"))
+			(pin "2" (uuid "92dd79f7-2619-4029-8ff8-3c18624a91ba"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "R19")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 167.6400 134.6200) (xy 162.5600 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "5958483d-c8f4-485a-8f22-7525394876de")
+			)
+	(global_label "FG_SCL"
+			(shape passive)
+			(at 162.5600 134.6200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "2221628b-40f0-42c6-bc60-b9534cc7eb45")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 162.5600 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 187.9600 134.6200) (xy 193.0400 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "ec5ee581-4159-4d5d-bf3a-e2ce7ed93403")
+			)
+	(global_label "+3V3"
+			(shape passive)
+			(at 193.0400 134.6200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "963d4e01-89db-4a92-bfea-deb93f4a7c6e")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 193.0400 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:R")
+			(at 233.6800 132.0800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "6389fd89-2dad-412f-85ce-894e2fae6e13")
+			(property "Reference" "R5"
+				(at 233.6800 128.2700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "2.21k"
+				(at 233.6800 125.7300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+				(at 233.6800 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 233.6800 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "ce4c1884-767b-406b-8eeb-04aea73f0c41"))
+			(pin "2" (uuid "292ae3a9-165c-4322-9d44-467433e217ad"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "R5")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 231.1400 134.6200) (xy 226.0600 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "cf9f1594-cb08-467b-8094-067e63ce4522")
+			)
+	(global_label "BQ_ISET"
+			(shape passive)
+			(at 226.0600 134.6200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "cf3192da-e966-49cf-8597-2c3308ba4f3a")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 226.0600 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 251.4600 134.6200) (xy 256.5400 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "720d86a6-4219-426b-ba01-b4771c2750d1")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 256.5400 134.6200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "1a8003c0-3e91-4059-8f61-fc5895a2510e")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 256.5400 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:R")
+			(at 299.7200 132.0800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "6e2d77e6-e4ee-4b90-83f4-41f8c0c68288")
+			(property "Reference" "R6"
+				(at 299.7200 128.2700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "3.09k"
+				(at 299.7200 125.7300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+				(at 299.7200 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 299.7200 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "a8d725dd-1783-473b-a1af-e476e56f1eb4"))
+			(pin "2" (uuid "bbd57d49-83c2-40df-8ee9-11c1c835dfc8"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "R6")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 297.1800 134.6200) (xy 292.1000 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "f562d390-5b69-4cba-bda4-e3a1f316c0a5")
+			)
+	(global_label "BQ_ILIM"
+			(shape passive)
+			(at 292.1000 134.6200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "370429e6-d395-48d8-adcc-aaf2a312726d")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 292.1000 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 317.5000 134.6200) (xy 322.5800 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "e65a0bea-8d94-41a6-81b6-913286b6a338")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 322.5800 134.6200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "961f8e49-0d17-410e-a595-5b5a9661ac6e")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 322.5800 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:R")
+			(at 363.2200 132.0800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "1180cc9d-6d01-49a6-b725-74331d25168e")
+			(property "Reference" "R7"
+				(at 363.2200 128.2700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "2.94k"
+				(at 363.2200 125.7300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+				(at 363.2200 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 363.2200 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "743ae874-f45d-4f26-ab3a-196e2daffd4b"))
+			(pin "2" (uuid "d0816d1f-1028-416b-8f64-9f72e09a3761"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "R7")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 360.6800 134.6200) (xy 355.6000 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "39850ef3-a94d-49c1-827c-dba6eab88707")
+			)
+	(global_label "BQ_ITERM"
+			(shape passive)
+			(at 355.6000 134.6200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "1191d902-4450-499d-a73b-a9812590f63b")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 355.6000 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 381.0000 134.6200) (xy 386.0800 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "c79ca13a-dc27-4013-a273-1fc8293d52c7")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 386.0800 134.6200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "f2f1c722-5731-4da5-896d-35f34f0235d7")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 386.0800 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:R")
+			(at 40.6400 165.1000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "b80a9726-085e-4d24-b4cb-2284f8030fc9")
+			(property "Reference" "R8"
+				(at 40.6400 161.2900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "46.4k"
+				(at 40.6400 158.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+				(at 40.6400 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 40.6400 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "340e293f-4326-43c2-b20a-152fae17440e"))
+			(pin "2" (uuid "aac86cf4-9f38-47dd-b07b-96ea6f12b971"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "R8")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 38.1000 167.6400) (xy 33.0200 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "d426c30f-0d94-4902-93b6-490385e00a12")
+			)
+	(global_label "BQ_TMR"
+			(shape passive)
+			(at 33.0200 167.6400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "b4847ba2-f1e5-423c-8c6d-316c7b8ea652")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 33.0200 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 58.4200 167.6400) (xy 63.5000 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "413de7b3-26fb-4219-9193-eac6b6d77697")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 63.5000 167.6400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "75e4808e-b249-4da7-a7ed-a69853ded935")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 63.5000 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:R")
+			(at 104.1400 165.1000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "7682d19f-ab16-4d2e-aa34-0b22a45fcd56")
+			(property "Reference" "R9"
+				(at 104.1400 161.2900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "732k"
+				(at 104.1400 158.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+				(at 104.1400 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 104.1400 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "eb86b85c-f974-4e83-8492-6e47d7a091df"))
+			(pin "2" (uuid "3137093b-7210-4842-b0df-98430eb234f0"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "R9")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 101.6000 167.6400) (xy 96.5200 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "6cf4b834-fd17-4ef4-9c45-92b2f0c2dc09")
+			)
+	(global_label "+5V"
+			(shape passive)
+			(at 96.5200 167.6400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "7151742e-83b5-4d5c-bb0c-d91d729ca3fb")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 96.5200 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 121.9200 167.6400) (xy 127.0000 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "3ad9b294-afa1-488d-90cb-a183918d95ee")
+			)
+	(global_label "BOOST_FB"
+			(shape passive)
+			(at 127.0000 167.6400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "db99bd0e-cad1-4e87-83ac-c5266d037eb6")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 127.0000 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 170.1800 165.1000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "a4222bd2-94b8-4b79-acea-717d888260bf")
+			(property "Reference" "C14"
+				(at 170.1800 161.2900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100nF"
+				(at 170.1800 158.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 170.1800 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 170.1800 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "9a8f1d9f-f193-4407-867e-56d025c8c14e"))
+			(pin "2" (uuid "842456be-5332-4bdf-95e1-d3aeac941d7f"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "C14")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 167.6400 167.6400) (xy 162.5600 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "3271b65d-d398-4c9e-907b-d37efd801d46")
+			)
+	(global_label "+3V3"
+			(shape passive)
+			(at 162.5600 167.6400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "4eb372d5-4095-4993-9c63-7c4c75a6c8b4")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 162.5600 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 187.9600 167.6400) (xy 193.0400 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "3446989b-c367-4ab2-97df-e5d2d9545c07")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 193.0400 167.6400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "33d9d6b3-2421-46fd-a6be-63dc0703c2a3")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 193.0400 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 233.6800 165.1000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "3c63aa7a-f0a7-4158-a9a7-741fa805ec86")
+			(property "Reference" "C15"
+				(at 233.6800 161.2900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100nF"
+				(at 233.6800 158.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 233.6800 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 233.6800 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "af75adb5-902a-422f-b781-99364c89e46f"))
+			(pin "2" (uuid "356fec46-a406-489a-8d3b-26fa85c1732a"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "C15")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 231.1400 167.6400) (xy 226.0600 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "789787bf-8311-4e1c-a850-75b55cf73572")
+			)
+	(global_label "SYS"
+			(shape passive)
+			(at 226.0600 167.6400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "cda5782a-348a-492c-bea2-9dc385fefc81")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 226.0600 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 251.4600 167.6400) (xy 256.5400 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "b932bcc9-0883-4ed4-a61f-e49f1b3c0f26")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 256.5400 167.6400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "fb1fc44f-b135-4c9d-b3e7-15e5b6f6f4a3")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 256.5400 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 299.7200 165.1000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "14a3e452-749a-4560-8fe7-5614e4143dce")
+			(property "Reference" "C16"
+				(at 299.7200 161.2900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100nF"
+				(at 299.7200 158.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 299.7200 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 299.7200 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "474f909d-4013-4dff-aff7-94ad344567e7"))
+			(pin "2" (uuid "6a1ce8b0-221d-46ae-bba7-e0c4fca88f1e"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "C16")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 297.1800 167.6400) (xy 292.1000 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "29ee1fb9-6180-42bb-b3d2-39ae7c278690")
+			)
+	(global_label "SYS"
+			(shape passive)
+			(at 292.1000 167.6400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "85dd2976-4ee6-41e3-9c76-f1c0370a6217")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 292.1000 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 317.5000 167.6400) (xy 322.5800 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "cf797c7b-19fe-4ec4-b373-1978c6114fff")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 322.5800 167.6400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "beb56220-c595-4827-a187-3c1dd9f334f3")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 322.5800 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 363.2200 165.1000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "f48e8403-5fc8-49f9-a8a7-24978a9aa425")
+			(property "Reference" "C17"
+				(at 363.2200 161.2900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100nF"
+				(at 363.2200 158.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 363.2200 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 363.2200 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "38054f63-b3ee-463a-bb9b-ac5f298d3752"))
+			(pin "2" (uuid "110b7803-de37-4986-a16d-65f6b1de279a"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "C17")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 360.6800 167.6400) (xy 355.6000 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "1d481495-c192-4f61-9bc6-8f02a4876fdb")
+			)
+	(global_label "SYS"
+			(shape passive)
+			(at 355.6000 167.6400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "5f97c17e-df10-4603-9b1f-88acbe470560")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 355.6000 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 381.0000 167.6400) (xy 386.0800 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "a74910d9-893d-4d09-95d0-ffaf7f9bbdbe")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 386.0800 167.6400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "21c48c1d-0bb0-4dd0-a65f-c57d8cccebaf")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 386.0800 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 40.6400 195.5800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "e447f906-6a69-4767-99d2-70b1a92e5df6")
+			(property "Reference" "C18"
+				(at 40.6400 191.7700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100nF"
+				(at 40.6400 189.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 40.6400 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 40.6400 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "9e81ac9b-a616-46ef-974f-9086ac3f4ba1"))
+			(pin "2" (uuid "902ea82c-7e5a-43d2-a680-d7254f70ac14"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "C18")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 38.1000 198.1200) (xy 33.0200 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "86eee06e-3aae-4258-a22a-9653dba70fb8")
+			)
+	(global_label "+5V"
+			(shape passive)
+			(at 33.0200 198.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "e8cb2b21-a6e5-4862-a31d-06fd27c54c69")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 33.0200 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 58.4200 198.1200) (xy 63.5000 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "453ab039-726a-46fc-8aca-0b6656c597c1")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 63.5000 198.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "7b19b8fb-e46c-4c4b-a5e3-3b282faa4035")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 63.5000 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 104.1400 195.5800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "36f58385-e6e3-4824-90d1-2c9d8a4878d5")
+			(property "Reference" "C19"
+				(at 104.1400 191.7700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100nF"
+				(at 104.1400 189.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 104.1400 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 104.1400 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "0c1b8a0d-82c2-4f76-8d55-d9e82eb808ac"))
+			(pin "2" (uuid "4b99c4ee-8fbf-4f6c-861c-e5b885c2c43b"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "C19")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 101.6000 198.1200) (xy 96.5200 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "cf3b49f0-72ee-48bb-9e25-cb79a8b750e6")
+			)
+	(global_label "+5V"
+			(shape passive)
+			(at 96.5200 198.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "555af1ca-2bfd-420c-b47d-cca14332ac9e")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 96.5200 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 121.9200 198.1200) (xy 127.0000 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "eeebf6f4-c7c9-4cd8-9d1b-8e6e48665d44")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 127.0000 198.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "818f0be1-5db8-4d2a-949b-7e955ed45a19")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 127.0000 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 170.1800 195.5800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "5a3bd0d5-8563-401b-aab3-ed6ceaeb4eaa")
+			(property "Reference" "C21"
+				(at 170.1800 191.7700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100nF"
+				(at 170.1800 189.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 170.1800 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 170.1800 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "1ccee2b0-b99d-4a89-8d43-9eaf919124a5"))
+			(pin "2" (uuid "519885d8-dc23-4442-b787-e22498526fb5"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "C21")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 167.6400 198.1200) (xy 162.5600 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "33452c7e-ec6d-49f3-b55b-685f42427089")
+			)
+	(global_label "+BAT"
+			(shape passive)
+			(at 162.5600 198.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "f5226d78-aaef-4217-80c3-97cb64b13298")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 162.5600 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 187.9600 198.1200) (xy 193.0400 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "0c0983aa-c512-4f69-994d-123f11b85507")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 193.0400 198.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "2ecae3b5-49be-402c-a853-6d9bc5d5398c")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 193.0400 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 233.6800 195.5800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "ee865542-02fb-4416-975b-73f79c8bad0c")
+			(property "Reference" "C23"
+				(at 233.6800 191.7700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "4.7uF"
+				(at 233.6800 189.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 233.6800 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 233.6800 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "57da9606-c322-4614-af2d-ab6da7241a8f"))
+			(pin "2" (uuid "2d1390f8-8be5-478a-a79d-78d65bf0a01c"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "C23")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 231.1400 198.1200) (xy 226.0600 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "a157b468-0d21-4d79-93fd-d8734864bb25")
+			)
+	(global_label "+3V3"
+			(shape passive)
+			(at 226.0600 198.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "70f1c6fb-28fd-4469-ac27-7b4740896b36")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 226.0600 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 251.4600 198.1200) (xy 256.5400 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "bb78ab06-543d-4a09-b51b-702ec8cc3e8b")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 256.5400 198.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "6f1eb2ad-8031-4db0-9891-f0a94fab07bd")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 256.5400 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 299.7200 195.5800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "6c233249-48bf-49f8-b3d0-aa014381009b")
+			(property "Reference" "C24"
+				(at 299.7200 191.7700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "4.7uF"
+				(at 299.7200 189.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 299.7200 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 299.7200 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "9c724555-e03c-40b5-9c66-b59e6a04326b"))
+			(pin "2" (uuid "a9d2a474-6205-4a9b-b2ec-9215a95f4aaa"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "C24")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 297.1800 198.1200) (xy 292.1000 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "e0eb9e48-0a36-4e8f-8b82-ff4951549478")
+			)
+	(global_label "+BAT"
+			(shape passive)
+			(at 292.1000 198.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "7be47545-ff24-4c39-8972-01a7a65116e7")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 292.1000 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 317.5000 198.1200) (xy 322.5800 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "35947207-2160-4daa-b1a9-215865d1cf1b")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 322.5800 198.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "68f27ce1-83af-47ef-8005-37c6b9b376c2")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 322.5800 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 363.2200 195.5800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "89b0f3a1-42bb-4418-a952-73260e3ef661")
+			(property "Reference" "C25"
+				(at 363.2200 191.7700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "4.7uF"
+				(at 363.2200 189.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 363.2200 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 363.2200 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "95312c8c-9c01-44d8-9be3-54772b154ff8"))
+			(pin "2" (uuid "5bb09990-b7d3-4cc6-afa1-a4ce2664df9f"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "C25")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 360.6800 198.1200) (xy 355.6000 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "43579b21-7a8f-41ae-ab0a-a43c2c306b83")
+			)
+	(global_label "SYS"
+			(shape passive)
+			(at 355.6000 198.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "6fa8f2e6-7168-4c39-bbdb-6bc045187212")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 355.6000 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 381.0000 198.1200) (xy 386.0800 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "de55d5d3-ca32-4552-bae3-aa0e05ac90de")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 386.0800 198.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "8953d9a7-7f51-4d11-8619-ea36f4869e5d")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 386.0800 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 40.6400 228.6000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "1b0a623e-95d9-4100-9c7a-b57b282314f0")
+			(property "Reference" "C26"
+				(at 40.6400 224.7900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "1uF"
+				(at 40.6400 222.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 40.6400 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 40.6400 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "ccb30253-d2fc-4e10-a0a9-52fca7c2350a"))
+			(pin "2" (uuid "826f7187-fc23-4142-a39a-044fb54aef60"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "C26")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 38.1000 231.1400) (xy 33.0200 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "578d5bbc-f364-45d0-9282-f7e2726bdf49")
+			)
+	(global_label "VBUS"
+			(shape passive)
+			(at 33.0200 231.1400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "7faf4ded-0869-4181-9dbd-a727eaa6ed58")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 33.0200 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 58.4200 231.1400) (xy 63.5000 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "534695f9-46f6-4e80-85ab-6981871b0cda")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 63.5000 231.1400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "71460e0e-26cc-4004-acdb-59949d288a2d")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 63.5000 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 104.1400 228.6000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "15985936-925e-4e5e-b300-1d98608232ff")
+			(property "Reference" "C27"
+				(at 104.1400 224.7900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "10uF"
+				(at 104.1400 222.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 104.1400 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 104.1400 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "c81871ff-fce7-4ce4-899a-30e1fd95975d"))
+			(pin "2" (uuid "8af08d94-bd3a-4559-a9ff-c53bafbd9a6b"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "C27")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 101.6000 231.1400) (xy 96.5200 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "d9d11469-4b2b-43c8-aac0-0a869389b82c")
+			)
+	(global_label "SYS"
+			(shape passive)
+			(at 96.5200 231.1400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "e1f4ebb1-39ba-4515-bf86-90463b9f2a7e")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 96.5200 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 121.9200 231.1400) (xy 127.0000 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "7ae3737e-727d-475d-9975-0844bf8610c0")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 127.0000 231.1400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "dcf815d9-89c3-4863-846b-40c30cda5525")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 127.0000 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 170.1800 228.6000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "203c99a8-df80-47a0-8b47-0423b3948791")
+			(property "Reference" "C28"
+				(at 170.1800 224.7900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "10uF"
+				(at 170.1800 222.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 170.1800 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 170.1800 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "c2b73939-8c26-4892-bd42-a576c54ac3ed"))
+			(pin "2" (uuid "93dab6ab-e539-4158-8f3b-f518b24485b0"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "C28")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 167.6400 231.1400) (xy 162.5600 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "e1229610-6dd2-4261-bb49-47a55cfc7a35")
+			)
+	(global_label "+3V3"
+			(shape passive)
+			(at 162.5600 231.1400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "d0404a5d-14c6-498c-b447-61504a06b6a6")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 162.5600 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 187.9600 231.1400) (xy 193.0400 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "0205d099-d01e-4446-829d-8734fbd193f7")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 193.0400 231.1400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "c7861c57-e16f-4a25-85f8-055c2bef6f4b")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 193.0400 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 233.6800 228.6000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "cd9e4871-4f06-46e8-9f29-c0dd7ff73445")
+			(property "Reference" "C29"
+				(at 233.6800 224.7900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "10uF"
+				(at 233.6800 222.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 233.6800 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 233.6800 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "8501c4e0-0838-4346-8527-a5579f8dd2c7"))
+			(pin "2" (uuid "f78847e4-31e5-48a7-9ba2-988cb03a277f"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "C29")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 231.1400 231.1400) (xy 226.0600 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "d16f5e27-503a-4d2a-aa1d-bb86fddeaaca")
+			)
+	(global_label "+3V3"
+			(shape passive)
+			(at 226.0600 231.1400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "50095a6f-5d99-4a46-ba06-d77451991e48")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 226.0600 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 251.4600 231.1400) (xy 256.5400 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "fe8cc964-110a-45a2-98d1-d4be10f976d1")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 256.5400 231.1400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "d3b7c28c-8d7f-443a-b749-e81b9e34df8e")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 256.5400 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 299.7200 228.6000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "b9834eba-ea3d-483e-941f-b9846b476b03")
+			(property "Reference" "C30"
+				(at 299.7200 224.7900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "10uF"
+				(at 299.7200 222.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 299.7200 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 299.7200 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "4e0b7cd9-3282-4330-b5b8-59094d22ad7b"))
+			(pin "2" (uuid "84088050-55b1-4e61-b1fa-d84c4297240d"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "C30")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 297.1800 231.1400) (xy 292.1000 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "430ebce0-d9d5-4e18-87f5-8f351dcf0377")
+			)
+	(global_label "SYS"
+			(shape passive)
+			(at 292.1000 231.1400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "a72260cc-af97-4484-997d-39d34b48dd77")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 292.1000 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 317.5000 231.1400) (xy 322.5800 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "a5d124b0-295c-4a59-bd2e-60b49908409a")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 322.5800 231.1400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "98dfc312-5eef-452d-b35c-a68780b51b62")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 322.5800 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 363.2200 228.6000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "e0278d37-abd4-47bc-a5f7-c0a703ae4acf")
+			(property "Reference" "C31"
+				(at 363.2200 224.7900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "22uF"
+				(at 363.2200 222.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 363.2200 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 363.2200 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "e6228e92-aac5-47b8-80b0-cd768afc96aa"))
+			(pin "2" (uuid "b5834004-0063-4d0f-a68e-c1cd1415622c"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "C31")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 360.6800 231.1400) (xy 355.6000 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "54d2e2a6-d1a3-470f-89cb-ac6b4ed37349")
+			)
+	(global_label "+5V"
+			(shape passive)
+			(at 355.6000 231.1400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "bf293f8e-e23e-477d-835b-acc3930aa6df")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 355.6000 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 381.0000 231.1400) (xy 386.0800 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "4ca3da32-4274-40e4-99f3-2883c3a41c34")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 386.0800 231.1400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "dce5c552-684f-443e-946a-f91c5d5192e8")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 386.0800 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 40.6400 259.0800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "04dde86c-94b0-49d8-a25e-f559e8e087ec")
+			(property "Reference" "C32"
+				(at 40.6400 255.2700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "22uF"
+				(at 40.6400 252.7300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 40.6400 259.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 40.6400 259.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "16138bd2-71eb-4836-8a44-b2c27e8c6842"))
+			(pin "2" (uuid "e93698b9-1491-47bf-ad7f-62042d841cb6"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "C32")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 38.1000 261.6200) (xy 33.0200 261.6200))
+			(stroke (width 0) (type default))
+			(uuid "f42544ea-a9f2-495b-ada9-d9a4a18e9dd7")
+			)
+	(global_label "+5V"
+			(shape passive)
+			(at 33.0200 261.6200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "46a7f515-0376-4e4e-a80b-7ad498a8eef3")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 33.0200 261.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 58.4200 261.6200) (xy 63.5000 261.6200))
+			(stroke (width 0) (type default))
+			(uuid "3ef655d1-d1ff-4b68-921d-b941eb9b36ad")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 63.5000 261.6200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "9d52537b-6d06-4232-92a9-dd75d0d42b45")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 63.5000 261.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 104.1400 259.0800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "b2f3642f-8085-47a3-b9bb-f7c647f02904")
+			(property "Reference" "C33"
+				(at 104.1400 255.2700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "220pF"
+				(at 104.1400 252.7300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 104.1400 259.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 104.1400 259.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "27d83b16-ad9f-46d5-a356-d2e5862d0114"))
+			(pin "2" (uuid "028ef7f8-766c-486b-a760-ad813f51826d"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01"
+						(reference "C33")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 101.6000 261.6200) (xy 96.5200 261.6200))
+			(stroke (width 0) (type default))
+			(uuid "d1f3a98e-f86c-4d56-8870-b0ec4857b613")
+			)
+	(global_label "U6_CT"
+			(shape passive)
+			(at 96.5200 261.6200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "c2d91e62-e5a7-47e0-b79b-aa08168d132b")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 96.5200 261.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 121.9200 261.6200) (xy 127.0000 261.6200))
+			(stroke (width 0) (type default))
+			(uuid "05f184fe-de91-4e0e-b724-c028a9c3e97c")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 127.0000 261.6200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "0374d9ad-a8ef-47e7-8c8c-e747bd995e75")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 127.0000 261.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:R")
+			(at 170.1800 259.0800 0) (unit 1) (exclude_from_sim no) (in_bom yes)
+			(on_board yes) (dnp no) (fields_autoplaced yes) (uuid "bfa76c71-a7ff-49ad-b873-17a9014b4f49")
+			(property "Reference" "R25" (at 170.1800 255.2700 0) (effects (font (size 1.27 1.27))))
+			(property "Value" "100k" (at 170.1800 252.7300 0) (effects (font (size 1.27 1.27))))
+			(property "Footprint" "Resistor_SMD:R_0603_1608Metric" (at 170.1800 259.0800 0) (effects (font (size 1.27 1.27)) (hide yes)))
+			(property "Datasheet" "" (at 170.1800 259.0800 0) (effects (font (size 1.27 1.27)) (hide yes)))
+			(pin "1" (uuid "b9ca862e-9030-40cd-ba1b-d6c8cc7ac6a9")) (pin "2" (uuid "fd0eef88-185e-49f7-b317-041adf243002"))
+			(instances (project "focalpoint" (path "/58cd5175-207e-4724-8c44-e24ead61a60c/f5ab84d8-f762-44cf-a7ae-ff4370829a01" (reference "R25") (unit 1)))))
+	(wire (pts (xy 167.6400 261.6200) (xy 162.5600 261.6200)) (stroke (width 0) (type default)) (uuid "edaf6c87-8609-4c64-aa69-3055278d0700"))
+	(global_label "+3V3" (shape passive) (at 162.5600 261.6200 180)
+			(effects (font (size 1.27 1.27)) (justify right)) (uuid "e97117e9-0430-4710-8cc3-ac8cc67c6d7f")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}" (at 162.5600 261.6200 0) (effects (font (size 1.27 1.27)) (hide yes))))
+	(wire (pts (xy 187.9600 261.6200) (xy 193.0400 261.6200)) (stroke (width 0) (type default)) (uuid "f53f96fd-dd2b-4d83-892a-0b9fce1735a7"))
+	(global_label "FG_ALRT" (shape passive) (at 193.0400 261.6200 0)
+			(effects (font (size 1.27 1.27)) (justify left)) (uuid "23dc5995-7541-4594-847c-ea37c1ec5bae")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}" (at 193.0400 261.6200 0) (effects (font (size 1.27 1.27)) (hide yes))))
+	(embedded_fonts no)
+)

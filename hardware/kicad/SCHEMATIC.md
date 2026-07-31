@@ -1,11 +1,11 @@
 # Rev A schematic capture — connectivity specification
 
 Status: **design capture + datasheet-controlled schematic/footprint repair
-complete; error-level ERC passes 0/0 (`focalpoint.kicad_sch`); the corrected
-six-layer PCB has zero schematic/PCB pin-net mismatches and zero unrouted
-connections. Native KiCad DRC on
-`focalpoint_rev_a_release_candidate.kicad_pcb` and final manufacturing
-artifact review remain required** (release blocker 1, `BOM.md`). Transcription judgment calls and
+complete; hierarchical ERC passes 0/0 (`focalpoint.kicad_sch`); the corrected
+six-layer PCB has zero schematic/PCB pin-net mismatches, zero unrouted
+connections, and a zero-violation native KiCad DRC report. Independent review,
+JLCPCB upload review, and physical prototype validation remain required**
+(release blocker 1, `BOM.md`). Transcription judgment calls and
 the items a reviewer must check are in `TRANSCRIPTION_NOTES.md`; resolved
 capture questions are recorded in `../CAPTURE_GAP_RESOLUTIONS.md`.
 
@@ -19,6 +19,22 @@ it is the input to it.
 The checked-in `.kicad_sch` is now the electrical source consumed by KiCad.
 This document explains the intended topology and remains a human-review aid;
 the exported netlist and ERC report govern connectivity.
+
+## Hierarchical capture
+
+`focalpoint.kicad_sch` is the root sheet. It links to
+`focalpoint_power.kicad_sch`, `focalpoint_signals.kicad_sch`, and
+`focalpoint_peripherals.kicad_sch`. Cross-sheet connections intentionally use
+the already-reviewed global net names, so the hierarchy changes organization
+only. An exact comparison against `focalpoint_flat_reference.kicad_sch` reports
+107 components, 80 nets, and zero component or net-node mismatches; PCB parity
+also remains at zero mismatches. See `hierarchical_schematic_equivalence.txt`.
+The generated child sheets use conventional passive, protection, switch,
+battery, and power-flag notation; device-specific ICs and modules retain their
+pin-accurate functional block symbols. Fixed A2 placement cells distribute the
+design across each printable page and are checked for containment and overlap
+by `hierarchize_schematic.py`; see
+`hierarchical_schematic_layout_validation.txt`.
 
 Reference designators below are exactly those frozen in `bom.csv` (verified by
 `finalize_bom.py`). Where this capture implies a BOM change, it is called out as

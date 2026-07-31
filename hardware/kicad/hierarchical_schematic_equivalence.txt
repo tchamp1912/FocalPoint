@@ -1,0 +1,27 @@
+FocalPoint hierarchical schematic equivalence
+==============================================
+
+Baseline: focalpoint_flat_reference.kicad_sch
+Candidate root: focalpoint.kicad_sch
+Child sheets: focalpoint_power.kicad_sch, focalpoint_signals.kicad_sch,
+              focalpoint_peripherals.kicad_sch
+
+components_before=107
+components_after=107
+component_metadata_mismatches=0
+nets_before=80
+nets_after=80
+net_node_mismatches=0
+erc_violations=0
+schematic_block_overlaps=0
+all_blocks_inside_printable_cells=yes
+schematic_numbered_pins=350
+pcb_numbered_pads=372
+pcb_pin_net_mismatches=0
+
+Generated and checked with KiCad CLI 10.0.5 on 2026-07-31. Components and
+nets were normalized from the pre-refactor and hierarchical KiCad XML
+netlists before comparison. PCB parity was checked against
+focalpoint_rev_a_release_candidate.kicad_pcb; extra PCB pads are mechanical or
+otherwise unnumbered/non-schematic pads and are excluded by the numbered-pad
+comparison.

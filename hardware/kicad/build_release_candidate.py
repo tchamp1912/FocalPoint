@@ -23,6 +23,12 @@ KICAD = ROOT / "hardware" / "kicad"
 BOARD = KICAD / "focalpoint_rev_a_release_candidate.kicad_pcb"
 PROJECT = KICAD / "focalpoint_rev_a_release_candidate.kicad_pro"
 SCHEMATIC = KICAD / "focalpoint.kicad_sch"
+SCHEMATIC_SHEETS = [
+    SCHEMATIC,
+    KICAD / "focalpoint_power.kicad_sch",
+    KICAD / "focalpoint_signals.kicad_sch",
+    KICAD / "focalpoint_peripherals.kicad_sch",
+]
 PROCUREMENT_BOM = ROOT / "hardware" / "bom.csv"
 OUT = KICAD / "release_candidate"
 ARCHIVE = KICAD / "focalpoint_rev_a_release_candidate.zip"
@@ -101,7 +107,7 @@ def sha256(path: Path) -> str:
 
 
 def build(args: argparse.Namespace) -> None:
-    for required in (BOARD, PROJECT, SCHEMATIC, PROCUREMENT_BOM):
+    for required in (BOARD, PROJECT, *SCHEMATIC_SHEETS, PROCUREMENT_BOM):
         if not required.is_file():
             raise SystemExit(f"missing required input: {required}")
 
@@ -254,6 +260,8 @@ def build(args: argparse.Namespace) -> None:
 
         evidence = [
             KICAD / "erc_release_candidate.rpt",
+            KICAD / "hierarchical_schematic_equivalence.txt",
+            KICAD / "hierarchical_schematic_layout_validation.txt",
             KICAD / "release_candidate_static_audit.txt",
             KICAD / "release_candidate_schematic_pcb_net_compare.txt",
             KICAD / "release_candidate_footprint_audit.txt",
@@ -271,7 +279,11 @@ def build(args: argparse.Namespace) -> None:
             KICAD / "COMPONENT_MODEL_SOURCING.md",
             BOARD,
             PROJECT,
-            SCHEMATIC,
+            *SCHEMATIC_SHEETS,
+            KICAD / "focalpoint_flat_reference.kicad_sch",
+            KICAD / "focalpoint.kicad_sym",
+            KICAD / "focalpoint_flat_reference.kicad_sym",
+            KICAD / "hierarchize_schematic.py",
             KICAD / "fp-lib-table",
         ]
         for source in documentation:

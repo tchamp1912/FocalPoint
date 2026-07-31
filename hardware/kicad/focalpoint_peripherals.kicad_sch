@@ -1,0 +1,5557 @@
+(kicad_sch
+	(version 20251024)
+	(generator "focalpoint_hierarchy")
+	(generator_version "10.0")
+	(uuid "64e03ec8-b9c5-486d-9d07-00fe93dfe210")
+	(paper "A2")
+	(title_block
+		(title "FocalPoint Rev A — Inputs, RGB, and Peripherals")
+		(rev "A-hierarchical-standard")
+	)
+	(lib_symbols
+		(symbol "focalpoint:R"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "R"
+				(at 0 -7.62 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "R_1_1"
+				(polyline
+					(pts (xy 0 -2.54) (xy 2.54 -2.54) (xy 3.81 -1.27)
+						(xy 5.08 -3.81) (xy 6.35 -1.27) (xy 7.62 -3.81)
+						(xy 8.89 -1.27) (xy 10.16 -3.81) (xy 11.43 -1.27)
+						(xy 12.7 -2.54) (xy 15.24 -2.54))
+					(stroke (width 0.254) (type default))
+					(fill (type none))
+				)
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "1" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "2" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:C"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "C"
+				(at 0 -7.62 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "C_1_1"
+				(polyline
+					(pts (xy 0 -2.54) (xy 6.35 -2.54))
+					(stroke (width 0.254) (type default))
+					(fill (type none))
+				)
+				(polyline
+					(pts (xy 8.89 -2.54) (xy 15.24 -2.54))
+					(stroke (width 0.254) (type default))
+					(fill (type none))
+				)
+				(polyline
+					(pts (xy 6.35 -5.08) (xy 6.35 0))
+					(stroke (width 0.508) (type default))
+					(fill (type none))
+				)
+				(polyline
+					(pts (xy 8.89 -5.08) (xy 8.89 0))
+					(stroke (width 0.508) (type default))
+					(fill (type none))
+				)
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "1" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "2" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:L"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "L"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "L"
+				(at 0 -7.62 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "L_1_1"
+				(polyline
+					(pts (xy 0 -2.54) (xy 2.54 -2.54))
+					(stroke (width 0.254) (type default))
+					(fill (type none))
+				)
+				(arc (start 2.54 -2.54) (mid 3.81 -1.27) (end 5.08 -2.54)
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(arc (start 5.08 -2.54) (mid 6.35 -1.27) (end 7.62 -2.54)
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(arc (start 7.62 -2.54) (mid 8.89 -1.27) (end 10.16 -2.54)
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(arc (start 10.16 -2.54) (mid 11.43 -1.27) (end 12.7 -2.54)
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(polyline
+					(pts (xy 12.7 -2.54) (xy 15.24 -2.54))
+					(stroke (width 0.254) (type default))
+					(fill (type none))
+				)
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "1" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "2" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:D_TVS"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "D"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "D_TVS"
+				(at 0 -7.62 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "D_TVS_1_1"
+				(polyline
+					(pts (xy 0 -2.54) (xy 5.08 -2.54))
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(polyline
+					(pts (xy 5.08 -5.08) (xy 5.08 0) (xy 10.16 -2.54) (xy 5.08 -5.08))
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(polyline
+					(pts (xy 10.16 -5.08) (xy 10.16 -3.81) (xy 11.43 -2.54)
+						(xy 10.16 -1.27) (xy 10.16 0))
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(polyline
+					(pts (xy 10.16 -2.54) (xy 15.24 -2.54))
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "A" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "K" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:SW2"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "SW"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "SW2"
+				(at 0 -7.62 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "SW2_1_1"
+				(circle (center 3.81 -2.54) (radius 0.635)
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(circle (center 11.43 -2.54) (radius 0.635)
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(polyline
+					(pts (xy 0 -2.54) (xy 3.175 -2.54))
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(polyline
+					(pts (xy 4.445 -2.54) (xy 10.16 -0.635))
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(polyline
+					(pts (xy 12.065 -2.54) (xy 15.24 -2.54))
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "1" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "2" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:LED4"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "LED"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "LED4"
+				(at 0 -10.16 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "LED4_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -7.62)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin power_in line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "VDD" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin output line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "DOUT" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_in line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "VSS" (effects (font (size 1.27 1.27))))
+					(number "3" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "DIN" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:PWR_FLAG"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "#FLG"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "PWR_FLAG"
+				(at 0 -7.62 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "PWR_FLAG_1_1"
+				(polyline
+					(pts (xy 0 -2.54) (xy 5.08 -2.54) (xy 5.08 -6.35)
+						(xy 10.16 -5.08) (xy 5.08 -3.81))
+					(stroke (width 0.254) (type default))
+					(fill (type none))
+				)
+				(pin power_out line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "flag" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:BT_CELL"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "BT"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "BT_CELL"
+				(at 0 -7.62 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "BT_CELL_1_1"
+				(polyline
+					(pts (xy 0 -2.54) (xy 6.35 -2.54))
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(polyline
+					(pts (xy 8.89 -2.54) (xy 15.24 -2.54))
+					(stroke (width 0.254) (type default)) (fill (type none)))
+				(polyline
+					(pts (xy 6.35 -5.08) (xy 6.35 0))
+					(stroke (width 0.508) (type default)) (fill (type none)))
+				(polyline
+					(pts (xy 8.89 -3.81) (xy 8.89 -1.27))
+					(stroke (width 0.508) (type default)) (fill (type none)))
+				(text "+" (at 5.08 -6.35 0)
+					(effects (font (size 1.27 1.27))))
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "+" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "-" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:J_BATT"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "J_BATT"
+				(at 0 -7.62 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "J_BATT_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -5.08)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "1" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "2" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:J_SWD"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "J_SWD"
+				(at 0 -12.7 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "J_SWD_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -10.16)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "VCC" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "SWDIO" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "SWDCLK" (effects (font (size 1.27 1.27))))
+					(number "3" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "RESET" (effects (font (size 1.27 1.27))))
+					(number "5" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -7.62 180)
+					(length 2.54)
+					(name "SWO" (effects (font (size 1.27 1.27))))
+					(number "6" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:J_USBC"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "J_USBC"
+				(at 0 -25.4 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "J_USBC_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -22.86)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "A1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "VBUS" (effects (font (size 1.27 1.27))))
+					(number "A4" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "CC1" (effects (font (size 1.27 1.27))))
+					(number "A5" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -10.16 0)
+					(length 2.54)
+					(name "D+" (effects (font (size 1.27 1.27))))
+					(number "A6" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -12.7 0)
+					(length 2.54)
+					(name "D-" (effects (font (size 1.27 1.27))))
+					(number "A7" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -15.239999999999998 0)
+					(length 2.54)
+					(name "SBU1" (effects (font (size 1.27 1.27))))
+					(number "A8" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -17.78 0)
+					(length 2.54)
+					(name "VBUS" (effects (font (size 1.27 1.27))))
+					(number "A9" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -20.32 0)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "A12" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "B1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "VBUS" (effects (font (size 1.27 1.27))))
+					(number "B4" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -7.62 180)
+					(length 2.54)
+					(name "CC2" (effects (font (size 1.27 1.27))))
+					(number "B5" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -10.16 180)
+					(length 2.54)
+					(name "D+" (effects (font (size 1.27 1.27))))
+					(number "B6" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -12.7 180)
+					(length 2.54)
+					(name "D-" (effects (font (size 1.27 1.27))))
+					(number "B7" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -15.239999999999998 180)
+					(length 2.54)
+					(name "SBU2" (effects (font (size 1.27 1.27))))
+					(number "B8" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -17.78 180)
+					(length 2.54)
+					(name "VBUS" (effects (font (size 1.27 1.27))))
+					(number "B9" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -20.32 180)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "B12" (effects (font (size 1.27 1.27))))
+					)
+					(pin passive line (at -2.54 -2.54 0) (length 2.54)
+						(name "SHIELD" (effects (font (size 1.27 1.27))))
+						(number "SH" (effects (font (size 1.27 1.27)))))
+	
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:ENC_EC11"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "ENC"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "ENC_EC11"
+				(at 0 -12.7 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "ENC_EC11_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -10.16)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "A" (effects (font (size 1.27 1.27))))
+					(number "A" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "B" (effects (font (size 1.27 1.27))))
+					(number "B" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "COMMON" (effects (font (size 1.27 1.27))))
+					(number "C" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "SW1" (effects (font (size 1.27 1.27))))
+					(number "S1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "SW2" (effects (font (size 1.27 1.27))))
+					(number "S2" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:JOY_ALPS"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "JS"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "JOY_ALPS"
+				(at 0 -12.7 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "JOY_ALPS_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -10.16)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin passive line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "VCC" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "X" (effects (font (size 1.27 1.27))))
+					(number "3" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "Y" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "SW" (effects (font (size 1.27 1.27))))
+					(number "5" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:U1_MODULE"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "U1_MODULE"
+				(at 0 -50.8 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "U1_MODULE_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 20.32 -48.26)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin power_in line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "VDD" (effects (font (size 1.27 1.27))))
+					(number "28" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_in line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "KEY1" (effects (font (size 1.27 1.27))))
+					(number "47" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -10.16 0)
+					(length 2.54)
+					(name "KEY2" (effects (font (size 1.27 1.27))))
+					(number "61" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -12.7 0)
+					(length 2.54)
+					(name "KEY3" (effects (font (size 1.27 1.27))))
+					(number "50" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -15.239999999999998 0)
+					(length 2.54)
+					(name "KEY4" (effects (font (size 1.27 1.27))))
+					(number "60" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -17.78 0)
+					(length 2.54)
+					(name "KEY5" (effects (font (size 1.27 1.27))))
+					(number "56" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -20.32 0)
+					(length 2.54)
+					(name "KEY6" (effects (font (size 1.27 1.27))))
+					(number "59" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -22.86 0)
+					(length 2.54)
+					(name "KEY7" (effects (font (size 1.27 1.27))))
+					(number "57" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -25.4 0)
+					(length 2.54)
+					(name "KEY8" (effects (font (size 1.27 1.27))))
+					(number "58" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -27.939999999999998 0)
+					(length 2.54)
+					(name "KEY9" (effects (font (size 1.27 1.27))))
+					(number "25" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -30.48 0)
+					(length 2.54)
+					(name "KEY10" (effects (font (size 1.27 1.27))))
+					(number "26" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -33.02 0)
+					(length 2.54)
+					(name "KEY11" (effects (font (size 1.27 1.27))))
+					(number "3" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -35.56 0)
+					(length 2.54)
+					(name "KEY12" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -38.1 0)
+					(length 2.54)
+					(name "KEY13" (effects (font (size 1.27 1.27))))
+					(number "5" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -40.64 0)
+					(length 2.54)
+					(name "JOY_X_AIN0" (effects (font (size 1.27 1.27))))
+					(number "11" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -43.18 0)
+					(length 2.54)
+					(name "JOY_Y_AIN1" (effects (font (size 1.27 1.27))))
+					(number "9" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -45.72 0)
+					(length 2.54)
+					(name "JOY_SW" (effects (font (size 1.27 1.27))))
+					(number "38" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -2.54 180)
+					(length 2.54)
+					(name "ENC_A" (effects (font (size 1.27 1.27))))
+					(number "41" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -5.08 180)
+					(length 2.54)
+					(name "ENC_B" (effects (font (size 1.27 1.27))))
+					(number "42" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -7.62 180)
+					(length 2.54)
+					(name "ENC_SW" (effects (font (size 1.27 1.27))))
+					(number "44" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -10.16 180)
+					(length 2.54)
+					(name "TOUCH_OUT" (effects (font (size 1.27 1.27))))
+					(number "39" (effects (font (size 1.27 1.27))))
+					)
+				(pin output line
+					(at 22.86 -12.7 180)
+					(length 2.54)
+					(name "RGB_DATA" (effects (font (size 1.27 1.27))))
+					(number "22" (effects (font (size 1.27 1.27))))
+					)
+				(pin output line
+					(at 22.86 -15.239999999999998 180)
+					(length 2.54)
+					(name "RGB_PWR_EN" (effects (font (size 1.27 1.27))))
+					(number "24" (effects (font (size 1.27 1.27))))
+					)
+				(pin output line
+					(at 22.86 -17.78 180)
+					(length 2.54)
+					(name "BOOST_EN" (effects (font (size 1.27 1.27))))
+					(number "6" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -20.32 180)
+					(length 2.54)
+					(name "CHG_STAT" (effects (font (size 1.27 1.27))))
+					(number "29" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -22.86 180)
+					(length 2.54)
+					(name "PGOOD" (effects (font (size 1.27 1.27))))
+					(number "36" (effects (font (size 1.27 1.27))))
+					)
+				(pin bidirectional line
+					(at 22.86 -25.4 180)
+					(length 2.54)
+					(name "FG_SDA" (effects (font (size 1.27 1.27))))
+					(number "8" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -27.939999999999998 180)
+					(length 2.54)
+					(name "FG_SCL" (effects (font (size 1.27 1.27))))
+					(number "14" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -30.48 180)
+					(length 2.54)
+					(name "FG_ALRT" (effects (font (size 1.27 1.27))))
+					(number "48" (effects (font (size 1.27 1.27))))
+					)
+				(pin bidirectional line
+					(at 22.86 -33.02 180)
+					(length 2.54)
+					(name "USB_DP" (effects (font (size 1.27 1.27))))
+					(number "35" (effects (font (size 1.27 1.27))))
+					)
+				(pin bidirectional line
+					(at 22.86 -35.56 180)
+					(length 2.54)
+					(name "USB_DN" (effects (font (size 1.27 1.27))))
+					(number "34" (effects (font (size 1.27 1.27))))
+					)
+				(pin bidirectional line
+					(at 22.86 -38.1 180)
+					(length 2.54)
+					(name "SWDIO" (effects (font (size 1.27 1.27))))
+					(number "51" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -40.64 180)
+					(length 2.54)
+					(name "SWDCLK" (effects (font (size 1.27 1.27))))
+					(number "53" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -43.18 180)
+					(length 2.54)
+					(name "DFU_P013" (effects (font (size 1.27 1.27))))
+					(number "37" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 22.86 -45.72 180)
+					(length 2.54)
+					(name "nRESET_P018" (effects (font (size 1.27 1.27))))
+					(number "40" (effects (font (size 1.27 1.27))))
+					)
+					(pin power_in line (at -2.54 -5.08 0) (length 2.54)
+						(name "GND2" (effects (font (size 1.27 1.27))))
+						(number "2" (effects (font (size 1.27 1.27)))))
+					(pin power_in line (at -2.54 -5.08 0) (length 2.54)
+						(name "GND15" (effects (font (size 1.27 1.27))))
+						(number "15" (effects (font (size 1.27 1.27)))))
+					(pin power_in line (at -2.54 -5.08 0) (length 2.54)
+						(name "GND33" (effects (font (size 1.27 1.27))))
+						(number "33" (effects (font (size 1.27 1.27)))))
+					(pin power_in line (at -2.54 -5.08 0) (length 2.54)
+						(name "GND55" (effects (font (size 1.27 1.27))))
+						(number "55" (effects (font (size 1.27 1.27)))))
+					(pin power_in line (at 22.86 -48.26 180) (length 2.54)
+						(name "VBUS" (effects (font (size 1.27 1.27))))
+						(number "32" (effects (font (size 1.27 1.27)))))
+	
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:U2_ESD"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "U2_ESD"
+				(at 0 -12.7 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "U2_ESD_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -10.16)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+					(pin passive line (at -2.54 -2.54 0) (length 2.54)
+						(name "D+" (effects (font (size 1.27 1.27))))
+						(number "1" (effects (font (size 1.27 1.27)))))
+					(pin passive line (at -2.54 -5.08 0) (length 2.54)
+						(name "D-" (effects (font (size 1.27 1.27))))
+						(number "2" (effects (font (size 1.27 1.27)))))
+					(pin passive line (at -2.54 -7.62 0) (length 2.54)
+						(name "GND" (effects (font (size 1.27 1.27))))
+						(number "3" (effects (font (size 1.27 1.27)))))
+	
+				)
+	
+	
+	
+	
+	(embedded_fonts no)
+			)
+		(symbol "focalpoint:U3_CHARGER"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "U3_CHARGER"
+				(at 0 -22.86 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "U3_CHARGER_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -20.32)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin power_in line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "IN" (effects (font (size 1.27 1.27))))
+					(number "13" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_out line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "SYS" (effects (font (size 1.27 1.27))))
+					(number "10" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "BAT" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -10.16 0)
+					(length 2.54)
+					(name "ISET" (effects (font (size 1.27 1.27))))
+					(number "16" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -12.7 0)
+					(length 2.54)
+					(name "ILIM" (effects (font (size 1.27 1.27))))
+					(number "12" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -15.239999999999998 0)
+					(length 2.54)
+					(name "ITERM" (effects (font (size 1.27 1.27))))
+					(number "15" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -17.78 0)
+					(length 2.54)
+					(name "TMR" (effects (font (size 1.27 1.27))))
+					(number "14" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "TS" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin open_collector line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "nCHG" (effects (font (size 1.27 1.27))))
+					(number "9" (effects (font (size 1.27 1.27))))
+					)
+				(pin open_collector line
+					(at 17.78 -7.62 180)
+					(length 2.54)
+					(name "nPGOOD" (effects (font (size 1.27 1.27))))
+					(number "7" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 17.78 -10.16 180)
+					(length 2.54)
+					(name "EN1" (effects (font (size 1.27 1.27))))
+					(number "6" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 17.78 -12.7 180)
+					(length 2.54)
+					(name "EN2" (effects (font (size 1.27 1.27))))
+					(number "5" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_in line
+					(at 17.78 -15.239999999999998 180)
+					(length 2.54)
+					(name "VSS" (effects (font (size 1.27 1.27))))
+					(number "8" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -17.78 180)
+					(length 2.54)
+					(name "CE" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+					(pin passive line (at -2.54 -7.62 0) (length 2.54)
+						(name "BAT" (effects (font (size 1.27 1.27))))
+						(number "3" (effects (font (size 1.27 1.27)))))
+					(pin passive line (at -2.54 -5.08 0) (length 2.54)
+						(name "OUT" (effects (font (size 1.27 1.27))))
+						(number "11" (effects (font (size 1.27 1.27)))))
+					(pin power_in line (at 17.78 -15.24 180) (length 2.54)
+						(name "VSS" (effects (font (size 1.27 1.27))))
+						(number "17" (effects (font (size 1.27 1.27)))))
+	
+				)
+	
+	
+	
+	
+	(embedded_fonts no)
+			)
+		(symbol "focalpoint:U4_BUCKBOOST"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "U4_BUCKBOOST"
+				(at 0 -15.239999999999998 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "U4_BUCKBOOST_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -12.7)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin power_in line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "VIN" (effects (font (size 1.27 1.27))))
+					(number "5" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "L1" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "L2" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_out line
+					(at -2.54 -10.16 0)
+					(length 2.54)
+					(name "VOUT" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "FB" (effects (font (size 1.27 1.27))))
+					(number "10" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "EN" (effects (font (size 1.27 1.27))))
+					(number "6" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 17.78 -7.62 180)
+					(length 2.54)
+					(name "PS_SYNC" (effects (font (size 1.27 1.27))))
+					(number "7" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_in line
+					(at 17.78 -10.16 180)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "9" (effects (font (size 1.27 1.27))))
+					)
+					(pin power_in line (at -2.54 -2.54 0) (length 2.54)
+						(name "VINA" (effects (font (size 1.27 1.27))))
+						(number "8" (effects (font (size 1.27 1.27)))))
+	
+					(pin power_in line (at 17.78 -10.16 180) (length 2.54)
+						(name "PGND" (effects (font (size 1.27 1.27))))
+						(number "3" (effects (font (size 1.27 1.27)))))
+	
+					(pin power_in line (at 17.78 -10.16 180) (length 2.54)
+						(name "EP" (effects (font (size 1.27 1.27))))
+						(number "11" (effects (font (size 1.27 1.27)))))
+	
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:U5_BOOST"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "U5_BOOST"
+				(at 0 -12.7 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "U5_BOOST_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -10.16)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin power_in line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "VIN" (effects (font (size 1.27 1.27))))
+					(number "3" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "SW" (effects (font (size 1.27 1.27))))
+					(number "5" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_out line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "VOUT" (effects (font (size 1.27 1.27))))
+					(number "6" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "FB" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "EN" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_in line
+					(at 17.78 -7.62 180)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:U6_LOADSW"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "U6_LOADSW"
+				(at 0 -12.7 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "U6_LOADSW_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -10.16)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin power_in line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "VIN" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_out line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "VOUT" (effects (font (size 1.27 1.27))))
+					(number "6" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "ON" (effects (font (size 1.27 1.27))))
+					(number "3" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "QOD" (effects (font (size 1.27 1.27))))
+					(number "5" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "CT" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_in line
+					(at 17.78 -7.62 180)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:U7_BUFFER"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "U7_BUFFER"
+				(at 0 -12.7 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "U7_BUFFER_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -10.16)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin power_in line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "VCC" (effects (font (size 1.27 1.27))))
+					(number "5" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "IN" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "OE" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+				(pin output line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "OUT" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_in line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "3" (effects (font (size 1.27 1.27))))
+					)
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:U8_TOUCH"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "U8_TOUCH"
+				(at 0 -12.7 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "U8_TOUCH_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 15.24 -10.16)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin power_in line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "VDD" (effects (font (size 1.27 1.27))))
+					(number "5" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_in line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "VSS" (effects (font (size 1.27 1.27))))
+					(number "2" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "SNS1" (effects (font (size 1.27 1.27))))
+					(number "3" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 17.78 -2.54 180)
+					(length 2.54)
+					(name "SNS2" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+				(pin output line
+					(at 17.78 -5.08 180)
+					(length 2.54)
+					(name "OUT" (effects (font (size 1.27 1.27))))
+					(number "1" (effects (font (size 1.27 1.27))))
+					)
+					(pin input line (at -2.54 -5.08 0) (length 2.54)
+						(name "SYNC_MODE" (effects (font (size 1.27 1.27))))
+						(number "6" (effects (font (size 1.27 1.27)))))
+	
+				)
+			(embedded_fonts no)
+			)
+		(symbol "focalpoint:U9_FUELGAUGE"
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 2.54 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "U9_FUELGAUGE"
+				(at 0 -12.7 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(symbol "U9_FUELGAUGE_1_1"
+				(rectangle
+					(start 0 0.0)
+					(end 16.51 -10.16)
+					(stroke (width 0.254) (type default))
+					(fill (type background))
+					)
+				(pin power_in line
+					(at -2.54 -2.54 0)
+					(length 2.54)
+					(name "CELL_VDD" (effects (font (size 1.27 1.27))))
+					(number "3" (effects (font (size 1.27 1.27))))
+					)
+				(pin power_in line
+					(at -2.54 -5.08 0)
+					(length 2.54)
+					(name "GND" (effects (font (size 1.27 1.27))))
+					(number "4" (effects (font (size 1.27 1.27))))
+					)
+				(pin bidirectional line
+					(at -2.54 -7.62 0)
+					(length 2.54)
+					(name "SDA" (effects (font (size 1.27 1.27))))
+					(number "8" (effects (font (size 1.27 1.27))))
+					)
+				(pin input line
+					(at 19.05 -2.54 180)
+					(length 2.54)
+					(name "SCL" (effects (font (size 1.27 1.27))))
+					(number "7" (effects (font (size 1.27 1.27))))
+					)
+				(pin passive line
+					(at 19.05 -5.08 180)
+					(length 2.54)
+					(name "ALRT" (effects (font (size 1.27 1.27))))
+					(number "5" (effects (font (size 1.27 1.27))))
+					)
+					(pin power_in line (at -2.54 -2.54 0) (length 2.54)
+						(name "CELL" (effects (font (size 1.27 1.27))))
+						(number "2" (effects (font (size 1.27 1.27)))))
+	
+					(pin power_in line (at -2.54 -5.08 0) (length 2.54)
+						(name "CTG" (effects (font (size 1.27 1.27))))
+						(number "1" (effects (font (size 1.27 1.27)))))
+	
+					(pin input line (at -2.54 -5.08 0) (length 2.54)
+						(name "QSTRT" (effects (font (size 1.27 1.27))))
+						(number "6" (effects (font (size 1.27 1.27)))))
+	
+					(pin power_in line (at -2.54 -5.08 0) (length 2.54)
+						(name "EP" (effects (font (size 1.27 1.27))))
+						(number "9" (effects (font (size 1.27 1.27)))))
+	
+				)
+			(embedded_fonts no)
+			)
+	
+			(symbol "focalpoint:D_TVS_DUAL_CA"
+				(exclude_from_sim no) (in_bom yes) (on_board yes)
+				(property "Reference" "D" (at 0 2.54 0) (effects (font (size 1.27 1.27))))
+				(property "Value" "D_TVS_DUAL_CA" (at 0 -10.16 0) (effects (font (size 1.27 1.27))))
+				(property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+				(property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+				(symbol "D_TVS_DUAL_CA_1_1"
+					(rectangle (start 0 0) (end 15.24 -7.62) (stroke (width 0.254) (type default)) (fill (type background)))
+					(pin passive line (at -2.54 -2.54 0) (length 2.54) (name "K1" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))
+					(pin passive line (at -2.54 -5.08 0) (length 2.54) (name "K2" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27)))))
+					(pin power_in line (at 17.78 -2.54 180) (length 2.54) (name "A" (effects (font (size 1.27 1.27)))) (number "3" (effects (font (size 1.27 1.27))))))
+				(embedded_fonts no))
+		)
+	(symbol
+			(lib_id "focalpoint:JOY_ALPS")
+			(at 35.5600 33.0200 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "6032d940-6ac9-45d1-9ac9-1dced04fa6da")
+			(property "Reference" "JS1"
+				(at 35.5600 29.2100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "RKJXV122400R"
+				(at 35.5600 26.6700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "FocalPoint:Alps_RKJXV122400R"
+				(at 35.5600 33.0200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 35.5600 33.0200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "6c638e96-b656-4e5a-af29-0c92d2d7f38a"))
+			(pin "2" (uuid "7c5452be-5f41-4956-a652-03dbb0a1e548"))
+			(pin "3" (uuid "32683878-aff1-4408-a9ed-4e5bace36f6c"))
+			(pin "4" (uuid "301f94b2-c31d-442e-866e-f6463c8fa5a0"))
+			(pin "5" (uuid "249a224e-6848-4980-b24d-600b6fe76f85"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "JS1")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 33.0200 35.5600) (xy 27.9400 35.5600))
+			(stroke (width 0) (type default))
+			(uuid "c62c79bc-6cee-48c9-82de-9779bc983a62")
+			)
+	(global_label "+3V3"
+			(shape passive)
+			(at 27.9400 35.5600 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "9b746fd2-e2d8-43d3-b751-f36d1f42c2c9")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 27.9400 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 33.0200 38.1000) (xy 27.9400 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "8e5f4fa2-43ff-4388-a4ca-ec0bea495378")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 27.9400 38.1000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "4faed438-e77e-41d1-a8e3-2efb6288da7d")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 27.9400 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 33.0200 40.6400) (xy 27.9400 40.6400))
+			(stroke (width 0) (type default))
+			(uuid "a3909549-0e90-4bf6-92ca-532093bf7d15")
+			)
+	(global_label "JOY_X"
+			(shape passive)
+			(at 27.9400 40.6400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "9a73b8fc-53a7-4d38-8560-ad81baadc577")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 27.9400 40.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 53.3400 35.5600) (xy 58.4200 35.5600))
+			(stroke (width 0) (type default))
+			(uuid "df00431f-816c-46a3-ab8e-3041d307cd5a")
+			)
+	(global_label "JOY_Y"
+			(shape passive)
+			(at 58.4200 35.5600 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "df70fbab-4fc9-4a79-855f-bb2a5478f617")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 58.4200 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 53.3400 38.1000) (xy 58.4200 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "a00ee52a-85a4-409f-b227-4db957a4a474")
+			)
+	(global_label "JOY_SW"
+			(shape passive)
+			(at 58.4200 38.1000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "b4c03552-2b0b-4a81-842d-bf61b40cf6e1")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 58.4200 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:U7_BUFFER")
+			(at 91.4400 33.0200 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "3014c933-a22e-44f2-b9b3-03ac44a14581")
+			(property "Reference" "U7"
+				(at 91.4400 29.2100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "SN74AHCT1G125DBVR"
+				(at 91.4400 26.6700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Package_TO_SOT_SMD:SOT-23-5"
+				(at 91.4400 33.0200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 91.4400 33.0200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "be81365b-a918-4082-880d-4dda9c2359ab"))
+			(pin "2" (uuid "b9632856-9080-49d3-bf88-54febccaeb14"))
+			(pin "3" (uuid "61b735c7-b0e9-4b53-92ab-5f9196ba8add"))
+			(pin "4" (uuid "2ba44b6e-0ac7-460f-b44d-50b6f0daad28"))
+			(pin "5" (uuid "8d11cf43-8775-46c9-97c8-f68bb26816cf"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "U7")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 88.9000 35.5600) (xy 83.8200 35.5600))
+			(stroke (width 0) (type default))
+			(uuid "a0d429ec-dbb8-4e29-9a3f-2e014a1f9d02")
+			)
+	(global_label "+5V"
+			(shape passive)
+			(at 83.8200 35.5600 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "4fd8426f-c217-4dd4-bbce-e35fcbd99c6e")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 83.8200 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 88.9000 38.1000) (xy 83.8200 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "5d42c5be-93a5-48ea-b9a3-461e9c21032b")
+			)
+	(global_label "RGB_DATA_BUF"
+			(shape passive)
+			(at 83.8200 38.1000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "9f8425ca-ffc7-48af-a5a3-1476e9df05cc")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 83.8200 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 88.9000 40.6400) (xy 83.8200 40.6400))
+			(stroke (width 0) (type default))
+			(uuid "782113db-36a0-411f-8c03-9294141a8125")
+			)
+	(global_label "RGB_OE_N"
+			(shape passive)
+			(at 83.8200 40.6400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "dc09a99e-920e-4b8e-96c0-0d050fc2d83d")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 83.8200 40.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 109.2200 35.5600) (xy 114.3000 35.5600))
+			(stroke (width 0) (type default))
+			(uuid "e0eef2a7-a328-43ce-8337-eb4f0c30df5c")
+			)
+	(global_label "RGB_OUT_BUF"
+			(shape passive)
+			(at 114.3000 35.5600 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "6702553d-d59d-4ee9-bf79-dff8e901a32b")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 114.3000 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 109.2200 38.1000) (xy 114.3000 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "d49df72f-c3d1-491f-9990-2220df58828c")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 114.3000 38.1000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "c26eeaf7-4db5-4250-8de6-27f665064cf3")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 114.3000 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:U8_TOUCH")
+			(at 147.3200 33.0200 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "65615ade-d995-431a-9e3f-abc5a8e08d38")
+			(property "Reference" "U8"
+				(at 147.3200 29.2100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "AT42QT1010-TSHR"
+				(at 147.3200 26.6700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Package_TO_SOT_SMD:SOT-23-6"
+				(at 147.3200 33.0200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 147.3200 33.0200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "97faecbe-5256-4aaa-a06b-fbc2cf80f8a2"))
+			(pin "2" (uuid "f9c3ad3c-aa56-48ee-b1db-159d553634ac"))
+			(pin "3" (uuid "95be647a-5c0f-4a8d-a09b-468d1e0ecb15"))
+			(pin "4" (uuid "da05fd9a-4e3d-4f3b-a1e3-c51b820142c0"))
+			(pin "5" (uuid "acff0a09-509b-4cc0-aff1-97cd24e38f5a"))
+			(pin "6" (uuid "fae770af-c564-49b7-b8a0-4ad20e7f1d92"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "U8")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 144.7800 35.5600) (xy 139.7000 35.5600))
+			(stroke (width 0) (type default))
+			(uuid "c114b798-0758-4d6f-bbad-4bf02e9d1979")
+			)
+	(global_label "+3V3"
+			(shape passive)
+			(at 139.7000 35.5600 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "5d2607e4-b0e3-4b37-9fdb-f906757b7c83")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 139.7000 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 144.7800 38.1000) (xy 139.7000 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "247769c2-9462-4beb-a29e-4738dfdaec79")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 139.7000 38.1000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "802e430a-068d-48aa-b5b8-c6a17b1bdc8a")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 139.7000 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 144.7800 40.6400) (xy 139.7000 40.6400))
+			(stroke (width 0) (type default))
+			(uuid "2437e753-54ed-4f5e-b600-ff82c234b234")
+			)
+	(global_label "TOUCH_SNS1"
+			(shape passive)
+			(at 139.7000 40.6400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "10b8e6e7-7c1d-4eb1-9b54-5391358aa761")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 139.7000 40.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 165.1000 35.5600) (xy 170.1800 35.5600))
+			(stroke (width 0) (type default))
+			(uuid "58a2992f-77e2-47ce-8c5e-739b6ca4be9b")
+			)
+	(global_label "TOUCH_SNS2"
+			(shape passive)
+			(at 170.1800 35.5600 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "e84975ab-60fa-4ca2-a1f0-8a5e2d1d3446")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 170.1800 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 165.1000 38.1000) (xy 170.1800 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "e5ddf05c-1ba1-434a-a7f6-d783c4254b24")
+			)
+	(global_label "TOUCH_RAW"
+			(shape passive)
+			(at 170.1800 38.1000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "727f5c31-9ace-4fde-86d5-683c2cf99cb6")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 170.1800 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:LED4")
+			(at 203.2000 35.5600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "d1d85acb-dfaf-42ef-995c-ec2d16487583")
+			(property "Reference" "LED1"
+				(at 203.2000 31.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "SK6812MINI-E"
+				(at 203.2000 29.2100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "LED_SMD:LED_SK6812MINI-E_3.2x2.8mm_P1.5mm_ReverseMount"
+				(at 203.2000 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 203.2000 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "e4b9f622-dd86-4c8f-96be-f40f8449e0f1"))
+			(pin "2" (uuid "d031fc48-b408-44dc-a6db-a9ab53c4b28f"))
+			(pin "3" (uuid "65452d71-7bdf-4027-a7e0-e829cd0e3c40"))
+			(pin "4" (uuid "f3fd22b3-1c9c-44ea-bfe6-b0705f9efaaf"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "LED1")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 200.6600 38.1000) (xy 195.5800 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "4ef2e10f-9120-46d1-8181-111dd0c46160")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 195.5800 38.1000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "fee44e43-be61-4dca-a7e2-7a9db79baf7e")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 195.5800 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 200.6600 40.6400) (xy 195.5800 40.6400))
+			(stroke (width 0) (type default))
+			(uuid "d2fd2179-ffa3-4fc2-a371-40ceab79fcff")
+			)
+	(global_label "LED2_DIN"
+			(shape passive)
+			(at 195.5800 40.6400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "68dae58f-2eef-49c3-a0bb-efef9297ebd2")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 195.5800 40.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 220.9800 38.1000) (xy 226.0600 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "49e65837-8f10-4c6c-a240-934145edc69c")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 226.0600 38.1000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "377e317b-5386-4c39-8047-600df027d8bd")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 226.0600 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 220.9800 40.6400) (xy 226.0600 40.6400))
+			(stroke (width 0) (type default))
+			(uuid "e6958d8a-4352-4d85-a13b-05d79f72d437")
+			)
+	(global_label "LED1_DIN"
+			(shape passive)
+			(at 226.0600 40.6400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "24148d80-4351-406d-bb50-43c9456a8658")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 226.0600 40.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:LED4")
+			(at 256.5400 35.5600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "d527c849-897a-4e6d-8930-e3262fe2029c")
+			(property "Reference" "LED10"
+				(at 256.5400 31.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "SK6812MINI-E"
+				(at 256.5400 29.2100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "LED_SMD:LED_SK6812MINI-E_3.2x2.8mm_P1.5mm_ReverseMount"
+				(at 256.5400 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 256.5400 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "ce537d45-6fba-47af-a127-6576af9f2ebe"))
+			(pin "2" (uuid "0deb183e-c280-4b56-968f-be0c5476a4e0"))
+			(pin "3" (uuid "a95d34b7-84e4-418b-aca7-a900d954cd7b"))
+			(pin "4" (uuid "b219d58a-1b9e-4f49-8973-7e6e335299a0"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "LED10")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 254.0000 38.1000) (xy 248.9200 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "7b34ad27-efd8-41a8-8012-e3d86b750f88")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 248.9200 38.1000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "bd021b4a-64b8-4e09-b6ec-304b294c5d4d")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 248.9200 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 254.0000 40.6400) (xy 248.9200 40.6400))
+			(stroke (width 0) (type default))
+			(uuid "878fa2ef-4659-4a7b-88fe-a07353afd079")
+			)
+	(global_label "LED11_DIN"
+			(shape passive)
+			(at 248.9200 40.6400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "cd9df611-eff7-48d6-b9be-ffa57d8850a7")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 248.9200 40.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 274.3200 38.1000) (xy 279.4000 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "48efaaff-f6b0-43ab-b2f0-cb32f9de4eb1")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 279.4000 38.1000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "29478e80-54c8-43ca-ae1e-c771586a2461")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 279.4000 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 274.3200 40.6400) (xy 279.4000 40.6400))
+			(stroke (width 0) (type default))
+			(uuid "0989322f-ea66-4862-8e9f-0fb529720a2f")
+			)
+	(global_label "LED10_DIN"
+			(shape passive)
+			(at 279.4000 40.6400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "c411af0a-496f-40cb-b743-baf03fba89f4")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 279.4000 40.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:LED4")
+			(at 312.4200 35.5600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "fe410e3e-f249-48d5-9af7-93bc19eb802d")
+			(property "Reference" "LED11"
+				(at 312.4200 31.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "SK6812MINI-E"
+				(at 312.4200 29.2100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "LED_SMD:LED_SK6812MINI-E_3.2x2.8mm_P1.5mm_ReverseMount"
+				(at 312.4200 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 312.4200 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "a6747a8d-a910-41ef-bd9f-fc69d2a28cd9"))
+			(pin "2" (uuid "f3048633-bdcb-47ad-b989-1bfb67328c8f"))
+			(pin "3" (uuid "404e24b4-c806-4415-9b02-f1e2a3627f42"))
+			(pin "4" (uuid "0b69f15a-7fbc-4c6d-a183-328fee032a5d"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "LED11")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 309.8800 38.1000) (xy 304.8000 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "8afebcdc-d6ac-4910-b85f-2466c1ad92f7")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 304.8000 38.1000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "1a3847b1-c1bb-41e9-a281-e5e096064865")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 304.8000 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 309.8800 40.6400) (xy 304.8000 40.6400))
+			(stroke (width 0) (type default))
+			(uuid "88020473-ca5f-423c-99bb-1cbc6abfdbc4")
+			)
+	(global_label "LED12_DIN"
+			(shape passive)
+			(at 304.8000 40.6400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "0ae70783-f6ca-410f-af99-5bc398a2c7da")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 304.8000 40.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 330.2000 38.1000) (xy 335.2800 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "4e7befc7-3e5c-467e-9b09-af227564ab73")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 335.2800 38.1000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "43dce5a3-66d0-42ac-b948-3cd89ab3cd85")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 335.2800 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 330.2000 40.6400) (xy 335.2800 40.6400))
+			(stroke (width 0) (type default))
+			(uuid "6267b1b6-bbd6-4780-ae0d-0c7b46be3957")
+			)
+	(global_label "LED11_DIN"
+			(shape passive)
+			(at 335.2800 40.6400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "8032d491-a4ac-44ca-9989-8e49be9b5bc5")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 335.2800 40.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:LED4")
+			(at 368.3000 35.5600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "828ddd03-ad66-4c94-b9e9-ae613f354d40")
+			(property "Reference" "LED12"
+				(at 368.3000 31.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "SK6812MINI-E"
+				(at 368.3000 29.2100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "LED_SMD:LED_SK6812MINI-E_3.2x2.8mm_P1.5mm_ReverseMount"
+				(at 368.3000 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 368.3000 35.5600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "9e63dcd3-9bf2-41bd-96b3-922996eada2d"))
+			(pin "2" (uuid "4a4f8619-611c-45b1-8776-09d3f609838a"))
+			(pin "3" (uuid "fe7497d9-e1b2-4671-a481-e7f55ece5c0d"))
+			(pin "4" (uuid "f3b119f1-fbb9-49a7-80fb-44d9976caf63"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "LED12")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 365.7600 38.1000) (xy 360.6800 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "4d9dd28a-c4a5-47b5-8039-3491e74b21cf")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 360.6800 38.1000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "8510eede-4f08-42ef-8abf-7a9af8253636")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 360.6800 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 365.7600 40.6400) (xy 360.6800 40.6400))
+			(stroke (width 0) (type default))
+			(uuid "51805492-4df6-4963-84ab-e00829a4e36f")
+			)
+	(global_label "LED13_DIN"
+			(shape passive)
+			(at 360.6800 40.6400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "de78bd9c-79de-499d-95cb-78001da0263d")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 360.6800 40.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 386.0800 38.1000) (xy 391.1600 38.1000))
+			(stroke (width 0) (type default))
+			(uuid "df170823-f231-43e5-9f04-f407b8287ac7")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 391.1600 38.1000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "d778868e-89ee-4399-87bb-8b8049295078")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 391.1600 38.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 386.0800 40.6400) (xy 391.1600 40.6400))
+			(stroke (width 0) (type default))
+			(uuid "e3a98a0f-2ce0-4ec5-8cdc-923712d076f4")
+			)
+	(global_label "LED12_DIN"
+			(shape passive)
+			(at 391.1600 40.6400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "c9b0de8e-5b8a-4994-ac29-d01d2ba39b45")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 391.1600 40.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:LED4")
+			(at 35.5600 66.0400 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "fce911d3-e039-4d9a-b1a9-6867a96a47c2")
+			(property "Reference" "LED13"
+				(at 35.5600 62.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "SK6812MINI-E"
+				(at 35.5600 59.6900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "LED_SMD:LED_SK6812MINI-E_3.2x2.8mm_P1.5mm_ReverseMount"
+				(at 35.5600 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 35.5600 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "edb2a662-4576-43d4-9822-f9c28766ad22"))
+			(pin "2" (uuid "81f64ea3-536e-4d59-a432-2a341a60248d"))
+			(pin "3" (uuid "159112ea-8074-417d-b12b-cecb8b89df62"))
+			(pin "4" (uuid "11cf079d-5267-4d9a-a2bc-52cf3c8b67e6"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "LED13")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 33.0200 68.5800) (xy 27.9400 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "b66fe052-cbfa-4179-83f4-edbf83abf66f")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 27.9400 68.5800 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "a4a874d5-bff8-40e8-b24a-433e74329b48")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 27.9400 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(no_connect
+			(at 33.0200 71.1200)
+			(uuid "a12744ea-66b1-4376-be82-a9835cf6499d")
+			)
+	(wire
+			(pts (xy 53.3400 68.5800) (xy 58.4200 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "f99ed362-9166-4129-846a-e6acac32f8e0")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 58.4200 68.5800 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "4e5ea8bf-6694-4d19-921b-97908498f60c")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 58.4200 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 53.3400 71.1200) (xy 58.4200 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "6fcf81a7-4cf2-4aed-810a-80bac74140a5")
+			)
+	(global_label "LED13_DIN"
+			(shape passive)
+			(at 58.4200 71.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "6c0d3ad0-9ee8-4188-8800-89057ad6d12f")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 58.4200 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:LED4")
+			(at 91.4400 66.0400 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "ff5cf362-cac3-48e3-ad30-94bacf0e56d7")
+			(property "Reference" "LED2"
+				(at 91.4400 62.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "SK6812MINI-E"
+				(at 91.4400 59.6900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "LED_SMD:LED_SK6812MINI-E_3.2x2.8mm_P1.5mm_ReverseMount"
+				(at 91.4400 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 91.4400 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "3344940a-a3e5-471c-8d4e-8e175b068423"))
+			(pin "2" (uuid "d97be36b-7a0e-4eea-ac9c-31bc3babf156"))
+			(pin "3" (uuid "5c15c8a2-db1f-4b76-90d6-756e5f9e0cac"))
+			(pin "4" (uuid "fb646dc0-812d-40ab-bb28-e522b1b219d8"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "LED2")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 88.9000 68.5800) (xy 83.8200 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "d1aee9f7-57e5-4f04-881c-e8e4387781de")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 83.8200 68.5800 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "aeef6acf-a718-438a-8dd1-e92e51dcaf11")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 83.8200 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 88.9000 71.1200) (xy 83.8200 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "f2182d4f-0c9f-4801-80cb-f25e12622272")
+			)
+	(global_label "LED3_DIN"
+			(shape passive)
+			(at 83.8200 71.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "6f401b5b-e3b5-48a0-8d01-9857e0f65435")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 83.8200 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 109.2200 68.5800) (xy 114.3000 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "94704915-5c94-4638-9e77-9d12adaad305")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 114.3000 68.5800 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "ac1b0acf-89eb-40bf-a234-6a388df6ae69")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 114.3000 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 109.2200 71.1200) (xy 114.3000 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "3322c5e5-2d59-4d8e-b228-a4af74edf10e")
+			)
+	(global_label "LED2_DIN"
+			(shape passive)
+			(at 114.3000 71.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "38ca1306-94b1-4678-a433-e7d9c47b2470")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 114.3000 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:LED4")
+			(at 147.3200 66.0400 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "90600979-0793-499d-ba8e-ab50e98d2d9d")
+			(property "Reference" "LED3"
+				(at 147.3200 62.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "SK6812MINI-E"
+				(at 147.3200 59.6900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "LED_SMD:LED_SK6812MINI-E_3.2x2.8mm_P1.5mm_ReverseMount"
+				(at 147.3200 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 147.3200 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "db7de022-152d-41d5-9033-290ba4b2c670"))
+			(pin "2" (uuid "3423e960-c37a-49e6-8623-620ea59d9847"))
+			(pin "3" (uuid "8fe5c796-3ccb-4263-ae41-6998f0fb0795"))
+			(pin "4" (uuid "17bb3fef-821e-44d3-b0f5-94de0c5655a3"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "LED3")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 144.7800 68.5800) (xy 139.7000 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "821860d2-bee4-4b03-9706-41a0307e307a")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 139.7000 68.5800 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "65574f52-f9b1-4482-b5f3-772db72c30b6")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 139.7000 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 144.7800 71.1200) (xy 139.7000 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "4fe5c1fb-dfee-4f76-b88e-089a2c4c383a")
+			)
+	(global_label "LED4_DIN"
+			(shape passive)
+			(at 139.7000 71.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "40f3f978-c2af-44b2-a123-980abb427679")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 139.7000 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 165.1000 68.5800) (xy 170.1800 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "1063fa46-e2dd-43f1-aacb-fca494623f23")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 170.1800 68.5800 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "a868f85d-6675-49b3-b7c7-8414b59c4752")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 170.1800 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 165.1000 71.1200) (xy 170.1800 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "7028bb54-cd09-414d-9b2e-5de82c317b42")
+			)
+	(global_label "LED3_DIN"
+			(shape passive)
+			(at 170.1800 71.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "74731e5c-132c-430e-b876-d475b7bb3c05")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 170.1800 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:LED4")
+			(at 203.2000 66.0400 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "8a38ef50-8b08-4937-bee3-d1fe72aa270f")
+			(property "Reference" "LED4"
+				(at 203.2000 62.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "SK6812MINI-E"
+				(at 203.2000 59.6900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "LED_SMD:LED_SK6812MINI-E_3.2x2.8mm_P1.5mm_ReverseMount"
+				(at 203.2000 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 203.2000 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "773167bc-9e60-4fc0-95f1-4526de7a84b3"))
+			(pin "2" (uuid "7dedfdc0-3df9-40f5-a1e2-fec236618b17"))
+			(pin "3" (uuid "d340798e-8225-48e0-8108-2ac1deea9365"))
+			(pin "4" (uuid "01cef72b-8110-4335-86d2-0000c1008ea2"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "LED4")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 200.6600 68.5800) (xy 195.5800 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "5f524345-ebd9-40b6-89b8-cac3bcff5710")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 195.5800 68.5800 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "f8ce4d00-9c16-4fe8-b5b4-94675f5b1a4f")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 195.5800 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 200.6600 71.1200) (xy 195.5800 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "f451c114-004f-45df-b9e8-d16eeeb2d1c3")
+			)
+	(global_label "LED5_DIN"
+			(shape passive)
+			(at 195.5800 71.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "10a443db-2db6-4f9d-8e0e-13d64c54015a")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 195.5800 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 220.9800 68.5800) (xy 226.0600 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "db3a1a5f-e0a6-486d-bf21-1c34082fec05")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 226.0600 68.5800 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "929bc397-0411-44ac-920d-4e2f38f1a092")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 226.0600 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 220.9800 71.1200) (xy 226.0600 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "ebc2148a-7e8e-4be4-bed6-0feb74cf9481")
+			)
+	(global_label "LED4_DIN"
+			(shape passive)
+			(at 226.0600 71.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "c54c0ef3-cf37-4832-ba9e-aa0666530d72")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 226.0600 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:LED4")
+			(at 256.5400 66.0400 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "e18d8e14-58b3-466e-a039-2a80e654d02c")
+			(property "Reference" "LED5"
+				(at 256.5400 62.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "SK6812MINI-E"
+				(at 256.5400 59.6900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "LED_SMD:LED_SK6812MINI-E_3.2x2.8mm_P1.5mm_ReverseMount"
+				(at 256.5400 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 256.5400 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "62fff751-02d1-46d2-8b25-02dc6008ef33"))
+			(pin "2" (uuid "3b20e042-6f45-4994-bbfe-c39e4ac957af"))
+			(pin "3" (uuid "d8f37de9-d79b-4cc4-8b06-3e877a8d86c3"))
+			(pin "4" (uuid "2f84e286-e80d-4540-a3ab-be7b2ab62c9e"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "LED5")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 254.0000 68.5800) (xy 248.9200 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "5b0fe3be-594a-433b-9fe9-579b9e86f520")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 248.9200 68.5800 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "cb43081b-2688-4f5c-a3d7-1314f81c9d20")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 248.9200 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 254.0000 71.1200) (xy 248.9200 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "e8c3fcb9-ec1d-4f41-921e-d8f4984c5d92")
+			)
+	(global_label "LED6_DIN"
+			(shape passive)
+			(at 248.9200 71.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "4239007e-7105-4336-838c-f62559736e66")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 248.9200 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 274.3200 68.5800) (xy 279.4000 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "08c9b139-6412-4afe-929b-19e9d4ef7624")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 279.4000 68.5800 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "497c846f-a561-4666-9316-3930e8a5d37b")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 279.4000 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 274.3200 71.1200) (xy 279.4000 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "28b50b77-f894-4e32-81eb-5a278f1221fb")
+			)
+	(global_label "LED5_DIN"
+			(shape passive)
+			(at 279.4000 71.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "274b7b94-18d1-4bd5-b39f-bdd758df7e30")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 279.4000 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:LED4")
+			(at 312.4200 66.0400 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "13ad28df-a801-40bf-af23-a27f828c1573")
+			(property "Reference" "LED6"
+				(at 312.4200 62.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "SK6812MINI-E"
+				(at 312.4200 59.6900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "LED_SMD:LED_SK6812MINI-E_3.2x2.8mm_P1.5mm_ReverseMount"
+				(at 312.4200 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 312.4200 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "ee6dbc86-7ce2-468f-b95f-dd55d5e7a0ed"))
+			(pin "2" (uuid "6ce8b947-1b5e-465e-b13f-207782b23f07"))
+			(pin "3" (uuid "78610d14-d27a-4770-9f4c-ff97b1572017"))
+			(pin "4" (uuid "78fb1b99-2eb8-4a20-9018-c7684f53443c"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "LED6")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 309.8800 68.5800) (xy 304.8000 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "4a22376e-ce7f-418b-8765-f3c09eb0a1d6")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 304.8000 68.5800 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "aee474ea-71af-4c83-969d-e1501504dee0")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 304.8000 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 309.8800 71.1200) (xy 304.8000 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "48315d9d-9341-463e-b7f9-2f44ab10c2ab")
+			)
+	(global_label "LED7_DIN"
+			(shape passive)
+			(at 304.8000 71.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "ae2325ac-4bf2-4824-b4ce-71ceed08c087")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 304.8000 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 330.2000 68.5800) (xy 335.2800 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "909ecd15-1c66-4201-9bbf-c0204a687150")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 335.2800 68.5800 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "9ad812ab-8fea-4150-8c0f-2d9784ab6d6d")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 335.2800 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 330.2000 71.1200) (xy 335.2800 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "20a2823d-c763-438b-b9d0-4e03142f4516")
+			)
+	(global_label "LED6_DIN"
+			(shape passive)
+			(at 335.2800 71.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "355d0437-bee6-41c8-8ec1-3169e433e2ec")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 335.2800 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:LED4")
+			(at 368.3000 66.0400 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "704601fd-517f-441b-81d6-b306149efc07")
+			(property "Reference" "LED7"
+				(at 368.3000 62.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "SK6812MINI-E"
+				(at 368.3000 59.6900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "LED_SMD:LED_SK6812MINI-E_3.2x2.8mm_P1.5mm_ReverseMount"
+				(at 368.3000 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 368.3000 66.0400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "7643faf3-7309-4d74-9752-183bcea666ed"))
+			(pin "2" (uuid "344fdc85-9f20-432b-89a1-6b6368f5978e"))
+			(pin "3" (uuid "3f0e1377-2645-4fe1-96c9-455d20d13fef"))
+			(pin "4" (uuid "b4a0499c-a1ca-4f12-ace1-f68fc22ec2c1"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "LED7")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 365.7600 68.5800) (xy 360.6800 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "2f4a7858-3f2a-48af-91a2-a17803964f07")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 360.6800 68.5800 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "38caad29-9713-4ca1-ba52-3a948293f63e")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 360.6800 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 365.7600 71.1200) (xy 360.6800 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "19050363-78d2-4ba6-864a-1d0a8ae55b01")
+			)
+	(global_label "LED8_DIN"
+			(shape passive)
+			(at 360.6800 71.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "79e67539-55fa-4896-9b15-556b470626dc")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 360.6800 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 386.0800 68.5800) (xy 391.1600 68.5800))
+			(stroke (width 0) (type default))
+			(uuid "c8de0fa7-7a87-4858-ba62-fa4544639de5")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 391.1600 68.5800 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "99177311-b8d7-4243-8e33-811dd76a9956")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 391.1600 68.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 386.0800 71.1200) (xy 391.1600 71.1200))
+			(stroke (width 0) (type default))
+			(uuid "1ce92161-828d-426c-a916-21775625c9a3")
+			)
+	(global_label "LED7_DIN"
+			(shape passive)
+			(at 391.1600 71.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "5a4c48f4-f787-4a2b-90c2-d18f4fa89122")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 391.1600 71.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:LED4")
+			(at 35.5600 99.0600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "f227088c-7f04-477f-9d86-ca4770a02bc1")
+			(property "Reference" "LED8"
+				(at 35.5600 95.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "SK6812MINI-E"
+				(at 35.5600 92.7100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "LED_SMD:LED_SK6812MINI-E_3.2x2.8mm_P1.5mm_ReverseMount"
+				(at 35.5600 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 35.5600 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "64485969-b8b8-410b-afe6-bf8d652c4d30"))
+			(pin "2" (uuid "13b0e72b-dc8a-4781-be61-ed803b4dba38"))
+			(pin "3" (uuid "e2f96d1b-b931-4dd4-b1e1-f277f9669083"))
+			(pin "4" (uuid "0c3a8564-7c49-44ed-b4b6-d50a0d9c2861"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "LED8")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 33.0200 101.6000) (xy 27.9400 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "9fd2a0c7-2bf8-45af-bcb5-86cbc9c5a25d")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 27.9400 101.6000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "4d6c50d0-743c-4459-ae54-25a50cae8787")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 27.9400 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 33.0200 104.1400) (xy 27.9400 104.1400))
+			(stroke (width 0) (type default))
+			(uuid "c5f7431f-19fd-4bfc-88d9-af759dfe556f")
+			)
+	(global_label "LED9_DIN"
+			(shape passive)
+			(at 27.9400 104.1400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "bc571529-aff8-4842-b943-d5ef865028fc")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 27.9400 104.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 53.3400 101.6000) (xy 58.4200 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "b1548846-0089-4947-b411-490cc239dfa5")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 58.4200 101.6000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "a69c1660-2114-4b09-90b2-9161c4719592")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 58.4200 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 53.3400 104.1400) (xy 58.4200 104.1400))
+			(stroke (width 0) (type default))
+			(uuid "7498c60b-84aa-4088-b233-e681fb9a18e0")
+			)
+	(global_label "LED8_DIN"
+			(shape passive)
+			(at 58.4200 104.1400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "f022e4a1-3d11-42fa-8443-be93671a5a93")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 58.4200 104.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:LED4")
+			(at 91.4400 99.0600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "2fe4d992-c82c-406a-968d-d963dddb4576")
+			(property "Reference" "LED9"
+				(at 91.4400 95.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "SK6812MINI-E"
+				(at 91.4400 92.7100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "LED_SMD:LED_SK6812MINI-E_3.2x2.8mm_P1.5mm_ReverseMount"
+				(at 91.4400 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 91.4400 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "33d7a169-18a0-43f2-aee0-aed55696a542"))
+			(pin "2" (uuid "017491b0-0d3f-49ee-83d7-ad24cb69e1fd"))
+			(pin "3" (uuid "1755cfe4-a73e-4028-a8b6-fe8cb20250d0"))
+			(pin "4" (uuid "d4cfd8b9-f8cf-497e-b0de-e64a58b20844"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "LED9")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 88.9000 101.6000) (xy 83.8200 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "a714c872-71e4-4847-b142-d9f9126180db")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 83.8200 101.6000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "6bf7832f-3f3a-45c4-b58e-bb75738a4486")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 83.8200 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 88.9000 104.1400) (xy 83.8200 104.1400))
+			(stroke (width 0) (type default))
+			(uuid "431214b4-46e5-4c6e-9fa9-1463ea359976")
+			)
+	(global_label "LED10_DIN"
+			(shape passive)
+			(at 83.8200 104.1400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "79b5b702-77c1-48a6-b72b-e1b453481293")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 83.8200 104.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 109.2200 101.6000) (xy 114.3000 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "c6f2d663-4728-4631-89ce-069bbf83e07d")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 114.3000 101.6000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "a392b01a-4fa6-4c4e-94e0-127e2ea4782c")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 114.3000 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 109.2200 104.1400) (xy 114.3000 104.1400))
+			(stroke (width 0) (type default))
+			(uuid "378517f2-50af-4c28-bc98-a1750cba79a6")
+			)
+	(global_label "LED9_DIN"
+			(shape passive)
+			(at 114.3000 104.1400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "d1bb0c1c-391a-4b71-b20b-3c7db43b4373")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 114.3000 104.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:R")
+			(at 147.3200 99.0600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "36e6b86f-6555-4a40-9e83-23449255664d")
+			(property "Reference" "R13"
+				(at 147.3200 95.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100k"
+				(at 147.3200 92.7100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+				(at 147.3200 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 147.3200 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "6e201262-ac8d-4882-b6ed-1aee9a7157e7"))
+			(pin "2" (uuid "b0e79e96-244e-4e08-b2bd-b8181d02f98c"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "R13")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 144.7800 101.6000) (xy 139.7000 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "3c97cc26-dc9a-4f39-a998-32849ed0d60a")
+			)
+	(global_label "RGB_OE_N"
+			(shape passive)
+			(at 139.7000 101.6000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "87efc1e1-3523-401b-81b7-75998f7e0669")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 139.7000 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 165.1000 101.6000) (xy 170.1800 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "29c1ec95-e735-49ea-869a-a901e1e5be50")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 170.1800 101.6000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "a25a5785-56c4-462a-9752-1cced518ebc8")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 170.1800 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:R")
+			(at 203.2000 99.0600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "04f967b0-59da-47f8-9eb6-a0b5bf5dbcb7")
+			(property "Reference" "R20"
+				(at 203.2000 95.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "1k"
+				(at 203.2000 92.7100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+				(at 203.2000 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 203.2000 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "5f7fd7ad-99b3-4b36-9739-7947b099670a"))
+			(pin "2" (uuid "999c6b20-1d7f-49ed-9e72-a9634e7e5444"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "R20")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 200.6600 101.6000) (xy 195.5800 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "a3281f59-66f3-49f9-8925-c805ad5621c5")
+			)
+	(global_label "RGB_DATA"
+			(shape passive)
+			(at 195.5800 101.6000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "d4f56e4e-0d47-419b-8020-1e5b8248da23")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 195.5800 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 220.9800 101.6000) (xy 226.0600 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "f7457969-139e-4609-9d97-9925d9591dd5")
+			)
+	(global_label "RGB_DATA_BUF"
+			(shape passive)
+			(at 226.0600 101.6000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "967c8121-734e-4c7d-95ea-20e0508aa456")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 226.0600 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:R")
+			(at 256.5400 99.0600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "8330a4f6-fb08-4744-9c04-ccf053581847")
+			(property "Reference" "R21"
+				(at 256.5400 95.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "1k"
+				(at 256.5400 92.7100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+				(at 256.5400 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 256.5400 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "d055904e-69fd-4a93-a731-9c46926733ba"))
+			(pin "2" (uuid "e917ecd0-540c-4cd4-8026-aa60cc021a54"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "R21")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 254.0000 101.6000) (xy 248.9200 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "b4e1c3a5-378c-4454-a886-4363ffa2f8e9")
+			)
+	(global_label "TOUCH_RAW"
+			(shape passive)
+			(at 248.9200 101.6000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "72cd587a-429a-44f6-a75e-f3927f8e9801")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 248.9200 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 274.3200 101.6000) (xy 279.4000 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "12c08097-a7d9-4508-942b-b3e62b722590")
+			)
+	(global_label "TOUCH_OUT"
+			(shape passive)
+			(at 279.4000 101.6000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "05318953-1dd2-4b54-ba06-4b46204d9608")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 279.4000 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:R")
+			(at 312.4200 99.0600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "cdcee99e-e865-497e-9a35-a46f584a8021")
+			(property "Reference" "R22"
+				(at 312.4200 95.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "33R"
+				(at 312.4200 92.7100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+				(at 312.4200 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 312.4200 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "d2013e53-93dd-4d22-a389-e3c45a54b5ff"))
+			(pin "2" (uuid "55128605-a50f-4f80-a232-2fb184218cf3"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "R22")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 309.8800 101.6000) (xy 304.8000 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "36408f6c-1a82-4f47-b09f-fcf04b97c6ec")
+			)
+	(global_label "RGB_OUT_BUF"
+			(shape passive)
+			(at 304.8000 101.6000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "0da83b67-983c-46f5-a919-8d7dbe92afee")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 304.8000 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 330.2000 101.6000) (xy 335.2800 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "7b6575b0-e292-4486-a919-101715906919")
+			)
+	(global_label "LED1_DIN"
+			(shape passive)
+			(at 335.2800 101.6000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "5aa1c4a3-12b9-44b0-846c-72e88388cd2c")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 335.2800 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 368.3000 99.0600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "3fb17d9f-1f60-481e-b389-c636ec44f552")
+			(property "Reference" "C1"
+				(at 368.3000 95.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100nF"
+				(at 368.3000 92.7100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 368.3000 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 368.3000 99.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "d001ae6f-745a-4c13-a0af-1372ed6ae9b5"))
+			(pin "2" (uuid "192283e8-b081-4b36-a35d-50fe3c914ecc"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "C1")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 365.7600 101.6000) (xy 360.6800 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "6fa6e4c1-9225-46a1-8f4f-fd731a4cba3e")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 360.6800 101.6000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "2cc971cf-380b-4d79-bb39-95f4c4b9911b")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 360.6800 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 386.0800 101.6000) (xy 391.1600 101.6000))
+			(stroke (width 0) (type default))
+			(uuid "8d24810d-c8d0-4402-b667-09d15edbc2a3")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 391.1600 101.6000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "513760cb-1504-4a96-b913-22bf74765ce1")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 391.1600 101.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 35.5600 132.0800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "89c1980d-4493-4b81-91fa-6920a7f0b8eb")
+			(property "Reference" "C10"
+				(at 35.5600 128.2700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100nF"
+				(at 35.5600 125.7300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 35.5600 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 35.5600 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "b804776d-6f2a-43f7-bd50-504d1ba755fc"))
+			(pin "2" (uuid "3a27969d-e288-4cf5-b038-f05664db1a00"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "C10")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 33.0200 134.6200) (xy 27.9400 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "f970ee40-990d-49b6-8345-98d89f276da7")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 27.9400 134.6200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "b994423d-aed7-4336-9dd5-91867c90484c")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 27.9400 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 53.3400 134.6200) (xy 58.4200 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "b505be18-2268-4d4e-b168-4df2fbb9802b")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 58.4200 134.6200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "03058243-f243-42f4-ab83-215154488a56")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 58.4200 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 91.4400 132.0800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "335495ab-f98b-4e48-b00b-82771b8a1bb1")
+			(property "Reference" "C11"
+				(at 91.4400 128.2700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100nF"
+				(at 91.4400 125.7300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 91.4400 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 91.4400 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "505cacf1-e82f-4d3d-96e1-e98c6ba2be9a"))
+			(pin "2" (uuid "45911c6a-3622-466f-90f6-f4b513c061f7"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "C11")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 88.9000 134.6200) (xy 83.8200 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "da15e513-8aaa-49a4-95cf-64bb5173b0d4")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 83.8200 134.6200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "0ecfa8c2-cc5b-401a-b392-9548ec9fef48")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 83.8200 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 109.2200 134.6200) (xy 114.3000 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "5ed1cad3-4bfe-4fa9-9788-05a6f3464ec6")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 114.3000 134.6200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "4175f686-13c0-4941-9d4c-5b3d5b295f46")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 114.3000 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 147.3200 132.0800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "a327a992-f1ab-4731-9556-9abda7424026")
+			(property "Reference" "C12"
+				(at 147.3200 128.2700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100nF"
+				(at 147.3200 125.7300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 147.3200 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 147.3200 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "e3d4eed7-2713-4cd8-9bf0-df57a57359cb"))
+			(pin "2" (uuid "51a947f1-63b9-4dec-93cb-cf6faf62ad2a"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "C12")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 144.7800 134.6200) (xy 139.7000 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "c6d460b3-66f1-42d7-a679-f86264081c72")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 139.7000 134.6200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "7c488d3c-be16-462b-90d5-b2d92fae4052")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 139.7000 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 165.1000 134.6200) (xy 170.1800 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "48b49e2c-99b2-4a16-bbd2-e7d27c499ca6")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 170.1800 134.6200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "08615d91-41f8-4689-adfe-e6f64c688725")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 170.1800 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 203.2000 132.0800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "a6ac48c7-4211-439f-8664-eb674131f49c")
+			(property "Reference" "C13"
+				(at 203.2000 128.2700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100nF"
+				(at 203.2000 125.7300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 203.2000 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 203.2000 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "458ab0c8-3f05-42f0-8b7a-0f68107ae1cc"))
+			(pin "2" (uuid "85d212e8-346c-46cb-b791-63cc81151346"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "C13")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 200.6600 134.6200) (xy 195.5800 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "0dffeaee-efba-42f7-93f2-41d81fccf404")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 195.5800 134.6200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "26066330-fac9-462a-8f7c-1298669e5137")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 195.5800 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 220.9800 134.6200) (xy 226.0600 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "818865fc-7c34-4862-8faa-b25c34842605")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 226.0600 134.6200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "836cd6bd-0a4c-479f-8807-6051a1144280")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 226.0600 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 256.5400 132.0800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "b8b1ebde-0060-421c-9f04-425a3cc56d84")
+			(property "Reference" "C2"
+				(at 256.5400 128.2700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100nF"
+				(at 256.5400 125.7300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 256.5400 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 256.5400 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "92ccb45a-1e63-410c-90a8-7e3ce9b32fce"))
+			(pin "2" (uuid "501b3d6f-f94d-4a44-bbdd-fde4183419d1"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "C2")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 254.0000 134.6200) (xy 248.9200 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "f9c3ad55-c768-4041-8160-e4cde83265ce")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 248.9200 134.6200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "f320aa6f-e57b-4963-ba89-65d26271b84d")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 248.9200 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 274.3200 134.6200) (xy 279.4000 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "9d6f7ef4-383e-4d60-b24a-60f0d6233de1")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 279.4000 134.6200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "81f8dac8-93ca-43ee-86de-6e1125c362a2")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 279.4000 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 312.4200 132.0800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "31ea6043-7da0-4a68-85a1-d88a6757696e")
+			(property "Reference" "C3"
+				(at 312.4200 128.2700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100nF"
+				(at 312.4200 125.7300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 312.4200 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 312.4200 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "1b494e9c-c2e7-4569-b6e2-7909e3f6df80"))
+			(pin "2" (uuid "124bb99e-c9bd-4697-90cb-bf3d420e8803"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "C3")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 309.8800 134.6200) (xy 304.8000 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "6ab002da-8d90-40a6-ad02-abaaa8f94e26")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 304.8000 134.6200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "e272a445-974c-460a-b680-626d669d6ddf")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 304.8000 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 330.2000 134.6200) (xy 335.2800 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "7aa6f14d-2527-4db8-95f5-7a8f19d7461d")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 335.2800 134.6200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "220748e9-0e45-40cf-ab2f-b0cb1aecca80")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 335.2800 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 368.3000 132.0800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "b61e50ab-4761-496b-85e4-ed1631059015")
+			(property "Reference" "C34"
+				(at 368.3000 128.2700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "10nF"
+				(at 368.3000 125.7300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 368.3000 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 368.3000 132.0800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "7fb7777f-acde-49a6-9a36-878a2aa470cd"))
+			(pin "2" (uuid "134ba242-54c5-478c-9364-cd129e57b743"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "C34")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 365.7600 134.6200) (xy 360.6800 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "7da73b4c-5c24-499b-a587-5b341bb7d252")
+			)
+	(global_label "TOUCH_SNS1"
+			(shape passive)
+			(at 360.6800 134.6200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "8fbb6dba-673a-4d4a-8438-c595a478f5de")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 360.6800 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 386.0800 134.6200) (xy 391.1600 134.6200))
+			(stroke (width 0) (type default))
+			(uuid "ee9a3758-5c29-4958-a741-22d6ffc00189")
+			)
+	(global_label "TOUCH_SNS2"
+			(shape passive)
+			(at 391.1600 134.6200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "98b7e85d-f90d-4502-8033-09b8ea73a168")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 391.1600 134.6200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 35.5600 165.1000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "4089f6fb-17ef-4d08-95bc-9a89b805ebe6")
+			(property "Reference" "C4"
+				(at 35.5600 161.2900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100nF"
+				(at 35.5600 158.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 35.5600 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 35.5600 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "8c70ea20-0ec7-401b-8a44-ae1ffcf9cd70"))
+			(pin "2" (uuid "addaadfe-cb58-4081-8631-6faf92829230"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "C4")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 33.0200 167.6400) (xy 27.9400 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "7c040592-3b07-4c4d-b5f7-e1e750b809ec")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 27.9400 167.6400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "2b3bb99a-173c-49ba-846b-630b4ab4d2ba")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 27.9400 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 53.3400 167.6400) (xy 58.4200 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "176c86bc-436b-4955-8765-af4af63ac6da")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 58.4200 167.6400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "f2f308cb-0faf-4dd3-8cb6-afe3f5b1bc49")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 58.4200 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 91.4400 165.1000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "0397c623-cfde-4b2e-bf86-bc37cf29825c")
+			(property "Reference" "C5"
+				(at 91.4400 161.2900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100nF"
+				(at 91.4400 158.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 91.4400 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 91.4400 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "9baf6f40-ef25-4642-88e9-7fce7ade886a"))
+			(pin "2" (uuid "1789d0ec-027c-46bc-9c9c-eca528707399"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "C5")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 88.9000 167.6400) (xy 83.8200 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "ff38ac52-971d-42a3-a8f6-e2a655272a9b")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 83.8200 167.6400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "95ce4ed7-8495-494e-9b8c-85518a22860d")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 83.8200 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 109.2200 167.6400) (xy 114.3000 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "df14c4c9-027e-4706-a509-a85840f0d0cd")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 114.3000 167.6400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "ea78942a-2f3b-4434-94a6-1cebf6105642")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 114.3000 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 147.3200 165.1000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "e28b19a5-78c3-4020-8772-6fa7d80b0eaf")
+			(property "Reference" "C6"
+				(at 147.3200 161.2900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100nF"
+				(at 147.3200 158.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 147.3200 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 147.3200 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "92fa7708-5da6-4945-9969-05c4e70af290"))
+			(pin "2" (uuid "8678d7a7-d95c-49cb-82ce-a621485ab1e3"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "C6")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 144.7800 167.6400) (xy 139.7000 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "fd0609d0-aec0-47a1-8ab0-8824506fb62d")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 139.7000 167.6400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "582a1f16-d851-41f8-b31b-a6155fda8bbf")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 139.7000 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 165.1000 167.6400) (xy 170.1800 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "a08618aa-2ecc-4373-b036-29959d2cd463")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 170.1800 167.6400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "2d990a36-21ea-48e6-bc5f-31ce2b46d06f")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 170.1800 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 203.2000 165.1000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "456e2630-d44d-4508-9820-21db7a90f8de")
+			(property "Reference" "C7"
+				(at 203.2000 161.2900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100nF"
+				(at 203.2000 158.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 203.2000 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 203.2000 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "26d2b3df-db14-4342-bb9d-92ecd3ce7c7b"))
+			(pin "2" (uuid "8982cc87-c7e6-4427-a01a-bdad4e5e3346"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "C7")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 200.6600 167.6400) (xy 195.5800 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "3bdd79dc-be41-4ed3-9300-ff6f57235f99")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 195.5800 167.6400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "b1dad715-a5c1-47e2-b550-394dde3334e4")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 195.5800 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 220.9800 167.6400) (xy 226.0600 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "4697c3f4-a074-49c0-a37c-086c895a4e8a")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 226.0600 167.6400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "dae44c96-6cc6-42ec-8c51-0c422e684988")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 226.0600 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 256.5400 165.1000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "f49ea138-da98-419d-b2ff-7bbd008ae72b")
+			(property "Reference" "C8"
+				(at 256.5400 161.2900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100nF"
+				(at 256.5400 158.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 256.5400 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 256.5400 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "d17ff0a1-d865-4b17-b438-a11371cae748"))
+			(pin "2" (uuid "35c4ff4c-5b0e-4aa1-bd1b-84eb139c38ee"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "C8")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 254.0000 167.6400) (xy 248.9200 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "4fef937d-4bba-4dfb-804f-38a1c64a3962")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 248.9200 167.6400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "bad1a390-7691-45d7-a876-64d4c92b0fef")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 248.9200 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 274.3200 167.6400) (xy 279.4000 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "f3ff695b-db9b-4fe6-a80c-b9c02c1de0ae")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 279.4000 167.6400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "922d26d5-b5cb-41ed-a6b9-62ed8ba771a6")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 279.4000 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 312.4200 165.1000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "52e47091-2bc5-4d4b-b5c3-1b41901f0658")
+			(property "Reference" "C9"
+				(at 312.4200 161.2900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "100nF"
+				(at 312.4200 158.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+				(at 312.4200 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 312.4200 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "98f774dc-3568-48f0-b090-dd449a2b14fa"))
+			(pin "2" (uuid "684030f5-d049-41e0-99da-171436bb861d"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "C9")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 309.8800 167.6400) (xy 304.8000 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "13ee927f-a62a-42cb-b764-3b9030f6638a")
+			)
+	(global_label "+5V_LED"
+			(shape passive)
+			(at 304.8000 167.6400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "5e15639c-e59c-4437-a06b-905f27e2f144")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 304.8000 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 330.2000 167.6400) (xy 335.2800 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "bbe80433-ab86-4fa3-9c7c-8f995b460b03")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 335.2800 167.6400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "60e311f0-98b1-40d0-8358-84d1bb439c11")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 335.2800 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:SW2")
+			(at 368.3000 165.1000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "e1314c7d-24db-423e-bfe7-64d4052aed69")
+			(property "Reference" "HS1"
+				(at 368.3000 161.2900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "CPG151101S11"
+				(at 368.3000 158.7500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "FocalPoint:Kailh_CPG151101S11_Hotswap"
+				(at 368.3000 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 368.3000 165.1000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "53390b31-92d2-4297-8c79-2dd02e8a0865"))
+			(pin "2" (uuid "111a3a0b-e498-48ab-8573-1d03eb66480f"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "HS1")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 365.7600 167.6400) (xy 360.6800 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "78f60862-b48c-42ef-a0e0-88f2d03bacce")
+			)
+	(global_label "KEY1"
+			(shape passive)
+			(at 360.6800 167.6400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "6f010678-6d64-47a2-a1a1-80d480b5ae34")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 360.6800 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 386.0800 167.6400) (xy 391.1600 167.6400))
+			(stroke (width 0) (type default))
+			(uuid "4793341e-2d6c-47f0-97d3-86cab979cba2")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 391.1600 167.6400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "7b54867d-4d4b-4e80-a6d0-e71cfe406630")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 391.1600 167.6400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:SW2")
+			(at 35.5600 195.5800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "8f68892a-33fb-4468-858b-b82e84512756")
+			(property "Reference" "HS10"
+				(at 35.5600 191.7700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "CPG151101S11"
+				(at 35.5600 189.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "FocalPoint:Kailh_CPG151101S11_Hotswap"
+				(at 35.5600 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 35.5600 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "c62cef0f-c2e2-46c7-a691-45cbb03ed74c"))
+			(pin "2" (uuid "db220bcf-3608-4851-b893-6d2ca9a1b5bc"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "HS10")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 33.0200 198.1200) (xy 27.9400 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "8564a8d8-01ff-46e1-8148-e813309f2a01")
+			)
+	(global_label "KEY10"
+			(shape passive)
+			(at 27.9400 198.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "e292c325-3048-4f25-b81c-323ef363e44c")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 27.9400 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 53.3400 198.1200) (xy 58.4200 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "21e412da-fdd6-47f4-af40-d7e117c6cbcf")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 58.4200 198.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "18220d89-05b0-4f1f-96d2-0410520f443a")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 58.4200 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:SW2")
+			(at 91.4400 195.5800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "816dc45d-1979-4881-8966-b3119b27e43d")
+			(property "Reference" "HS11"
+				(at 91.4400 191.7700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "CPG151101S11"
+				(at 91.4400 189.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "FocalPoint:Kailh_CPG151101S11_Hotswap"
+				(at 91.4400 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 91.4400 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "e44ae8fc-cd6c-48d0-94ea-5297a7dcb21d"))
+			(pin "2" (uuid "0eed64e6-a750-4220-b44c-243484e4f736"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "HS11")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 88.9000 198.1200) (xy 83.8200 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "35ff1403-707c-4bbd-b50e-1bad62b91454")
+			)
+	(global_label "KEY11"
+			(shape passive)
+			(at 83.8200 198.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "cd2e0013-70be-46a9-ba43-5536ee2df610")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 83.8200 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 109.2200 198.1200) (xy 114.3000 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "ad5ef8ae-4fa6-4f17-adea-18f5eda5c6ba")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 114.3000 198.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "d4f020a1-f979-4904-8669-0a50d97b18f5")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 114.3000 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:SW2")
+			(at 147.3200 195.5800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "5108cfc2-465a-47b4-9be5-3afd2af0485d")
+			(property "Reference" "HS12"
+				(at 147.3200 191.7700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "CPG151101S11"
+				(at 147.3200 189.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "FocalPoint:Kailh_CPG151101S11_Hotswap"
+				(at 147.3200 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 147.3200 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "412855d2-2df0-4de0-bf6a-86e48742a68f"))
+			(pin "2" (uuid "df2b4531-7a1c-4e82-a3c2-53e11c75a2e3"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "HS12")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 144.7800 198.1200) (xy 139.7000 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "f10f886c-691a-4d49-a2a7-560e04e0d902")
+			)
+	(global_label "KEY12"
+			(shape passive)
+			(at 139.7000 198.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "59108b63-824e-43a4-9ce4-2da3866784a9")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 139.7000 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 165.1000 198.1200) (xy 170.1800 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "96fae758-3968-4062-8f83-0d28224243e4")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 170.1800 198.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "eb03d361-939a-481c-986f-338f31ae9f71")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 170.1800 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:SW2")
+			(at 203.2000 195.5800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "a216c33f-7a89-4b6b-9280-4a432b86279b")
+			(property "Reference" "HS13"
+				(at 203.2000 191.7700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "CPG151101S11"
+				(at 203.2000 189.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "FocalPoint:Kailh_CPG151101S11_Hotswap"
+				(at 203.2000 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 203.2000 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "81a55fc4-5a3f-442b-b4f6-7ef67889c4cb"))
+			(pin "2" (uuid "45e5037e-8dc9-4680-b038-85d6bb9b24a4"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "HS13")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 200.6600 198.1200) (xy 195.5800 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "ebbe0fed-740b-4ce3-aa6b-5aa9e74021fe")
+			)
+	(global_label "KEY13"
+			(shape passive)
+			(at 195.5800 198.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "c4a66cbb-87ae-437f-bd4a-65bc919f2af0")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 195.5800 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 220.9800 198.1200) (xy 226.0600 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "aa120e15-2643-46fa-9d15-822f24111323")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 226.0600 198.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "c3134bde-53c3-45e2-a32e-a43567047c19")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 226.0600 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:SW2")
+			(at 256.5400 195.5800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "2904217b-6942-466f-a64d-bc290378221f")
+			(property "Reference" "HS2"
+				(at 256.5400 191.7700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "CPG151101S11"
+				(at 256.5400 189.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "FocalPoint:Kailh_CPG151101S11_Hotswap"
+				(at 256.5400 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 256.5400 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "3afd965e-4b4e-4435-b4ec-40c64afa333c"))
+			(pin "2" (uuid "041a502c-efd3-4655-a456-3cbc67bde26c"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "HS2")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 254.0000 198.1200) (xy 248.9200 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "f60d9e97-a7ff-4756-a893-fc5193d336c0")
+			)
+	(global_label "KEY2"
+			(shape passive)
+			(at 248.9200 198.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "4465adb7-b148-4aae-89ff-44623425467e")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 248.9200 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 274.3200 198.1200) (xy 279.4000 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "d7e48b7a-5def-4b43-8353-8ebbafa9c311")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 279.4000 198.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "33f0f8c4-95bd-479d-b3e7-b46b7286e418")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 279.4000 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:SW2")
+			(at 312.4200 195.5800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "a6025bd8-e1f3-44b2-8357-4ee8486d845d")
+			(property "Reference" "HS3"
+				(at 312.4200 191.7700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "CPG151101S11"
+				(at 312.4200 189.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "FocalPoint:Kailh_CPG151101S11_Hotswap"
+				(at 312.4200 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 312.4200 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "c0c86860-e7f0-4a82-b590-0972b7f1364c"))
+			(pin "2" (uuid "e4735823-d8e4-4a71-8f29-7d2ac71d7c09"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "HS3")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 309.8800 198.1200) (xy 304.8000 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "ed5e49b7-9d87-4de4-bd41-970aa74f1b9e")
+			)
+	(global_label "KEY3"
+			(shape passive)
+			(at 304.8000 198.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "273f494d-f29c-4132-b6ef-f0d5cd87e801")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 304.8000 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 330.2000 198.1200) (xy 335.2800 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "7575151a-2a12-42b2-860f-4064d95699ba")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 335.2800 198.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "fee15589-33a9-4c51-b717-b13b97a35b44")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 335.2800 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:SW2")
+			(at 368.3000 195.5800 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "fcdb9915-97f8-4640-96ac-0f10e5ac1c88")
+			(property "Reference" "HS4"
+				(at 368.3000 191.7700 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "CPG151101S11"
+				(at 368.3000 189.2300 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "FocalPoint:Kailh_CPG151101S11_Hotswap"
+				(at 368.3000 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 368.3000 195.5800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "bcaf7bbb-b8e3-4453-8822-98e93dd58cf5"))
+			(pin "2" (uuid "b4e750fb-875a-4075-a397-336bfb0e6e09"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "HS4")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 365.7600 198.1200) (xy 360.6800 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "6028c756-3328-41f6-b49a-b8ad2a82174a")
+			)
+	(global_label "KEY4"
+			(shape passive)
+			(at 360.6800 198.1200 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "c3aedf1f-fc59-4011-93d5-ab20662a2f60")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 360.6800 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 386.0800 198.1200) (xy 391.1600 198.1200))
+			(stroke (width 0) (type default))
+			(uuid "f2ecb3e2-954c-4e09-b7e9-d45aa5d4c511")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 391.1600 198.1200 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "c98f8482-b187-4193-9899-b71e1070e20b")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 391.1600 198.1200 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:SW2")
+			(at 35.5600 228.6000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "ce6e4e7e-61eb-4106-a9bb-728fb4f8d8a4")
+			(property "Reference" "HS5"
+				(at 35.5600 224.7900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "CPG151101S11"
+				(at 35.5600 222.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "FocalPoint:Kailh_CPG151101S11_Hotswap"
+				(at 35.5600 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 35.5600 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "81b8dcc8-39fb-4007-bc8f-a29995e06b21"))
+			(pin "2" (uuid "af2a1914-c74b-4d50-bf2a-d235daf13309"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "HS5")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 33.0200 231.1400) (xy 27.9400 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "623a8b2e-07ac-464d-8884-6d86fbfa0a49")
+			)
+	(global_label "KEY5"
+			(shape passive)
+			(at 27.9400 231.1400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "bba07e2e-e10d-408f-8b91-c8a116a2c558")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 27.9400 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 53.3400 231.1400) (xy 58.4200 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "b604f6c9-7961-479f-89a1-37f40a2df327")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 58.4200 231.1400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "80470089-85ed-4056-9300-71212913c4c6")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 58.4200 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:SW2")
+			(at 91.4400 228.6000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "72854bc7-808d-48b3-9875-b0d68d4f44ad")
+			(property "Reference" "HS6"
+				(at 91.4400 224.7900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "CPG151101S11"
+				(at 91.4400 222.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "FocalPoint:Kailh_CPG151101S11_Hotswap"
+				(at 91.4400 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 91.4400 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "46a54cf0-74e3-46fa-b3be-97c2f193e109"))
+			(pin "2" (uuid "0e8bffd7-e943-4a8c-b634-0b9dc32a0402"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "HS6")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 88.9000 231.1400) (xy 83.8200 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "459f66c4-cfaf-47b9-ac0c-02e9b23e6217")
+			)
+	(global_label "KEY6"
+			(shape passive)
+			(at 83.8200 231.1400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "f02df71e-4ad5-45ee-9f5d-7936bbd5bda1")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 83.8200 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 109.2200 231.1400) (xy 114.3000 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "05d71317-1fce-4553-bcbe-9bc9ce4ad9c9")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 114.3000 231.1400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "62faf43b-70bf-4e77-91f5-0b370ec66200")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 114.3000 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:SW2")
+			(at 147.3200 228.6000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "d2fdc6b0-43c7-4ad3-9130-0c5a98ebc13a")
+			(property "Reference" "HS7"
+				(at 147.3200 224.7900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "CPG151101S11"
+				(at 147.3200 222.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "FocalPoint:Kailh_CPG151101S11_Hotswap"
+				(at 147.3200 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 147.3200 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "393e864c-f8b9-4625-858a-940e1004950d"))
+			(pin "2" (uuid "613e1f20-46d0-4403-b659-3d5e721ae410"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "HS7")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 144.7800 231.1400) (xy 139.7000 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "6cedd811-3ead-4dc0-9422-3625d5aa66f5")
+			)
+	(global_label "KEY7"
+			(shape passive)
+			(at 139.7000 231.1400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "15218684-c139-41d7-9b88-e393dfeea8ea")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 139.7000 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 165.1000 231.1400) (xy 170.1800 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "d8b7190b-1ac6-4843-a0a9-3ff55c088f35")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 170.1800 231.1400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "5a7ae5a4-fe04-4c56-a344-c35e3c8c4260")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 170.1800 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:SW2")
+			(at 203.2000 228.6000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "7dfb6416-e341-4e8d-8213-6eb7f9b196ad")
+			(property "Reference" "HS8"
+				(at 203.2000 224.7900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "CPG151101S11"
+				(at 203.2000 222.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "FocalPoint:Kailh_CPG151101S11_Hotswap"
+				(at 203.2000 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 203.2000 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "f3a9df7d-dae6-4f9f-9c7d-87917326c03f"))
+			(pin "2" (uuid "04916258-d53d-4108-8772-6ee2370d4aca"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "HS8")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 200.6600 231.1400) (xy 195.5800 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "c8eaf10a-a954-4f49-9a0b-2054d60c2d37")
+			)
+	(global_label "KEY8"
+			(shape passive)
+			(at 195.5800 231.1400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "ae440e1c-8796-4c41-b1c0-d845574e42ff")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 195.5800 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 220.9800 231.1400) (xy 226.0600 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "fea3ca28-ef7c-491a-87a6-c323c2002dd9")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 226.0600 231.1400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "a4927872-a689-4d1b-842d-61ea67689dea")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 226.0600 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:SW2")
+			(at 256.5400 228.6000 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "18cec8b6-5613-40d2-ba52-d6763bbb4544")
+			(property "Reference" "HS9"
+				(at 256.5400 224.7900 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "CPG151101S11"
+				(at 256.5400 222.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "FocalPoint:Kailh_CPG151101S11_Hotswap"
+				(at 256.5400 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 256.5400 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "1" (uuid "a1a6cf3d-11c3-445c-bca2-b1d20fa491bc"))
+			(pin "2" (uuid "be513aca-4e04-4bab-b830-c7f9ca871a9d"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "HS9")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 254.0000 231.1400) (xy 248.9200 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "b005c384-b288-4f60-82b1-3e473e82e33c")
+			)
+	(global_label "KEY9"
+			(shape passive)
+			(at 248.9200 231.1400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "da109476-b243-44fb-9d10-6b755645c547")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 248.9200 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 274.3200 231.1400) (xy 279.4000 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "603f095e-7962-4805-8607-15706f6cd3ed")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 279.4000 231.1400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "ec776e08-7708-4cba-a277-b13afd82db47")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 279.4000 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:ENC_EC11")
+			(at 312.4200 226.0600 0)
+			(unit 1)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(dnp no)
+			(fields_autoplaced yes)
+			(uuid "8ade2e00-2ee4-4147-9a1f-bb5c38429cc8")
+			(property "Reference" "ENC1"
+				(at 312.4200 222.2500 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Value" "EC11E15244G1"
+				(at 312.4200 219.7100 0)
+				(effects (font (size 1.27 1.27)))
+				)
+			(property "Footprint" "Rotary_Encoder:RotaryEncoder_Alps_EC11E-Switch_Vertical_H20mm"
+				(at 312.4200 226.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(property "Datasheet" ""
+				(at 312.4200 226.0600 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			(pin "A" (uuid "6ac13a81-62fe-42d7-9420-50f744db960d"))
+			(pin "B" (uuid "75483054-b865-4910-8c78-fc34dff62421"))
+			(pin "C" (uuid "47960752-c65a-4f13-8d06-af29b50426dd"))
+			(pin "S1" (uuid "15fe0345-840a-408d-9b2a-291422e99471"))
+			(pin "S2" (uuid "3633b3cb-e236-48b7-b648-92f08afb3938"))
+			(instances
+				(project "focalpoint"
+					(path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d"
+						(reference "ENC1")
+						(unit 1)
+						)
+					)
+				)
+			)
+	(wire
+			(pts (xy 309.8800 228.6000) (xy 304.8000 228.6000))
+			(stroke (width 0) (type default))
+			(uuid "9b20a924-2c33-46bc-8826-27fe2f072d66")
+			)
+	(global_label "ENC_A"
+			(shape passive)
+			(at 304.8000 228.6000 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "955ec894-4b45-43a8-960e-01f81cdf70d4")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 304.8000 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 309.8800 231.1400) (xy 304.8000 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "26760d4e-8a8a-45e9-a4e2-8e4af2860fec")
+			)
+	(global_label "ENC_B"
+			(shape passive)
+			(at 304.8000 231.1400 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "a8b8bf85-6e5f-423d-a9d4-b72976457686")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 304.8000 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 309.8800 233.6800) (xy 304.8000 233.6800))
+			(stroke (width 0) (type default))
+			(uuid "c376c0b4-a24e-4a83-8baf-d86d57186737")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 304.8000 233.6800 180)
+			(effects (font (size 1.27 1.27)) (justify right))
+			(uuid "7e645b6e-cd06-48d4-98a1-b46728b8cd2a")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 304.8000 233.6800 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 330.2000 228.6000) (xy 335.2800 228.6000))
+			(stroke (width 0) (type default))
+			(uuid "2246d324-cb69-45a9-9cae-42b055654a8e")
+			)
+	(global_label "ENC_SW"
+			(shape passive)
+			(at 335.2800 228.6000 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "2998cfa0-bb68-4155-80ac-61ef55d58064")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 335.2800 228.6000 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(wire
+			(pts (xy 330.2000 231.1400) (xy 335.2800 231.1400))
+			(stroke (width 0) (type default))
+			(uuid "d87d8363-830d-4841-82de-09f3577c1c4a")
+			)
+	(global_label "GND"
+			(shape passive)
+			(at 335.2800 231.1400 0)
+			(effects (font (size 1.27 1.27)) (justify left))
+			(uuid "7f96d737-d76b-4d56-a352-26765c78cc6c")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}"
+				(at 335.2800 231.1400 0)
+				(effects (font (size 1.27 1.27)) (hide yes))
+				)
+			)
+	(symbol
+			(lib_id "focalpoint:R")
+			(at 368.3000 228.6000 0) (unit 1) (exclude_from_sim no) (in_bom yes)
+			(on_board yes) (dnp no) (fields_autoplaced yes) (uuid "0a666afa-4b04-457c-972e-4d84045c654f")
+			(property "Reference" "R23" (at 368.3000 224.7900 0) (effects (font (size 1.27 1.27))))
+			(property "Value" "1k" (at 368.3000 222.2500 0) (effects (font (size 1.27 1.27))))
+			(property "Footprint" "Resistor_SMD:R_0603_1608Metric" (at 368.3000 228.6000 0) (effects (font (size 1.27 1.27)) (hide yes)))
+			(property "Datasheet" "" (at 368.3000 228.6000 0) (effects (font (size 1.27 1.27)) (hide yes)))
+			(pin "1" (uuid "658b17a7-191f-4084-8294-456149618d54")) (pin "2" (uuid "34c1de04-f159-4383-ad60-19a4635358d6"))
+			(instances (project "focalpoint" (path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d" (reference "R23") (unit 1)))))
+	(wire (pts (xy 365.7600 231.1400) (xy 360.6800 231.1400)) (stroke (width 0) (type default)) (uuid "0c6d8b09-ca5c-4e5d-b1a4-7885755d467d"))
+	(global_label "JOY_X" (shape passive) (at 360.6800 231.1400 180)
+			(effects (font (size 1.27 1.27)) (justify right)) (uuid "c93089ad-2d27-404d-a7f4-817dc58877af")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}" (at 360.6800 231.1400 0) (effects (font (size 1.27 1.27)) (hide yes))))
+	(wire (pts (xy 386.0800 231.1400) (xy 391.1600 231.1400)) (stroke (width 0) (type default)) (uuid "cfaa6630-6a2d-4fb2-8ec4-bf3427d1b5ae"))
+	(global_label "JOY_X_FILT" (shape passive) (at 391.1600 231.1400 0)
+			(effects (font (size 1.27 1.27)) (justify left)) (uuid "8930a843-5404-4ff1-8358-04815fcfd731")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}" (at 391.1600 231.1400 0) (effects (font (size 1.27 1.27)) (hide yes))))
+	(symbol
+			(lib_id "focalpoint:R")
+			(at 35.5600 259.0800 0) (unit 1) (exclude_from_sim no) (in_bom yes)
+			(on_board yes) (dnp no) (fields_autoplaced yes) (uuid "c36eddec-807a-4a56-904a-4ce57e742706")
+			(property "Reference" "R24" (at 35.5600 255.2700 0) (effects (font (size 1.27 1.27))))
+			(property "Value" "1k" (at 35.5600 252.7300 0) (effects (font (size 1.27 1.27))))
+			(property "Footprint" "Resistor_SMD:R_0603_1608Metric" (at 35.5600 259.0800 0) (effects (font (size 1.27 1.27)) (hide yes)))
+			(property "Datasheet" "" (at 35.5600 259.0800 0) (effects (font (size 1.27 1.27)) (hide yes)))
+			(pin "1" (uuid "9311f317-ca43-4d49-82aa-2637d62b50df")) (pin "2" (uuid "6348bea2-3b20-4970-8ea3-91d658fb0a84"))
+			(instances (project "focalpoint" (path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d" (reference "R24") (unit 1)))))
+	(wire (pts (xy 33.0200 261.6200) (xy 27.9400 261.6200)) (stroke (width 0) (type default)) (uuid "706ebbfb-8f79-417a-a9bf-96f0c64533f2"))
+	(global_label "JOY_Y" (shape passive) (at 27.9400 261.6200 180)
+			(effects (font (size 1.27 1.27)) (justify right)) (uuid "b54e5e22-9f1f-473c-b101-e3f3ff6c958c")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}" (at 27.9400 261.6200 0) (effects (font (size 1.27 1.27)) (hide yes))))
+	(wire (pts (xy 53.3400 261.6200) (xy 58.4200 261.6200)) (stroke (width 0) (type default)) (uuid "78b71885-6569-4eda-a346-efd85e848ac5"))
+	(global_label "JOY_Y_FILT" (shape passive) (at 58.4200 261.6200 0)
+			(effects (font (size 1.27 1.27)) (justify left)) (uuid "973cbfc8-d108-4ae3-940c-702b5ef477b5")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}" (at 58.4200 261.6200 0) (effects (font (size 1.27 1.27)) (hide yes))))
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 91.4400 259.0800 0) (unit 1) (exclude_from_sim no) (in_bom yes)
+			(on_board yes) (dnp no) (fields_autoplaced yes) (uuid "13dbb265-de41-4f66-8d11-56e88a2fef99")
+			(property "Reference" "C35" (at 91.4400 255.2700 0) (effects (font (size 1.27 1.27))))
+			(property "Value" "10nF" (at 91.4400 252.7300 0) (effects (font (size 1.27 1.27))))
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric" (at 91.4400 259.0800 0) (effects (font (size 1.27 1.27)) (hide yes)))
+			(property "Datasheet" "" (at 91.4400 259.0800 0) (effects (font (size 1.27 1.27)) (hide yes)))
+			(pin "1" (uuid "7b28b621-0d9a-4212-9d40-acf13b2ef70f")) (pin "2" (uuid "48cd5749-a55d-4059-86ee-8b57bc5ebf08"))
+			(instances (project "focalpoint" (path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d" (reference "C35") (unit 1)))))
+	(wire (pts (xy 88.9000 261.6200) (xy 83.8200 261.6200)) (stroke (width 0) (type default)) (uuid "532e7863-4acf-4bf1-9a49-006b79fbab84"))
+	(global_label "JOY_X_FILT" (shape passive) (at 83.8200 261.6200 180)
+			(effects (font (size 1.27 1.27)) (justify right)) (uuid "9a648a71-bd1b-44ec-aeb1-301ce5dee445")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}" (at 83.8200 261.6200 0) (effects (font (size 1.27 1.27)) (hide yes))))
+	(wire (pts (xy 109.2200 261.6200) (xy 114.3000 261.6200)) (stroke (width 0) (type default)) (uuid "215e532a-94c9-48d1-9a2a-d847854294d4"))
+	(global_label "GND" (shape passive) (at 114.3000 261.6200 0)
+			(effects (font (size 1.27 1.27)) (justify left)) (uuid "b3e75808-b16f-4868-8dfc-df3997e3842e")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}" (at 114.3000 261.6200 0) (effects (font (size 1.27 1.27)) (hide yes))))
+	(symbol
+			(lib_id "focalpoint:C")
+			(at 147.3200 259.0800 0) (unit 1) (exclude_from_sim no) (in_bom yes)
+			(on_board yes) (dnp no) (fields_autoplaced yes) (uuid "2c6f5383-992a-4317-8830-c95757d5d411")
+			(property "Reference" "C36" (at 147.3200 255.2700 0) (effects (font (size 1.27 1.27))))
+			(property "Value" "10nF" (at 147.3200 252.7300 0) (effects (font (size 1.27 1.27))))
+			(property "Footprint" "Capacitor_SMD:C_0603_1608Metric" (at 147.3200 259.0800 0) (effects (font (size 1.27 1.27)) (hide yes)))
+			(property "Datasheet" "" (at 147.3200 259.0800 0) (effects (font (size 1.27 1.27)) (hide yes)))
+			(pin "1" (uuid "3fd1d25e-8249-4ea1-9b0b-16e0859483c4")) (pin "2" (uuid "49aa851f-2648-41ab-924a-53690f13aea3"))
+			(instances (project "focalpoint" (path "/58cd5175-207e-4724-8c44-e24ead61a60c/a13c1ead-b706-4cbb-83fe-980ae2e23a7d" (reference "C36") (unit 1)))))
+	(wire (pts (xy 144.7800 261.6200) (xy 139.7000 261.6200)) (stroke (width 0) (type default)) (uuid "169ba28c-45bc-4723-89e3-3ae02c4bc7c1"))
+	(global_label "JOY_Y_FILT" (shape passive) (at 139.7000 261.6200 180)
+			(effects (font (size 1.27 1.27)) (justify right)) (uuid "ac4f57d8-43a6-4729-9efc-3744fa7c35c7")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}" (at 139.7000 261.6200 0) (effects (font (size 1.27 1.27)) (hide yes))))
+	(wire (pts (xy 165.1000 261.6200) (xy 170.1800 261.6200)) (stroke (width 0) (type default)) (uuid "5121c56f-c623-4429-9c8c-92d12af35bd2"))
+	(global_label "GND" (shape passive) (at 170.1800 261.6200 0)
+			(effects (font (size 1.27 1.27)) (justify left)) (uuid "6e96fe75-bdb5-438c-8188-9a2529812273")
+			(property "Intersheetrefs" "${INTERSHEET_REFS}" (at 170.1800 261.6200 0) (effects (font (size 1.27 1.27)) (hide yes))))
+	(embedded_fonts no)
+)
