@@ -10,6 +10,10 @@ app/FocalPoint.app/
 # adapters/mac-virtual (build.sh output; source is backlight.swift)
 adapters/mac-virtual/focalpoint-backlight
 
+# Local agent worktrees and Python bytecode are never repository inputs.
+.claude/worktrees/
+__pycache__/
+
 # firmware/keychron-v1-max/build/ is intentionally committed (prebuilt
 # .bin/.hex/.elf + SHA256SUMS, see CLAUDE.md) — not ignored.
 # hardware/ergogen/output/ has its own .gitignore (reproducible ergogen output).
