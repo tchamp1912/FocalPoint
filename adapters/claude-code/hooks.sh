@@ -262,9 +262,13 @@ fi
 # id is later resumed outside tmux.
 managed_value="false"
 mux_pane=""
-if [ -n "${TMUX:-}" ] && command -v tmux >/dev/null 2>&1; then
-  mux_pane=$(tmux display-message -p '#{pane_id}' 2>/dev/null) || mux_pane=""
-  [ -n "$mux_pane" ] && managed_value="true"
+mux_session=""
+mux_server=""
+if [ -n "${TMUX:-}" ] && [ -n "${FOCALPOINT_TMUX_SERVER:-}" ] && command -v tmux >/dev/null 2>&1; then
+  mux_pane=$(tmux -L "$FOCALPOINT_TMUX_SERVER" display-message -p '#{pane_id}' 2>/dev/null) || mux_pane=""
+  mux_session=$(tmux -L "$FOCALPOINT_TMUX_SERVER" display-message -p '#{session_name}' 2>/dev/null) || mux_session=""
+  mux_server="$FOCALPOINT_TMUX_SERVER"
+  [ -n "$mux_pane" ] && [ -n "$mux_session" ] && managed_value="true"
 fi
 
 # Map event to state
@@ -295,11 +299,11 @@ case "$event" in
       # today's behavior.
       if [ -n "${FOCALPOINT_CHANNEL_ID:-}" ]; then
         "$FOCALPOINT" set-meta --session "$session_id" --kind claude \
-          --meta "managed=$managed_value" --meta "mux_pane=$mux_pane" \
+          --meta "managed=$managed_value" --meta "mux_pane=$mux_pane" --meta "mux_session=$mux_session" --meta "mux_server=$mux_server" \
           --meta "channel_id=$FOCALPOINT_CHANNEL_ID" >/dev/null 2>&1 || true
       else
         "$FOCALPOINT" set-meta --session "$session_id" --kind claude \
-          --meta "managed=$managed_value" --meta "mux_pane=$mux_pane" >/dev/null 2>&1 || true
+          --meta "managed=$managed_value" --meta "mux_pane=$mux_pane" --meta "mux_session=$mux_session" --meta "mux_server=$mux_server" >/dev/null 2>&1 || true
       fi
       channel_pull
     fi
@@ -383,7 +387,7 @@ if [ -n "${session_id:-}" ]; then
   label=$(extract_title "$transcript_path")
   [ -n "$label" ] || label="$(basename "${cwd:-.}")"
   args+=(--session "$session_id" --kind claude --cwd "$cwd" --label "$label")
-  args+=(--meta "managed=$managed_value" --meta "mux_pane=$mux_pane")
+  args+=(--meta "managed=$managed_value" --meta "mux_pane=$mux_pane" --meta "mux_session=$mux_session" --meta "mux_server=$mux_server")
   [ -n "${transcript_path:-}" ] && args+=(--meta "transcript_path=$transcript_path")
   [ -n "${FOCALPOINT_RELAUNCH_ID:-}" ] && \
     args+=(--meta "relaunch_id=$FOCALPOINT_RELAUNCH_ID")

@@ -108,6 +108,12 @@ LAYOUT="${FOCALPOINT_TMUX_LAYOUT:-per-agent}"
 # Keep one baseline entry: macOS ships Bash 3.2, where expanding an empty
 # array under `set -u` raises an unbound-variable error.
 TMUX_ENV_ARGS=(-e "FOCALPOINT_MANAGED=1")
+# Each managed invocation owns a private tmux server.  Do not use the user's
+# default server: the daemon can then target only this server for wake/cleanup.
+TMUX_SERVER="fp-${FOCALPOINT_ORCHESTRATOR_TASK_ID:-manual}-$$"
+TMUX_SERVER=$(printf '%s' "$TMUX_SERVER" | tr -c 'A-Za-z0-9_-' '-')
+export FOCALPOINT_TMUX_SERVER="$TMUX_SERVER"
+TMUX_ENV_ARGS+=(-e "FOCALPOINT_TMUX_SERVER=$TMUX_SERVER")
 [ -n "${FOCALPOINT_ORCHESTRATOR_TASK_ID:-}" ] && \
   TMUX_ENV_ARGS+=(-e "FOCALPOINT_ORCHESTRATOR_TASK_ID=$FOCALPOINT_ORCHESTRATOR_TASK_ID")
 [ -n "${FOCALPOINT_ORCHESTRATION_ROLE:-}" ] && \
@@ -133,15 +139,15 @@ case "$LAYOUT" in
     # The first invocation creates and attaches the cockpit. Later
     # invocations add a window to that existing cockpit and return; tmux
     # selects the new window for the already-attached cockpit client.
-    if "$TMUX_BIN" has-session -t focalpoint 2>/dev/null; then
-      exec "$TMUX_BIN" new-window "${TMUX_ENV_ARGS[@]}" -t focalpoint -c "$PWD" -n "${SAFE_CMD}-$$" "$@"
+    if "$TMUX_BIN" -L "$TMUX_SERVER" has-session -t focalpoint 2>/dev/null; then
+      exec "$TMUX_BIN" -L "$TMUX_SERVER" new-window "${TMUX_ENV_ARGS[@]}" -t focalpoint -c "$PWD" -n "${SAFE_CMD}-$$" "$@"
     fi
-    exec "$TMUX_BIN" -f "$TMUX_CONF" new-session "${TMUX_ENV_ARGS[@]}" -s focalpoint -c "$PWD" \
+    exec "$TMUX_BIN" -L "$TMUX_SERVER" -f "$TMUX_CONF" new-session "${TMUX_ENV_ARGS[@]}" -s focalpoint -c "$PWD" \
       -n "${SAFE_CMD}-$$" "$@"
     ;;
   per-agent|*)
     # Default: one dedicated tmux session per invocation, named after the
     # command and this shell's pid so concurrent launches never collide.
-    exec "$TMUX_BIN" -f "$TMUX_CONF" new-session "${TMUX_ENV_ARGS[@]}" -s "fp-${SAFE_CMD}-$$" -c "$PWD" "$@"
+    exec "$TMUX_BIN" -L "$TMUX_SERVER" -f "$TMUX_CONF" new-session "${TMUX_ENV_ARGS[@]}" -s "fp-${SAFE_CMD}-$$" -c "$PWD" "$@"
     ;;
 esac
