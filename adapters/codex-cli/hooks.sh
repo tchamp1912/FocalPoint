@@ -22,6 +22,27 @@
 
 set -u
 
+# Detached half of the permission debounce. It is intentionally a mode of
+# this same installed hook so no extra helper needs to be deployed.
+if [ "${1:-}" = "--deferred-wait" ]; then
+  pending_file="$2" lock_dir="$3" expected_token="$4" grace_secs="$5" focalpoint_bin="$6"
+  shift 6
+  sleep "$grace_secs"
+  attempts=0
+  while ! mkdir "$lock_dir" 2>/dev/null; do
+    attempts=$((attempts + 1))
+    [ "$attempts" -ge 100 ] && exit 0
+    sleep 0.01
+  done
+  current_token=$(cat "$pending_file" 2>/dev/null || true)
+  if [ "$current_token" = "$expected_token" ]; then
+    "$focalpoint_bin" set-state "$@" >/dev/null 2>&1 || true
+    rm -f "$pending_file"
+  fi
+  rmdir "$lock_dir" 2>/dev/null || true
+  exit 0
+fi
+
 FOCALPOINT="${FOCALPOINT_PATH:-focalpoint}"
 payload=$(cat 2>/dev/null) || exit 0
 
@@ -42,6 +63,55 @@ cwd=$(field cwd)
 model=$(field model)
 transcript_path=$(field transcript_path)
 prompt=$(field prompt)
+
+# Codex can immediately auto-approve PermissionRequest. Use a short,
+# cancelable grace period so only a permission request that remains blocked
+# becomes FocalPoint `waiting` (and therefore lights the keyboard/widget).
+defer_permission_wait=0
+if [ "$event" = "PermissionRequest" ] && [ -n "${session_id:-}" ]; then
+  defer_permission_wait=1
+fi
+
+approval_pending_file=""
+approval_lock_dir=""
+if [ -n "${session_id:-}" ]; then
+  safe_session_id=$(printf '%s' "$session_id" | tr -c 'A-Za-z0-9._-' '_')
+  approval_dir="${XDG_STATE_HOME:-$HOME/.local/state}/focalpoint/approval-pending"
+  approval_pending_file="$approval_dir/codex-$safe_session_id.token"
+  approval_lock_dir="$approval_dir/codex-$safe_session_id.lock"
+fi
+
+approval_lock() {
+  local attempts=0
+  while ! mkdir "$approval_lock_dir" 2>/dev/null; do
+    attempts=$((attempts + 1))
+    [ "$attempts" -ge 100 ] && return 1
+    sleep 0.01
+  done
+}
+
+approval_unlock() { rmdir "$approval_lock_dir" 2>/dev/null || true; }
+
+if [ "$defer_permission_wait" -eq 1 ]; then
+  mkdir -p "$approval_dir" 2>/dev/null
+  approval_token="$$-${RANDOM:-0}-$(date +%s)"
+  printf '%s' "$approval_token" > "$approval_pending_file" 2>/dev/null || exit 0
+fi
+
+if [ "$defer_permission_wait" -eq 0 ] && [ -n "$approval_pending_file" ] \
+   && [ -f "$approval_pending_file" ]; then
+  if approval_lock; then
+    rm -f "$approval_pending_file"
+    approval_unlock
+  fi
+fi
+
+managed_value="false"
+mux_pane=""
+if [ -n "${TMUX:-}" ] && command -v tmux >/dev/null 2>&1; then
+  mux_pane=$(tmux display-message -p '#{pane_id}' 2>/dev/null) || mux_pane=""
+  [ -n "$mux_pane" ] && managed_value="true"
+fi
 
 label_dir="${XDG_STATE_HOME:-$HOME/.local/state}/focalpoint/codex"
 label_file="$label_dir/$session_id.label"
@@ -79,6 +149,18 @@ if [ -n "${session_id:-}" ]; then
     label="Codex · $(basename "${cwd:-.}")"
   fi
   args+=(--session "$session_id" --kind codex --cwd "$cwd" --label "$label")
+  args+=(--meta "managed=$managed_value" --meta "mux_pane=$mux_pane")
+  [ -n "${transcript_path:-}" ] && args+=(--meta "transcript_path=$transcript_path")
+  [ -n "${FOCALPOINT_RELAUNCH_ID:-}" ] && \
+    args+=(--meta "relaunch_id=$FOCALPOINT_RELAUNCH_ID")
+  [ -n "${FOCALPOINT_RESUME_SESSION_ID:-}" ] && \
+    args+=(--meta "resume_session_id=$FOCALPOINT_RESUME_SESSION_ID")
+  [ -n "${FOCALPOINT_ORCHESTRATOR_TASK_ID:-}" ] && \
+    args+=(--meta "orchestrator_task_id=$FOCALPOINT_ORCHESTRATOR_TASK_ID")
+  [ -n "${FOCALPOINT_ORCHESTRATION_ROLE:-}" ] && \
+    args+=(--meta "orchestration_role=$FOCALPOINT_ORCHESTRATION_ROLE")
+  [ -n "${FOCALPOINT_MANAGER_TASK_ID:-}" ] && \
+    args+=(--meta "manager_task_id=$FOCALPOINT_MANAGER_TASK_ID")
   # SessionStart means "a fresh process instance for this session_id just
   # began" — force the CLI to re-walk instead of trusting a (possibly stale,
   # possibly nonexistent) cached identity (identity.rs).
@@ -137,6 +219,17 @@ if [ -n "${session_id:-}" ]; then
       args+=(--meta "turns=$turns")
     fi
   fi
+fi
+
+# Publish `waiting` only if no PreToolUse/other lifecycle event arrived during
+# the auto-approval grace period. The per-session lock makes the race resolve
+# in event order: either cancellation wins, or its newer state follows the
+# delayed waiting update.
+if [ "$defer_permission_wait" -eq 1 ]; then
+  nohup /bin/bash "$0" --deferred-wait "$approval_pending_file" "$approval_lock_dir" \
+    "$approval_token" "${FOCALPOINT_APPROVAL_GRACE_SECS:-2}" "$FOCALPOINT" \
+    "${args[@]}" </dev/null >/dev/null 2>&1 &
+  exit 0
 fi
 
 # Hook stdout is part of Codex's hook protocol; never write to it.

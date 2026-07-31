@@ -9,6 +9,9 @@
 # Goal: bring the terminal window/tab running that session to the front.
 #
 # Matching strategy, in order:
+#   0. MANAGED sessions: if this session is running inside a FocalPoint-managed
+#      tmux pane, focus it precisely via `tmux select-window`/`switch-client`
+#      instead of AppleScript window-hunting — see try_managed_tmux() below.
 #   1. EXACT tty match ($FOCALPOINT_SESSION_TTY, e.g. "/dev/ttys003") against
 #      iTerm2's `tty of session` / Terminal's `tty of tab`. This is precise —
 #      no two sessions ever share a tty — and is what claude-code/hooks.sh
@@ -40,6 +43,18 @@
 # Must never hang the daemon's action dispatch: every osascript call below
 # runs under a hard timeout via run_osa().
 #
+# ASSUMPTION on managed-session focus data: PROTOCOL.md §3 "Focus" documents
+# FOCALPOINT_SESSION_{ID,KIND,LABEL,NAME,DISPLAY,CWD,TTY} and FOCALPOINT_SLOT
+# as the env vars this script receives — `mux_pane` is NOT among them (it's
+# session *meta*, not one of the focus env vars the daemon exports). Rather
+# than expand the protocol for this MVP, try_managed_tmux() below recovers
+# the pane by matching $FOCALPOINT_SESSION_TTY against `tmux list-panes`'
+# pane_tty: a managed session's controlling tty (what identity.rs's ancestry
+# walk finds and hooks.sh reports as meta.tty) IS the pty tmux allocated for
+# that pane, so the match is exact, not fuzzy. If a future protocol revision
+# exports mux_pane directly as a focus env var, this lookup can be replaced
+# with a straight `tmux display-message -t "$FOCALPOINT_MUX_PANE"`.
+#
 # MIT License - see adapters/README.md
 
 set -u
@@ -62,6 +77,20 @@ else
   NEEDLE=""
 fi
 TARGET_TTY="${FOCALPOINT_SESSION_TTY:-}"
+
+# The daemon is normally launched by launchd, whose deliberately minimal PATH
+# does not include Homebrew. Resolve tmux once with the same fallbacks as the
+# managed launcher; otherwise every managed focus silently skips the exact
+# pane path and falls through to the ambiguous cwd/title matcher.
+TMUX_BIN="${FOCALPOINT_TMUX_BIN:-}"
+if [ -z "$TMUX_BIN" ]; then
+  TMUX_BIN="$(command -v tmux 2>/dev/null || true)"
+fi
+if [ -z "$TMUX_BIN" ]; then
+  for candidate in /opt/homebrew/bin/tmux /usr/local/bin/tmux; do
+    if [ -x "$candidate" ]; then TMUX_BIN="$candidate"; break; fi
+  done
+fi
 
 # Seconds to wait for any single osascript call before killing it.
 TIMEOUT_SECS="${FOCALPOINT_FOCUS_TIMEOUT:-3}"
@@ -134,6 +163,129 @@ run_osa() {
 # case anyway).
 app_running() {
   pgrep -x "$1" >/dev/null 2>&1
+}
+
+# Raise whichever of iTerm2/Terminal has a tab/session whose tty is exactly
+# $1, without touching the module-level $TARGET_TTY (used by try_managed_tmux
+# below to raise the *hosting terminal's* tty, which is a different pty from
+# the tmux pane's own tty that $TARGET_TTY holds for a managed session).
+# Same matching logic as try_iterm_tty/try_terminal_tty, just parameterized.
+raise_terminal_by_tty() {
+  local tty="$1" tty_esc script result
+  tty_esc="$(osa_escape "$tty")"
+
+  if app_running "iTerm2"; then
+    script=$(cat <<APPLESCRIPT
+tell application "iTerm2"
+  set found to false
+  repeat with w in windows
+    repeat with t in tabs of w
+      repeat with s in sessions of t
+        try
+          if (tty of s) is "$tty_esc" then
+            select t
+            select w
+            set found to true
+            exit repeat
+          end if
+        end try
+      end repeat
+      if found then exit repeat
+    end repeat
+    if found then exit repeat
+  end repeat
+  if found then activate
+  if found then
+    return "matched"
+  else
+    return "nomatch"
+  end if
+end tell
+APPLESCRIPT
+)
+    result="$(run_osa "$script")"
+    [ "$result" = "matched" ] && return 0
+  fi
+
+  if app_running "Terminal"; then
+    script=$(cat <<APPLESCRIPT
+tell application "Terminal"
+  set found to false
+  repeat with w in windows
+    repeat with tb in tabs of w
+      try
+        if (tty of tb) is "$tty_esc" then
+          set selected of tb to true
+          set index of w to 1
+          set found to true
+          exit repeat
+        end if
+      end try
+    end repeat
+    if found then exit repeat
+  end repeat
+  if found then activate
+  if found then
+    return "matched"
+  else
+    return "nomatch"
+  end if
+end tell
+APPLESCRIPT
+)
+    result="$(run_osa "$script")"
+    [ "$result" = "matched" ] && return 0
+  fi
+
+  return 1
+}
+
+# Managed-session focus (see the ASSUMPTION header comment above): resolves
+# the tmux pane hosting this session by exact pane_tty match, flips to its
+# window with `select-window`, then switches any attached client(s) showing
+# that session to it with `switch-client -c <client-tty>` and raises the
+# hosting terminal app by the *client's* tty (not the pane's). Returns 0
+# ("handled, stop here") whenever a matching pane is found at all — even a
+# detached session with no client to raise is correctly "handled": there is
+# nothing else in this script that could find it either, and select-window
+# still means the *next* attach lands on the right window.
+try_managed_tmux() {
+  [ -n "$TARGET_TTY" ] || return 1
+  [ -n "$TMUX_BIN" ] && [ -x "$TMUX_BIN" ] || return 1
+
+  local line pane_id session_name window_id
+  line=$("$TMUX_BIN" list-panes -a -F '#{pane_tty} #{pane_id} #{session_name} #{window_id}' 2>/dev/null \
+    | awk -v t="$TARGET_TTY" '$1 == t { print; exit }')
+  [ -n "$line" ] || return 1
+
+  pane_id=$(printf '%s' "$line" | awk '{print $2}')
+  session_name=$(printf '%s' "$line" | awk '{print $3}')
+  window_id=$(printf '%s' "$line" | awk '{print $4}')
+  : "$pane_id"  # unused beyond documentation/debugging; kept for clarity
+
+  # Precise in-mux focus: flip the session to the right window regardless
+  # of whether any client is currently attached to see it.
+  "$TMUX_BIN" select-window -t "$window_id" 2>/dev/null || true
+
+  # Raise whichever real terminal window(s) are attached to this session,
+  # switching each attached client to it first. Normally exactly one client
+  # (per-agent layout, or cockpit layout's single shared terminal); loop
+  # covers the rare case of more than one.
+  local clients client_tty
+  clients=$("$TMUX_BIN" list-clients -t "$session_name" -F '#{client_tty}' 2>/dev/null)
+  if [ -n "$clients" ]; then
+    while IFS= read -r client_tty; do
+      [ -n "$client_tty" ] || continue
+      "$TMUX_BIN" switch-client -c "$client_tty" -t "$session_name" 2>/dev/null || true
+      if command -v osascript >/dev/null 2>&1; then
+        raise_terminal_by_tty "$client_tty" || true
+      fi
+    done <<CLIENTS
+$clients
+CLIENTS
+  fi
+
+  return 0
 }
 
 try_iterm_tty() {
@@ -292,7 +444,9 @@ fallback_activate() {
   fi
 }
 
-if command -v osascript >/dev/null 2>&1; then
+if try_managed_tmux; then
+  :
+elif command -v osascript >/dev/null 2>&1; then
   if try_iterm_tty; then
     :
   elif try_terminal_tty; then
