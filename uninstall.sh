@@ -4,7 +4,7 @@
 # MIT License - see adapters/README.md.
 #
 # Reverses what install.sh did: stops + removes the launchd agent, removes
-# the focalpoint/focalpointd symlinks, surgically removes only FocalPoint's hook
+# all FocalPoint native-binary symlinks, surgically removes only FocalPoint's hook
 # entries from ~/.claude/settings.json and ~/.cursor/hooks.json (each backed
 # up first), and removes
 # FocalPoint.app. Safe to re-run: every step checks before it acts.
@@ -27,6 +27,16 @@ LOG_DIR="$HOME/Library/Logs/focalpoint"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 PLIST_LABEL="dev.focalpoint.daemon"
 PLIST_PATH="$LAUNCH_AGENTS_DIR/${PLIST_LABEL}.plist"
+ATTENTION_WATCHER_LABEL="dev.focalpoint.attention-watcher"
+ATTENTION_WATCHER_PLIST_PATH="$LAUNCH_AGENTS_DIR/${ATTENTION_WATCHER_LABEL}.plist"
+LEGACY_ATTENTION_WATCHER_SCRIPT="$CONFIG_DIR/attention-watcher.py"
+LEGACY_RANKER_LABEL="dev.focalpoint.attention-tier2"
+LEGACY_RANKER_PLIST_PATH="$LAUNCH_AGENTS_DIR/${LEGACY_RANKER_LABEL}.plist"
+LEGACY_RANKER_RUNNER="$CONFIG_DIR/attention-tier2.py"
+LEGACY_POLICY_SCHEMA="$CONFIG_DIR/policy.schema.json"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/focalpoint"
+CODEX_SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/focalpoint-orchestrator"
+CLAUDE_SKILL_DIR="$HOME/.claude/skills/focalpoint-orchestrator"
 HOOK_MARKER=".config/focalpoint/adapters/hooks.sh"
 # The "cursor-" prefix keeps this from matching HOOK_MARKER's entries.
 CURSOR_HOOK_MARKER=".config/focalpoint/adapters/cursor-hooks.sh"
@@ -108,6 +118,86 @@ else
   ok "$PLIST_PATH already absent"
 fi
 
+if launchctl print "gui/$UID/$ATTENTION_WATCHER_LABEL" >/dev/null 2>&1; then
+  if [ "$DRY_RUN" -eq 1 ]; then
+    would "launchctl bootout gui/$UID/$ATTENTION_WATCHER_LABEL"
+  else
+    launchctl bootout "gui/$UID/$ATTENTION_WATCHER_LABEL" >/dev/null 2>&1 || true
+    ok "stopped + unloaded $ATTENTION_WATCHER_LABEL"
+  fi
+else
+  ok "$ATTENTION_WATCHER_LABEL not loaded"
+fi
+
+if [ -f "$ATTENTION_WATCHER_PLIST_PATH" ]; then
+  if [ "$DRY_RUN" -eq 1 ]; then
+    would "rm $ATTENTION_WATCHER_PLIST_PATH"
+  else
+    rm -f "$ATTENTION_WATCHER_PLIST_PATH"
+    ok "removed $ATTENTION_WATCHER_PLIST_PATH"
+  fi
+else
+  ok "$ATTENTION_WATCHER_PLIST_PATH already absent"
+fi
+
+if launchctl print "gui/$UID/$LEGACY_RANKER_LABEL" >/dev/null 2>&1; then
+  if [ "$DRY_RUN" -eq 1 ]; then
+    would "launchctl bootout gui/$UID/$LEGACY_RANKER_LABEL"
+  else
+    launchctl bootout "gui/$UID/$LEGACY_RANKER_LABEL" >/dev/null 2>&1 || true
+    ok "stopped + unloaded $LEGACY_RANKER_LABEL"
+  fi
+else
+  ok "$LEGACY_RANKER_LABEL not loaded"
+fi
+
+if [ -f "$LEGACY_RANKER_PLIST_PATH" ]; then
+  if [ "$DRY_RUN" -eq 1 ]; then
+    would "rm $LEGACY_RANKER_PLIST_PATH"
+  else
+    rm -f "$LEGACY_RANKER_PLIST_PATH"
+    ok "removed $LEGACY_RANKER_PLIST_PATH"
+  fi
+else
+  ok "$LEGACY_RANKER_PLIST_PATH already absent"
+fi
+
+# Remove watcher/ranker artifacts left by older installations.
+for installed_file in \
+  "$CONFIG_DIR/attention-watcher.disabled" \
+  "$LEGACY_ATTENTION_WATCHER_SCRIPT" \
+  "$LEGACY_RANKER_RUNNER" \
+  "$LEGACY_POLICY_SCHEMA" \
+  "$STATE_DIR/attention-policy.json" \
+  "$STATE_DIR/attention-policy.json.inputs.sha256" \
+  "$STATE_DIR/attention-policy.json.inputs.fingerprint" \
+  "$STATE_DIR/attention-policy.inputs.sha256" \
+  "$STATE_DIR/attention-policy.inputs.fingerprint"; do
+  if [ -f "$installed_file" ]; then
+    if [ "$DRY_RUN" -eq 1 ]; then
+      would "rm $installed_file"
+    else
+      rm -f "$installed_file"
+      ok "removed $installed_file"
+    fi
+  else
+    ok "$installed_file already absent"
+  fi
+done
+
+for skill_dir in "$CODEX_SKILL_DIR" "$CLAUDE_SKILL_DIR"; do
+  if [ -d "$skill_dir" ]; then
+    if [ "$DRY_RUN" -eq 1 ]; then
+      would "rm -rf $skill_dir"
+    else
+      rm -rf "$skill_dir"
+      ok "removed $skill_dir"
+    fi
+  else
+    ok "$skill_dir already absent"
+  fi
+done
+
 # Also stop a stray manually-started focalpointd, if any.
 if pgrep -x focalpointd >/dev/null 2>&1; then
   if [ "$DRY_RUN" -eq 1 ]; then
@@ -125,11 +215,19 @@ fi
 step "Binaries"
 
 for dir in /opt/homebrew/bin "$HOME/.local/bin"; do
-  for bin in focalpoint focalpointd; do
+  for bin in focalpoint focalpointd fpctl-agent focalpoint-attention focalpoint-tier2; do
     link="$dir/$bin"
     if [ -L "$link" ]; then
       target="$(readlink "$link")"
       case "$target" in
+        "$dir/.focalpoint-installed-$bin")
+          if [ "$DRY_RUN" -eq 1 ]; then
+            would "rm $link and $target"
+          else
+            rm -f "$link" "$target"
+            ok "removed $link and installed binary"
+          fi
+          ;;
         "$REPO_MARKER"*)
           if [ "$DRY_RUN" -eq 1 ]; then
             would "rm $link (-> $target)"

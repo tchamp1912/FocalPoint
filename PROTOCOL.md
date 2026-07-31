@@ -99,6 +99,17 @@ Requests:
  "usage": {"five_hour_used": 42.5, "five_hour_resets_at": 1738425600,
            "seven_day_used": 18.0, "seven_day_resets_at": 1738600000}}
 {"cmd": "get-usage"}
+{"cmd": "get-attention-order"}
+{"cmd": "set-attention-order", "sessions": ["id-a", "id-b"]}
+{"cmd": "focus-next-attention"}
+{"cmd": "focus-prev-attention"}
+{"cmd": "focus-session", "session": "id"}
+{"cmd": "launch-session", "provider": "codex", "model": "gpt-5.6-sol", "cwd": "/prepared/path",
+ "task": "Implement and test the assigned task.", "task_id": "stable-task-id",
+ "role": "worker", "manager_task_id": "project-orchestrator"}
+{"cmd": "read-session-transcript", "session": "id", "task_id": "stable-task-id",
+ "tail": 20, "search": null}
+{"cmd": "stop-orchestrated-session", "session": "id", "task_id": "stable-task-id"}
 {"cmd": "subscribe"}            // stream of event objects follows
 {"cmd": "inject", "kind": "key", "control": "accept", "action": "tap"}
 {"cmd": "inject", "kind": "dial", "delta": 1}
@@ -258,7 +269,8 @@ off of). A `set-meta` still counts as session activity for
   `$XDG_STATE_HOME/focalpoint/state.json` (falling back to
   `~/.local/state/focalpoint/state.json`) on every session-affecting change
   and on `set-usage`. The file holds live sessions, tombstones, and usage
-  snapshots; on startup the daemon loads it instead of starting empty,
+  snapshots and the optional explicit attention order; on startup the daemon
+  loads it instead of starting empty,
   reconstructs internal timestamps from the saved wall-clock anchor, and
   runs a one-shot reconciliation (dead tty/pid → reap/tombstone) before
   serving its first request. Missing or corrupt snapshots are a silent
@@ -299,6 +311,21 @@ also removes the session as an idempotent safety net once the process is gone.
 For a session with no resolved `pid` (Cursor, or one whose identity never
 resolved) `quit-session` degrades to a plain `end-session`.
 
+`relaunch-managed-session`
+(`{"cmd":"relaunch-managed-session","session":"id"}`) is the explicit
+quit-and-resume promotion used by the app's **Relaunch as Managed Session**
+action. The daemon accepts only a connected, unmanaged Claude/Codex session
+with a positive provider pid, an existing working directory, and an
+`idle`/`waiting`/`done` state. It atomically reserves the session's slot, name,
+and metadata; rejects late events from the old process; waits for that process
+to exit; then starts the fixed provider resume command in detached tmux. No
+command, cwd, environment, or prompt is accepted from the client. The reply
+contains an opaque `launch_id`. Progress is broadcast as a
+`managed-relaunch` event with status `quitting`, `launched`, `complete`, or
+`failed`. Only a replacement hook carrying the matching `meta.relaunch_id`
+completes the handoff. A launch or registration failure becomes a recoverable
+disconnected session; it never falls back to an unmanaged duplicate.
+
 `focus-session` (`{"cmd":"focus-session","session":"id"}`) runs that same
 `[session] focus` action for a session looked up **by id** rather than by a
 pressed slot — resolving live sessions *and* tombstoned (disconnected) ones.
@@ -306,6 +333,46 @@ Front-ends use it to focus a session with no live slot to press: a
 disconnected session (its terminal is usually still open — idle past the TTL,
 or an agent crash that left the window), or a slotless overflow session (>12
 live). Same env vars as above, from the session's last-known values.
+
+The daemon owns a complete attention order separately from numbered slots.
+`get-attention-order` returns `{"ok":true,"sessions":[...]}`.
+`set-attention-order` replaces it and requires every live session id exactly
+once; changes broadcast `{"event":"attention-order","sessions":[...]}`.
+Ended sessions are removed, newly registered sessions are appended
+deterministically, rekeys retain position, and the explicit order persists in
+the daemon snapshot. Without an explicit order the fallback is error first,
+then waiting, then slot and id. `focus-next-attention` and
+`focus-prev-attention` wrap an internal cursor across only live waiting/error
+sessions and reply with `{"ok":true,"session":"id"}` or `session:null`.
+
+`launch-session` is the daemon's narrow managed-process primitive. It accepts
+only `claude` or `codex`, an optional provider model id/alias, an existing
+absolute working directory, a literal
+non-empty task of at most 16384 UTF-8 bytes, and a stable task id of 1–64
+letters, digits, dots, underscores, or dashes. The daemon rejects duplicate
+task ids and starts the provider through the installed managed-session
+launcher in the terminal selected by the FocalPoint menu-bar app. The daemon
+reads that preference for each launch, so changing terminals requires no
+daemon restart; a missing or invalid preference falls back to Terminal. It
+does not create worktrees, prepare environments, install
+dependencies, decompose work, answer approvals, or accept arbitrary shell
+commands.
+
+The optional `role` is `worker` (the default) or `orchestrator`. A worker may
+name a live managed orchestrator's stable task id in `manager_task_id`; an
+orchestrator cannot name a manager. The launcher propagates these as
+`meta.orchestration_role` and `meta.manager_task_id`, alongside the launched
+session's own `meta.orchestrator_task_id`, so clients can render multiple
+independent orchestration groups without inferring them from labels.
+
+`read-session-transcript` and `stop-orchestrated-session` require the session
+id and its matching stable orchestrator task id. The daemon also requires the
+session to be managed and Claude/Codex-owned. Transcript reads
+accept a tail of 1–100 and an optional bounded case-insensitive search, return
+normalized user/assistant/tool messages, omit reasoning blocks and raw tool
+inputs, and resolve adapter-reported paths only within the provider's local
+transcript directory. Stop requests use the same graceful SIGINT-to-SIGTERM
+teardown as `quit-session`; they cannot target unrelated sessions.
 
 `inject` feeds a synthetic device event through the same dispatch path as real
 hardware input (actions fire, subscribers see the event). It exists for
@@ -327,6 +394,7 @@ Responses / events:
 {"event": "session-ended", "session": "id", "slot": 1}
 {"event": "session-disconnected", "session": "id", "slot": 1}
 {"event": "session-rekeyed", "old_session": "old-id", "new_session": "new-id"}
+{"event": "attention-order", "sessions": ["id-a", "id-b"]}
 {"event": "key", "control": "accept", "pressed": true}
 {"event": "dial", "delta": 2}
 {"event": "joy", "gesture": "north"}

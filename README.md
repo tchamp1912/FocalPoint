@@ -37,6 +37,13 @@ xcode-select --install
 brew install rust jq
 ```
 
+For precise managed-session focus and input routing, tmux is an optional
+dependency:
+
+```sh
+brew install tmux
+```
+
 Then clone and run the installer:
 
 ```sh
@@ -50,16 +57,28 @@ skip that prompt, run `./install.sh --yes`.
 
 It will:
 
-- build and install the `focalpointd` daemon and `focalpoint` CLI;
+- build and install the `focalpointd` daemon, general `focalpoint` CLI, and
+  narrow native `fpctl-agent` orchestration client;
 - install and launch the native FocalPoint menu-bar app;
 - configure a launchd user service so the daemon starts automatically;
+- install the guarded `focalpoint-orchestrator` agent-control skill;
 - install the Claude Code, Codex CLI, and Cursor adapters;
+- install the managed-session launcher under `~/.config/focalpoint/` while
+  preserving any existing FocalPoint tmux configuration;
 - merge FocalPoint lifecycle hooks into each installed agent's user config,
   backing up those files before changing them; and
 - preserve an existing `~/.config/focalpoint/config.toml`.
 
 Restart any agent sessions that were already open so they load the new hooks.
-The FocalPoint keyboard icon will appear in the macOS menu bar.
+The FocalPoint keyboard icon will appear in the macOS menu bar. Waiting/error
+sessions are highlighted in the desktop widget without system notifications.
+An orchestrator can set the daemon's attention order with `fpctl-agent`; the
+app and attention key follow that same daemon-owned order.
+
+With optional tmux support installed, start a managed agent using
+`~/.config/focalpoint/focalpoint-run.sh claude` (or replace `claude` with
+`codex`). See [the orchestrator guide](orchestrator/) for checkout usage and
+layout options.
 
 ### Try it without the hardware
 
@@ -90,9 +109,18 @@ is expected to fail with an app-only install unless the daemon is in mock mode.
   working surface for that session.
 - Cycle forward or backward through the attention queue with configurable
   global hotkeys.
+- Let an orchestrator agent replace that queue with an explicit
+  session order; the attention keys follow it without moving numbered slots.
+- Launch a specific Claude or Codex model for a literal task in an exact, already-prepared
+  directory. Environment/worktree setup remains the orchestrator's job.
+- Read bounded normalized transcript tails and gracefully stop only the
+  managed sessions associated with matching orchestrator task IDs.
 - Use the same flow from numbered session keys on the physical macropad.
 - Keep working while background agents think and run tools; FocalPoint tells
   you where your attention has the highest value.
+- Permission requests get a two-second grace period, so Claude/Codex
+  auto-approvals do not create false attention signals; only a request that
+  remains blocked reaches `waiting`.
 
 ### Every agent in one place
 

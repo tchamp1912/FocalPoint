@@ -1,0 +1,4 @@
+interface:
+  display_name: "FocalPoint Orchestrator"
+  short_description: "Launch, group, supervise, and route coding agents"
+  default_prompt: "Use $focalpoint-orchestrator to launch and supervise my coding-agent sessions, group workers under their orchestrators, and route my attention."
