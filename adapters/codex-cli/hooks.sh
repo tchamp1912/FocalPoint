@@ -36,6 +36,23 @@ field() {
   fi
 }
 
+# Lightweight context snapshot: parse only the last token_count line instead
+# of rescanning the whole rollout for cumulative stats. Used on mid-turn hooks
+# so the context meter updates during long tool loops, not only on Stop.
+extract_context_snapshot() {
+  local transcript="$1"
+  local last_line=""
+  [ -n "$transcript" ] && [ -f "$transcript" ] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  last_line=$(grep -F '"type":"token_count"' "$transcript" 2>/dev/null | tail -n 1) || return 0
+  [ -n "$last_line" ] || return 0
+  printf '%s' "$last_line" | jq -r '
+    .payload.info
+    | [(.last_token_usage.input_tokens // 0), (.model_context_window // 0)]
+    | @tsv
+  ' 2>/dev/null
+}
+
 event=$(field hook_event_name)
 session_id=$(field session_id)
 cwd=$(field cwd)
@@ -93,8 +110,13 @@ if [ -n "${session_id:-}" ]; then
     if [ -n "${transcript_path:-}" ] && [ -f "$transcript_path" ] && command -v jq >/dev/null 2>&1; then
       # Codex rollout JSONL is explicitly a convenience rather than a stable
       # hook API, so keep this parser defensive and retain the counter fallback
-      # below. token_count.total_token_usage is already cumulative; cached and
-      # reasoning tokens are subsets of input_tokens/output_tokens respectively.
+      # below. token_count.total_token_usage.output_tokens is cumulative and
+      # safe to use for tokens_out; total_token_usage.input_tokens is *not* —
+      # it re-counts cached context on every tool-loop API round-trip and
+      # inflates into tens of millions on agentic sessions (same pitfall
+      # claude-code/hooks.sh documents). tokens_in instead sums, per
+      # task_complete turn, the last token_count snapshot's
+      # last_token_usage.input_tokens (prompt size at end of that turn).
       # compactions: counts inline context-compaction events (verified against
       # real rollout files — Codex compacts in place, same thread_id, so this
       # is already a whole-lineage total with no daemon-side carry-forward
@@ -102,14 +124,27 @@ if [ -n "${session_id:-}" ]; then
       stats=$(jq -r -s '
         ([.[] | select(.type=="event_msg" and .payload.type=="token_count"
           and .payload.info.total_token_usage!=null) | .payload.info] | last // {}) as $usage
+        | ([.[] | select(.type=="event_msg" and .payload.type=="task_complete") | .timestamp]) as $ends
+        | (if ($ends | length) == 0 then
+            ($usage.last_token_usage.input_tokens // 0)
+          else
+            [range(0; ($ends | length)) as $i
+              | ($ends[$i]) as $end
+              | (if $i == 0 then "" else $ends[$i - 1] end) as $start
+              | [.[] | select(.type=="event_msg" and .payload.type=="token_count"
+                  and (.timestamp > $start) and (.timestamp <= $end))
+                | .payload.info.last_token_usage.input_tokens]
+              | if length > 0 then last else 0 end
+            ] | add // 0
+          end) as $tokens_in
         | {
-            turns: ([.[] | select(.type=="event_msg" and .payload.type=="task_complete")] | length),
+            turns: ($ends | length),
             tool_calls: ([.[] | select(.type=="response_item" and
               (.payload.type=="function_call" or .payload.type=="custom_tool_call"))] | length),
             subagents: ([.[] | select(.type=="response_item" and
               (.payload.type=="function_call" or .payload.type=="custom_tool_call") and
               ((.payload.name // "") | test("^(spawn_agent|Agent)$")))] | length),
-            tokens_in: ($usage.total_token_usage.input_tokens // 0),
+            tokens_in: $tokens_in,
             tokens_out: ($usage.total_token_usage.output_tokens // 0),
             model: ([.[] | select(.type=="turn_context") | .payload.model]
               | map(select(.!=null and .!="")) | last // ""),
@@ -135,6 +170,18 @@ if [ -n "${session_id:-}" ]; then
       turns=$(( $(cat "$counter_file" 2>/dev/null || echo 0) + 1 ))
       printf '%s' "$turns" > "$counter_file" 2>/dev/null
       args+=(--meta "turns=$turns")
+    fi
+  fi
+
+  # Stop runs the full transcript stats pass above; on other hooks refresh
+  # only context occupancy so the UI bar tracks live prompt size.
+  if [ "$event" != "Stop" ]; then
+    if [ -n "${transcript_path:-}" ] && [ -f "$transcript_path" ]; then
+      ctx=$(extract_context_snapshot "$transcript_path")
+      if [ -n "$ctx" ]; then
+        IFS=$'\t' read -r context_tokens context_window <<< "$ctx"
+        args+=(--meta "context_tokens=$context_tokens" --meta "context_window=$context_window")
+      fi
     fi
   fi
 fi

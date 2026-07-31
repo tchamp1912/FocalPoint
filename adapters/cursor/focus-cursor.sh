@@ -9,12 +9,12 @@
 # Goal: bring the Cursor window for this session's workspace to the front.
 #
 # Strategy, in order:
-#   1. `cursor <workspace>` — Cursor's own CLI. Like VS Code, it reuses and
-#      raises the existing window already showing that folder, which is
-#      exactly the behavior we want and needs no special permission.
-#   2. `open -a Cursor <workspace>` — same idea via LaunchServices, for
-#      installs where the `cursor` CLI shim was never added to PATH.
-#   3. Plain activate, when there's no workspace path to target.
+#   1. `cursor -r <workspace>` — Cursor's CLI flag to reuse and raise the
+#      window already showing that folder. Plain `cursor <path>` can spawn a
+#      new window (especially with multi-workbench / glass builds).
+#   2. `open -a Cursor --args -r <workspace>` — same reuse flag when the CLI
+#      shim isn't on PATH.
+#   3. Plain activate when there's no workspace path to target.
 #
 # HONEST LIMITATION: this focuses the WORKSPACE WINDOW, not the individual
 # chat. Cursor's hooks expose no window or composer handle — only
@@ -41,6 +41,12 @@
 set -u
 
 CWD="${FOCALPOINT_SESSION_CWD:-}"
+
+# Resolve symlinks so the path matches what Cursor registered when the user
+# opened the folder (e.g. /var/... vs /private/var/..., or a symlinked repo).
+if [ -n "$CWD" ] && [ -d "$CWD" ]; then
+  CWD="$(cd "$CWD" && pwd -P)" || true
+fi
 
 # Seconds to wait for any single external call before killing it. Shares the
 # knob with the terminal focus script.
@@ -72,12 +78,12 @@ run_guarded() {
 # Nothing to focus if Cursor isn't running — and we won't start it.
 pgrep -x "Cursor" >/dev/null 2>&1 || exit 0
 
-# 1/2: point Cursor at the workspace, which raises its existing window.
+# 1/2: reuse and raise the existing workspace window — never spawn a new one.
 if [ -n "$CWD" ] && [ -d "$CWD" ]; then
   if command -v cursor >/dev/null 2>&1; then
-    run_guarded cursor "$CWD" || true
+    run_guarded cursor -r "$CWD" || true
   else
-    run_guarded open -a "Cursor" "$CWD" || true
+    run_guarded open -a "Cursor" --args -r "$CWD" || true
   fi
 fi
 

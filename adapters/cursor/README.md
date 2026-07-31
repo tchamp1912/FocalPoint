@@ -98,9 +98,9 @@ focus = { type = "shell", run = "~/.config/focalpoint/adapters/focus-session.sh"
 ```
 
 `focus-cursor.sh` never launches Cursor from cold — if it isn't running there
-is no session window to raise. It prefers the `cursor` CLI (which reuses the
-existing window for a folder), falls back to `open -a Cursor`, and finishes
-with an `activate`. Every external call runs under a hard timeout
+is no session window to raise. It prefers `cursor -r <workspace>` (reuse the
+existing window for that folder), falls back to `open -a Cursor --args -r`,
+and finishes with an `activate`. Every external call runs under a hard timeout
 (`FOCALPOINT_FOCUS_TIMEOUT`, default 3s) so a stuck call can't hang the
 daemon's dispatch. No Accessibility permission is required.
 

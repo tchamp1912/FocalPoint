@@ -62,6 +62,11 @@ else
   NEEDLE=""
 fi
 TARGET_TTY="${FOCALPOINT_SESSION_TTY:-}"
+# The generic /dev/tty alias is not unique per session — treat as missing so
+# focus falls through rather than matching every colliding session at once.
+if [ "$TARGET_TTY" = "/dev/tty" ]; then
+  TARGET_TTY=""
+fi
 
 # Seconds to wait for any single osascript call before killing it.
 TIMEOUT_SECS="${FOCALPOINT_FOCUS_TIMEOUT:-3}"
