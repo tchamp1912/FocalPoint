@@ -1,0 +1,178 @@
+(footprint "Release_HS5_Kailh_CPG151101S11_Hotswap"
+	(version 20260206)
+	(generator "pcbnew")
+	(generator_version "10.0")
+	(layer "F.Cu")
+	(descr "Kailh CPG151101S11 MX hot-swap socket; manufacturer drawing KHA-PG1511-094EN Rev B, 2019-01-03; specification KH-PS-1607-10 Rev B. Source: https://www.kailhswitch.com/uploads/15927/files/CPG151101S11.pdf?rnd=550")
+	(tags "Kailh CPG151101S11 MX hot swap socket")
+	(property "Reference" "HS5"
+		(at 0 8.5 0)
+		(layer "F.SilkS")
+		(hide yes)
+		(uuid "7c7a8548-dcd0-44e1-8d1a-7d8c186b085e")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "CPG151101S11"
+		(at 0 -8.5 0)
+		(layer "F.Fab")
+		(uuid "4d163ba0-2415-4aa7-b91f-7f1bf7a212b1")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "c625263c-bdb2-4d52-af27-fc24d47872fd")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "0067175e-5ec4-40e4-9bc6-bd9d6b05bf3f")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
+	(fp_rect
+		(start -7.5 -7.2)
+		(end 7.5 1.2)
+		(stroke
+			(width 0.05)
+			(type default)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "4f56fab3-5db8-40d6-a693-77ed6f7fdfdd")
+	)
+	(fp_line
+		(start -7.25 -6.93)
+		(end -7.25 -3.65)
+		(stroke
+			(width 0.12)
+			(type default)
+		)
+		(layer "F.Fab")
+		(uuid "61874757-c83f-4c6b-9662-8d220ae83f82")
+	)
+	(fp_line
+		(start -7.25 -6.93)
+		(end -4.8 -6.93)
+		(stroke
+			(width 0.12)
+			(type default)
+		)
+		(layer "F.Fab")
+		(uuid "9a3c5d51-9a3e-440e-bc07-7fcbe89ee1e2")
+	)
+	(fp_line
+		(start 7.25 -3.65)
+		(end 7.25 0.93)
+		(stroke
+			(width 0.12)
+			(type default)
+		)
+		(layer "F.Fab")
+		(uuid "3177ff22-6937-45ec-9cec-4b0244d38d0c")
+	)
+	(fp_line
+		(start 7.25 0.93)
+		(end 4.7 0.93)
+		(stroke
+			(width 0.12)
+			(type default)
+		)
+		(layer "F.Fab")
+		(uuid "412c9487-d3d9-42ab-8720-0c69368c5a32")
+	)
+	(fp_rect
+		(start -7.25 -6.93)
+		(end 7.25 0.93)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "1c6eeb94-8571-4ed1-9a38-b725b1912923")
+	)
+	(fp_text user "MX CENTER"
+		(at 0 2.5 0)
+		(layer "F.Fab")
+		(uuid "57a6fa8b-1688-4525-a059-5c803c097c52")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+	)
+	(pad "" np_thru_hole circle
+		(at -5.08 0)
+		(size 1.7 1.7)
+		(drill 1.7)
+		(layers "*.Mask" "F.Cu" "B.Cu" "In1.Cu" "In2.Cu" "In3.Cu" "In4.Cu")
+		(uuid "e082d0fe-b8e9-4b80-91f1-2513ba1d00ad")
+	)
+	(pad "" np_thru_hole circle
+		(at -2.54 -5.08)
+		(size 3.05 3.05)
+		(drill 3.05)
+		(layers "*.Mask" "F.Cu" "B.Cu" "In1.Cu" "In2.Cu" "In3.Cu" "In4.Cu")
+		(uuid "e0bc0576-7feb-4cb4-91eb-cff942ad3fb8")
+	)
+	(pad "" np_thru_hole circle
+		(at 0 0)
+		(size 4 4)
+		(drill 4)
+		(layers "*.Mask" "F.Cu" "B.Cu" "In1.Cu" "In2.Cu" "In3.Cu" "In4.Cu")
+		(uuid "5a39b26c-017d-41ab-bea1-843b5321ae3a")
+	)
+	(pad "" np_thru_hole circle
+		(at 3.81 -2.54)
+		(size 3.05 3.05)
+		(drill 3.05)
+		(layers "*.Mask" "F.Cu" "B.Cu" "In1.Cu" "In2.Cu" "In3.Cu" "In4.Cu")
+		(uuid "ccddf71f-50de-464f-9cf3-c9291661fac0")
+	)
+	(pad "" np_thru_hole circle
+		(at 5.08 0)
+		(size 1.7 1.7)
+		(drill 1.7)
+		(layers "*.Mask" "F.Cu" "B.Cu" "In1.Cu" "In2.Cu" "In3.Cu" "In4.Cu")
+		(uuid "253541e9-8fe3-493c-9f25-989f9a1d36ae")
+	)
+	(pad "1" smd roundrect
+		(at 7.36 -2.54)
+		(size 2.55 2.5)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.08)
+		(uuid "f9f267f0-dcac-455c-a891-9c36ba212317")
+	)
+	(pad "2" smd roundrect
+		(at -6.09 -5.08)
+		(size 2.55 2.5)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.08)
+		(uuid "b653e0bb-02d7-4385-ada2-bbdb5403dd0c")
+	)
+	(embedded_fonts no)
+)

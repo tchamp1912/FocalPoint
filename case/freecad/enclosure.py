@@ -37,7 +37,7 @@ import Part
 REPO = Path(__file__).resolve().parents[2]
 OUTPUT = REPO / "case" / "output"
 OUTPUT.mkdir(parents=True, exist_ok=True)
-KICAD_BOARD = REPO / "hardware" / "kicad" / "focalpoint_production.kicad_pcb"
+KICAD_BOARD = REPO / "hardware" / "kicad" / "focalpoint_rev_a_release_candidate.kicad_pcb"
 DESIGN_MD = REPO / "case" / "DESIGN.md"
 
 # Master parameters, millimetres/degrees. DESIGN.md's parameter table is
@@ -46,7 +46,7 @@ DESIGN_MD = REPO / "case" / "DESIGN.md"
 PCB_W = 116.0
 PCB_D = 116.0
 PCB_T = 1.6
-PCB_CLEARANCE = 3.0
+PCB_CLEARANCE = 4.5
 SHELL_W = PCB_W + 2 * PCB_CLEARANCE
 SHELL_D = PCB_D + 2 * PCB_CLEARANCE
 CORNER_R = 6.0
@@ -106,7 +106,8 @@ FIT_CLEARANCE = 0.30   # printed mating features that do NOT latch
 # the boss top (the old model was a Ø3.4 through-hole — wrong on both
 # counts). Print insert coupons before ordering (Phase 1 criterion).
 BOSS_OD = 9.0
-BOSS_INSET = 12.0            # boss centers 12 mm from each shell edge
+BOSS_AXIS_EDGE = 3.0         # screw axis; clears PCB edge by 0.05 mm
+BOSS_Y_FRACTION = 0.30       # two fastener stations along each side wall
 INSERT_PILOT_D = 4.0
 INSERT_PILOT_DEPTH = 5.5
 # M2.5 plate screws: Ø2.9 normal-fit clearance holes (previously Ø3.4 and
@@ -140,10 +141,17 @@ CABLE_RELIEF_W = 12.0            # along Y, centered on the pocket
 USB_SHELL_W = 8.94
 USB_SHELL_H = 3.26
 USB_CLEAR = 0.6
-# PROVISIONAL x position: centred on the rear-wall region left free by the
-# MDBT50Q antenna corner (module keep-out occupies the rear-right). Re-derive
-# from KiCad edge placement once the connector is placed.
-USB_X = 44.5
+# Exact routed placement: J1 anchor (146.0, 102.2) maps to shell x=50.5 mm.
+USB_X = 50.5
+USB_TOP_NOTCH_D = 12.0
+
+# J2 is a top-mounted JST-SH battery connector. A service opening above it
+# gives its body and pigtail room while allowing the cable to fold around the
+# board edge into the battery pocket below.
+JST_KICAD_X = 108.0
+JST_KICAD_Y = 120.0
+JST_SERVICE_W = 8.0
+JST_SERVICE_D = 8.0
 
 # Reset access: Omron B3U-1000P is top-actuated; assume it is placed on the
 # PCB *bottom* side so a pin can reach it through a floor pinhole (WP3-5).
@@ -157,7 +165,7 @@ RESET_Y = 95.0
 # Antenna keep-out placeholder (replace from the Raytac MDBT50Q datasheet at
 # KiCad placement time). Recorded rule (WP3-7): the metal M2.5 insert in the
 # rear-right boss must stay >= ANTENNA_INSERT_CLEAR from the keep-out, so the
-# placeholder is positioned inboard of that boss instead of in the corner.
+# placeholder is positioned inboard of the rear-right side boss.
 ANTENNA_KEEPOUT_W = 25.0
 ANTENNA_KEEPOUT_D = 20.0
 ANTENNA_KEEPOUT_H = 12.0
@@ -172,15 +180,53 @@ TOUCH_MARK_DEPTH = 0.2
 TOUCH_RECESS_D = 13.0      # underside foam-locating recess
 TOUCH_RECESS_DEPTH = 0.4
 
-# FocalPoint ray mark engraved into the clear front apron of the top plate.
-# The proportions match app/Assets/focalpoint-mark.svg. A shallow recess keeps
-# the mark legible without becoming a through-feature in the 1.5 mm plate.
+# Same three optical rays as app/Assets/focalpoint-mark.svg (viewBox 0 0 128
+# 64): one shared origin, a convex lens transition (approximated with stable
+# line segments), and one focal point. Engraved in one neutral line weight;
+# color is an app/print presentation detail. LOGO_W/GROMMET_LOGO_W below are
+# sized against this mark's own ink bounding box (x:10-82, y:5-59 — NOT the
+# full 128x64 SVG canvas, which pads well past the ink on the right and
+# unevenly on the left), so "23 mm wide" means the visible mark spans 23 mm.
+LOGO_SEGMENTS = [
+    (10, 16, 43, 16), (43, 16, 48, 17.778), (48, 17.778, 82, 48),
+    (10, 16, 82, 48),
+    (10, 16, 43.8, 45.8), (43.8, 45.8, 49, 48), (49, 48, 82, 48),
+    # Convex lens outline, approximated with stable engraved line segments.
+    (46, 5, 42, 16), (42, 16, 40, 32), (40, 32, 42, 48),
+    (42, 48, 46, 59), (46, 59, 50, 48), (50, 48, 52, 32),
+    (52, 32, 50, 16), (50, 16, 46, 5),
+]
+_logo_xs = [x for seg in LOGO_SEGMENTS for x in (seg[0], seg[2])]
+_logo_ys = [y for seg in LOGO_SEGMENTS for y in (seg[1], seg[3])]
+LOGO_INK_MIN_X, LOGO_INK_MAX_X = min(_logo_xs), max(_logo_xs)
+LOGO_INK_MIN_Y, LOGO_INK_MAX_Y = min(_logo_ys), max(_logo_ys)
+LOGO_INK_W = LOGO_INK_MAX_X - LOGO_INK_MIN_X
+LOGO_INK_H = LOGO_INK_MAX_Y - LOGO_INK_MIN_Y
+LOGO_INK_CX = (LOGO_INK_MIN_X + LOGO_INK_MAX_X) / 2
+LOGO_INK_CY = (LOGO_INK_MIN_Y + LOGO_INK_MAX_Y) / 2
+
+# FocalPoint ray mark engraved into the clear front apron of the top plate,
+# viewed from above (outward normal +Z, looking down). Mirrored in X to read
+# correctly from that viewing direction. A shallow recess keeps the mark
+# legible without becoming a through-feature in the 1.5 mm plate.
 LOGO_W = 23.0
-LOGO_H = LOGO_W * 40.0 / 64.0
+LOGO_H = LOGO_W * LOGO_INK_H / LOGO_INK_W
 LOGO_CENTER_X = SHELL_W / 2
 LOGO_CENTER_Y = 13.0
-LOGO_STROKE = 0.65
+LOGO_STROKE = 0.4
 LOGO_DEPTH = 0.25
+
+# Same mark, molded large into the replaceable puck grommet's exposed desk-
+# facing face (the true "bottom of the cylinder" — the plastic puck itself is
+# almost entirely covered by the grommet, radius PUCK_RADIUS - GROMMET_EDGE_
+# INSET = 36, so that's what's actually visible), viewed from below (outward
+# normal -Z, looking up) — mirrored in X *and* Y relative to the top mark, to
+# read correctly from that opposite viewing direction. 52 mm wide keeps the
+# mark's bounding-box half-diagonal (~32.5 mm) inside that Ø72 grommet face
+# with a small (~3.5 mm) safety margin.
+GROMMET_LOGO_W = 52.0
+GROMMET_LOGO_H = GROMMET_LOGO_W * LOGO_INK_H / LOGO_INK_W
+GROMMET_LOGO_DEPTH = 0.25
 
 # Alps RKJXV122400R prototype joystick (official Drawing No. 1, update 2510).
 # It is PCB-mounted: the 18.2 x 21.7 mm lower body sits below the top shell,
@@ -318,6 +364,56 @@ def set_view(obj, color, transparency=0):
         obj.ViewObject.Transparency = transparency
 
 
+def make_logo_cutter(center_x, center_y, width, depth, surface_z, material_above,
+                     mirror_x=False, mirror_y=False):
+    """Build the FocalPoint ray-mark cutter (app/Assets/focalpoint-mark.svg
+    proportions) as a shallow engraving recessed `depth` into a flat face at
+    z = surface_z, centered on the mark's own ink bounding box (not the wider,
+    unevenly-padded SVG canvas) so `width` truly is the visible mark's width
+    and (center_x, center_y) is where it visually centers. `material_above`
+    selects which side of that face the solid material sits on (True: bottom
+    shell's underside, material at z > surface_z; False: top plate's topside,
+    material at z < surface_z) so the cutter overshoots the face on the empty
+    side and stops `depth` into the material side, rather than needing a
+    per-caller z-offset worked out by hand. `mirror_x`/`mirror_y` flip the
+    mark about its own center — needed because a mark viewed from -Z (above)
+    and the same mark viewed from +Z (below) are mirror images of each other
+    when drawn from the same (x, y) data."""
+    scale = width / LOGO_INK_W
+    sx = -scale if mirror_x else scale
+    sy = -scale if mirror_y else scale
+    z0 = surface_z - 0.1 if material_above else surface_z - depth
+    cut_h = depth + 0.1
+
+    def point(x, y):
+        return (center_x + (x - LOGO_INK_CX) * sx,
+                center_y + (y - LOGO_INK_CY) * sy)
+
+    def engraved_segment(x1, y1, x2, y2):
+        ax, ay = point(x1, y1)
+        bx, by = point(x2, y2)
+        length = math.hypot(bx - ax, by - ay)
+        stroke = Part.makeBox(
+            length, LOGO_STROKE, cut_h,
+            App.Vector(ax, ay - LOGO_STROKE / 2, z0),
+        )
+        stroke.rotate(App.Vector(ax, ay, 0), App.Vector(0, 0, 1),
+                      math.degrees(math.atan2(by - ay, bx - ax)))
+        # Round caps also prevent tiny acute corners in the physical recess.
+        for px, py in ((ax, ay), (bx, by)):
+            stroke = stroke.fuse(Part.makeCylinder(LOGO_STROKE / 2, cut_h,
+                                                    App.Vector(px, py, z0)))
+        return stroke
+
+    cutter = None
+    for segment in LOGO_SEGMENTS:
+        segment_shape = engraved_segment(*segment)
+        cutter = segment_shape if cutter is None else cutter.fuse(segment_shape)
+    fx, fy = point(82, 48)
+    focus = Part.makeCylinder(1.25 * scale, cut_h, App.Vector(fx, fy, z0))
+    return cutter.fuse(focus)
+
+
 # ---------------------------------------------------------------------------
 # Derived stack + battery geometry, with runtime sanity checks (WP3-2).
 # World frame: PCB top = plate underside - PCB_TOP_DROP (3.5 mm);
@@ -393,6 +489,7 @@ parameters = [
     ("Grommet projection", GROMMET_PROUD, "mm"),
     ("Fit clearance (non-latching)", FIT_CLEARANCE, "mm"),
     ("Insert boss OD", BOSS_OD, "mm"),
+    ("Insert screw-axis edge inset", BOSS_AXIS_EDGE, "mm"),
     ("Insert pilot diameter", INSERT_PILOT_D, "mm"),
     ("Insert pilot depth", INSERT_PILOT_DEPTH, "mm"),
     ("Plate screw clearance", PLATE_SCREW_CLEAR_D, "mm"),
@@ -493,6 +590,12 @@ grommet_shape = Part.makeCylinder(
     GROMMET_T,
     App.Vector(puck_center_x, puck_center_y, puck_z - GROMMET_PROUD),
 )
+# FocalPoint ray mark, molded large into the grommet's exposed desk-facing
+# face (the world-frame bottom of the puck cylinder, never rotated).
+grommet_shape = grommet_shape.cut(make_logo_cutter(
+    puck_center_x, puck_center_y, GROMMET_LOGO_W, GROMMET_LOGO_DEPTH,
+    puck_z - GROMMET_PROUD, material_above=True,
+    mirror_x=True, mirror_y=True))
 
 # Battery pocket (WP3-2): a flat-bottomed pocket sunk through the tilted
 # floor into the puck. The cutter extends far above the floor so it also
@@ -512,23 +615,31 @@ relief_cut = Part.makeBox(
                BATTERY_POCKET_BOTTOM_Z))
 bottom_shape = bottom_shape.cut(relief_cut)
 
-# Four heat-set-insert bosses. Built flat in the local frame (top at the
-# constant FRONT_H — no wedge, WP4-1) and rotated with the shell so their
-# tops land exactly on the plate plane after shell_rotate. The blind Ø4.0 x
-# 5.5 pilots implement the 94180A321 pilot spec. The bosses pass through the
-# PCB's Ø10.5 corner relief cutouts (hardware/ergogen/config.yaml
-# `pcb_reliefs`) with 0.75 mm radial clearance — the PCB is switch-hung from
-# the plate and never touches a boss. Fused after the interior re-cut and
-# pocket cuts so nothing trims them.
-boss_xy = [(BOSS_INSET, BOSS_INSET),
-           (SHELL_W - BOSS_INSET, BOSS_INSET),
-           (BOSS_INSET, SHELL_D - BOSS_INSET),
-           (SHELL_W - BOSS_INSET, SHELL_D - BOSS_INSET)]
+# Four heat-set-insert bosses at two stations along each side wall. The screw
+# shafts pass through the narrow perimeter channel outside the PCB. The Ø9
+# bosses may extend under the board in XY, but stop FIT_CLEARANCE below its
+# underside, so the routed rectangular PCB needs no corner cutouts. Clipping
+# each boss to the shell's local outer prism prevents a side bulge. The blind
+# Ø4.0 x 5.5 pilots implement the 94180A321 pilot spec.
+boss_y_front = SHELL_D * BOSS_Y_FRACTION
+boss_y_rear = SHELL_D * (1.0 - BOSS_Y_FRACTION)
+boss_xy = [(BOSS_AXIS_EDGE, boss_y_front),
+           (SHELL_W - BOSS_AXIS_EDGE, boss_y_front),
+           (BOSS_AXIS_EDGE, boss_y_rear),
+           (SHELL_W - BOSS_AXIS_EDGE, boss_y_rear)]
+pcb_bottom_local = pcb_top_local - PCB_T
+boss_top_local = pcb_bottom_local - FIT_CLEARANCE
+if BOSS_AXIS_EDGE + PLATE_SCREW_CLEAR_D / 2 > PCB_CLEARANCE + 0.01:
+    raise RuntimeError("lid screw shaft intersects the PCB outline")
+if boss_top_local < INSERT_PILOT_DEPTH:
+    raise RuntimeError("under-PCB boss is too short for the selected insert pilot")
 for bx, by in boss_xy:
-    boss = Part.makeCylinder(BOSS_OD / 2, FRONT_H - FLOOR,
-                             App.Vector(bx, by, FLOOR))
+    boss = Part.makeCylinder(BOSS_OD / 2, boss_top_local,
+                             App.Vector(bx, by, 0))
+    boss = boss.common(outer)
     pilot = Part.makeCylinder(INSERT_PILOT_D / 2, INSERT_PILOT_DEPTH + 1,
-                              App.Vector(bx, by, FRONT_H - INSERT_PILOT_DEPTH))
+                              App.Vector(bx, by,
+                                         boss_top_local - INSERT_PILOT_DEPTH))
     bottom_shape = bottom_shape.fuse(shell_rotate(boss.cut(pilot)))
 
 # Top/plate shell, modeled in its local plane and then tilted as one part.
@@ -570,6 +681,22 @@ encoder_cut = Part.makeCylinder(4.0, PLATE_T + 4,
                                 App.Vector(encoder_x, encoder_y, -2))
 plate_local = plate_local.cut(joystick_cut.fuse(encoder_cut))
 
+# Exact top-side connector service clearances. The rear USB opening is an
+# edge-open notch; the JST-SH opening is a small closed service window above
+# J2. Both are intentionally through-features because the component models
+# exceed the fixed MX plate-to-PCB air gap.
+usb_top_cut = Part.makeBox(
+    usb_open_w, USB_TOP_NOTCH_D, PLATE_T + 4,
+    App.Vector(USB_X - usb_open_w / 2, SHELL_D - USB_TOP_NOTCH_D, -2),
+)
+jst_x, jst_y = board_to_shell(JST_KICAD_X, JST_KICAD_Y)
+jst_service_cut = Part.makeBox(
+    JST_SERVICE_W, JST_SERVICE_D, PLATE_T + 4,
+    App.Vector(jst_x - JST_SERVICE_W / 2,
+               jst_y - JST_SERVICE_D / 2, -2),
+)
+plate_local = plate_local.cut(usb_top_cut.fuse(jst_service_cut))
+
 # Capacitive-touch cell (WP3-8): a shallow top witness mark identifies the
 # cell, and an underside recess locates a conductive-foam pillar that couples
 # the PCB electrode to the thinned plate (~1.1 mm web over the recess). Foam
@@ -587,53 +714,9 @@ touch_recess = Part.makeCylinder(
 plate_local = plate_local.cut(touch_recess)
 
 
-def engraved_segment(x1, y1, x2, y2):
-    """A rounded-looking constant-width engraving stroke between SVG points."""
-    scale = LOGO_W / 128.0
-    ox = LOGO_CENTER_X - LOGO_W / 2
-    oy = LOGO_CENTER_Y - LOGO_H / 2
-    ax, ay = ox + x1 * scale, oy + y1 * scale
-    bx, by = ox + x2 * scale, oy + y2 * scale
-    length = math.hypot(bx - ax, by - ay)
-    stroke = Part.makeBox(
-        length, LOGO_STROKE, LOGO_DEPTH + 0.1,
-        App.Vector(ax, ay - LOGO_STROKE / 2, PLATE_T - LOGO_DEPTH),
-    )
-    stroke.rotate(App.Vector(ax, ay, 0), App.Vector(0, 0, 1),
-                  math.degrees(math.atan2(by - ay, bx - ax)))
-    # Round caps also prevent tiny acute corners in the physical recess.
-    for px, py in ((ax, ay), (bx, by)):
-        stroke = stroke.fuse(Part.makeCylinder(
-            LOGO_STROKE / 2, LOGO_DEPTH + 0.1,
-            App.Vector(px, py, PLATE_T - LOGO_DEPTH),
-        ))
-    return stroke
-
-
-# Same three optical rays as the canonical SVG: one shared origin, a convex
-# lens transition, and one focal point. The three rays are engraved in one
-# neutral line weight; color is an app/print presentation detail.
-logo_segments = [
-    (10, 16, 43, 16), (43, 16, 48, 17.778), (48, 17.778, 82, 48),
-    (10, 16, 82, 48),
-    (10, 16, 43.8, 45.8), (43.8, 45.8, 49, 48), (49, 48, 82, 48),
-    # Convex lens outline, approximated with stable engraved line segments.
-    (46, 5, 42, 16), (42, 16, 40, 32), (40, 32, 42, 48),
-    (42, 48, 46, 59), (46, 59, 50, 48), (50, 48, 52, 32),
-    (52, 32, 50, 16), (50, 16, 46, 5),
-]
-logo_cut = None
-for segment in logo_segments:
-    segment_shape = engraved_segment(*segment)
-    logo_cut = segment_shape if logo_cut is None else logo_cut.fuse(segment_shape)
-logo_scale = LOGO_W / 128.0
-logo_focus = Part.makeCylinder(
-    1.25 * logo_scale, LOGO_DEPTH + 0.1,
-    App.Vector(LOGO_CENTER_X - LOGO_W / 2 + 82 * logo_scale,
-               LOGO_CENTER_Y - LOGO_H / 2 + 48 * logo_scale,
-               PLATE_T - LOGO_DEPTH),
-)
-plate_local = plate_local.cut(logo_cut.fuse(logo_focus))
+plate_local = plate_local.cut(make_logo_cutter(
+    LOGO_CENTER_X, LOGO_CENTER_Y, LOGO_W, LOGO_DEPTH, PLATE_T,
+    material_above=False, mirror_x=True))
 
 # M2.5 lid clearance holes (Ø2.9) align with the four lower bosses.
 for bx, by in boss_xy:
@@ -704,7 +787,8 @@ set_view(battery, (0.95, 0.65, 0.15), 70)
 # tilted PCB/shell instead of sitting at a fixed world Z — previously this box
 # was never rotated, so 74% of its volume fell outside the actual (tilted)
 # bottom shell, poking through the floor near the puck.
-antenna_x_max = SHELL_W - BOSS_INSET - BOSS_OD / 2 - ANTENNA_INSERT_CLEAR
+antenna_x_max = (SHELL_W - BOSS_AXIS_EDGE - BOSS_OD / 2
+                 - ANTENNA_INSERT_CLEAR)
 antenna_local = Part.makeBox(
     ANTENNA_KEEPOUT_W, ANTENNA_KEEPOUT_D, ANTENNA_KEEPOUT_H,
     App.Vector(antenna_x_max - ANTENNA_KEEPOUT_W,
@@ -715,6 +799,32 @@ antenna.Label = ("Radio antenna keep-out placeholder — inboard of the "
 antenna.Shape = shell_rotate(antenna_local)
 set_view(antenna, (0.9, 0.15, 0.15), 75)
 
+# Real populated PCB from the routed release candidate (KICAD_BOARD), as a
+# reference solid for the assembly view — not a manufacturing export. Built
+# via:
+#   kicad-cli pcb export step --subst-models --no-dnp --force \
+#     --user-origin 100x100mm -o case/output/focalpoint-board-populated.step \
+#     hardware/kicad/focalpoint_rev_a_release_candidate.kicad_pcb
+# --user-origin 100x100mm moves the STEP's own origin to the Edge.Cuts corner
+# (KICAD_MIN_X, KICAD_MIN_Y), so only the board_to_shell offset is left to
+# apply here; the exported board's top copper face is STEP z=0, which lines
+# up with pcb_top_local before shell_rotate tilts it with everything else.
+# Regenerate that STEP (via the command above) whenever the board changes.
+PCB_STEP = OUTPUT / "focalpoint-board-populated.step"
+pcb = None
+if PCB_STEP.exists():
+    pcb_shape = Part.Shape()
+    pcb_shape.read(str(PCB_STEP))
+    pcb_shape.translate(App.Vector(PCB_CLEARANCE, PCB_D + PCB_CLEARANCE, pcb_top_local))
+    pcb = doc.addObject("Part::Feature", "PopulatedPCB_REFERENCE")
+    pcb.Label = ("Routed Rev A PCB (release candidate) — "
+                 "reference only, not a manufacturing export")
+    pcb.Shape = shell_rotate(pcb_shape)
+    set_view(pcb, (0.05, 0.35, 0.12), 0)
+else:
+    print(f"note: {PCB_STEP} not found — skipping populated-PCB reference "
+          f"(regenerate it via kicad-cli, see comment above)")
+
 doc.recompute()
 
 # Neutral CAD and print exports. The assembly STEP contains the three physical
@@ -723,6 +833,9 @@ Part.export([bottom], str(OUTPUT / "focalpoint-bottom.step"))
 Part.export([top], str(OUTPUT / "focalpoint-top.step"))
 Part.export([grommet], str(OUTPUT / "focalpoint-grommet.step"))
 Part.export([bottom, top, grommet], str(OUTPUT / "focalpoint-assembly.step"))
+if pcb is not None:
+    Part.export([bottom, top, grommet, pcb],
+                str(OUTPUT / "focalpoint-assembly-with-board.step"))
 Mesh.export([bottom], str(OUTPUT / "focalpoint-bottom.stl"))
 Mesh.export([grommet], str(OUTPUT / "focalpoint-grommet.stl"))
 

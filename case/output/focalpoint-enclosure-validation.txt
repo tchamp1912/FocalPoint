@@ -1,0 +1,14 @@
+model=focalpoint-rev-a.FCStd
+BottomShell: valid=True solids=1 bbox=125.000x125.463x25.720mm volume=88153.289mm3
+TopPlateShell: valid=True solids=1 bbox=125.000x124.800x10.216mm volume=18590.330mm3
+BottomGrommet: valid=True solids=1 bbox=72.000x72.000x1.590mm volume=6447.917mm3
+BatteryEnvelope_PLACEHOLDER: valid=True solids=1 bbox=42.000x39.000x5.500mm volume=9009.000mm3
+AntennaKeepout_PLACEHOLDER: valid=True solids=1 bbox=25.000x20.788x13.366mm volume=6000.000mm3
+PopulatedPCB_REFERENCE: valid=True solids=195 bbox=116.000x117.172x14.606mm volume=19606.748mm3
+pcb_bottom_intersection: common_volume=0.000000mm3 minimum_distance=0.866386mm
+pcb_top_intersection: common_volume=0.000000mm3 minimum_distance=0.600000mm
+battery_pcb_intersection: common_volume=0.000000mm3 minimum_distance=6.134205mm
+battery_bottom_intersection: common_volume=0.000000mm3 minimum_distance=0.000000mm
+top_bottom_intersection: common_volume=0.000000mm3 minimum_distance=0.000000mm
+grommet_bottom_intersection: common_volume=0.000000mm3 minimum_distance=0.000000mm
+failures=0

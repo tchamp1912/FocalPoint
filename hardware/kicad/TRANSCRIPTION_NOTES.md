@@ -180,7 +180,7 @@ The historical placeholder issues above have been resolved in the checked-in
 schematic and corrected PCB. Human review now focuses on:
 
 1. Native KiCad DRC on
-   `focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pcb`.
+   `focalpoint_rev_a_release_candidate.kicad_pcb`.
 2. JLC BOM/placement upload review, including every MPN, side, and rotation.
 3. Antenna keepout, USB-C edge alignment, LED/socket orientation, joystick and
    encoder clearances, and the complete enclosure/PCB fit.

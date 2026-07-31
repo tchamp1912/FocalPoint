@@ -159,9 +159,9 @@ explicitly confirmed by the owner.
   1.6 mm order. Copper order is F.Signal / In1.GND / In2.Signal / In3.Signal /
   In4.+3V3 / B.Signal. The exact NP-155F 3313/0.55 mm core/2116/0.55 mm
   core/3313 construction is embedded in
-  `focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pcb`.
+  `focalpoint_rev_a_release_candidate.kicad_pcb`.
 - **Routing connectivity complete:** the corrected release candidate
-  `focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pcb` reports zero
+  `focalpoint_rev_a_release_candidate.kicad_pcb` reports zero
   unconnected items after zone refill. FreeRouting was not used for the final
   eleven connections; finite, clearance-conservative scripts completed them.
 - **Filled/capped via-in-pad accepted for the six-layer prototype:** trapped
@@ -177,11 +177,16 @@ explicitly confirmed by the owner.
   U4–U9 vendor datasheets were used to repair physical pad numbering and power
   topology. Routing-driven GPIO remaps are BOOST_EN=P1.13/pad 6,
   FG_SDA=P1.15/pad 8, FG_SCL=P0.30/pad 14, and FG_ALRT=P0.24/pad 48.
-  `drcfix2_schematic_pcb_net_compare.txt` records zero mismatches and
-  `drcfix2_static_audit.txt` records zero clearance/fabrication-minimum
+  `release_candidate_schematic_pcb_net_compare.txt` records zero mismatches and
+  `release_candidate_static_audit.txt` records zero clearance/fabrication-minimum
   violations for the corrected candidate.
 - **Native KiCad DRC checkpoint:** the application-bundle CLI wrapper completed
-  DRC for `focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pcb`.
-  `DRC_pinoutfix_drcfix2_native.rpt` records zero errors and zero unconnected
-  pads, plus 183 warnings. Those warnings still require engineering
-  disposition before manufacturing files are labeled orderable.
+  DRC for `focalpoint_rev_a_release_candidate.kicad_pcb`.
+  `DRC_release_candidate_native.rpt` records zero errors and zero unconnected
+  pads and zero violations. All hole-to-hole, narrow-connection, dangling-via,
+  dangling-track, and silkscreen warnings were repaired without creating
+  clearance violations. Thirty-seven intentionally modified footprints are
+  vendored into `FocalPoint.pretty`; `release_candidate_footprint_audit.txt`
+  reports zero geometry mismatches while ignoring only regenerated property
+  UUID metadata. KiCad's library-mismatch category is ignored for this locked
+  release library because J3 and U1 otherwise remain false positives.

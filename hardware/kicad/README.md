@@ -2,11 +2,12 @@
 
 This directory is the persistent KiCad 10 workspace. The verified schematic is
 `focalpoint.kicad_sch`; the current PCB is
-`focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pcb`. It is a fully
-routed six-layer prototype candidate. Native KiCad DRC reports zero errors and
-zero unconnected pads, with 183 warnings still requiring disposition. It is
-not orderable until those warnings are reviewed, the release package is
-rebuilt, and the JLCPCB upload is checked.
+`focalpoint_rev_a_release_candidate.kicad_pcb`. It is a fully routed six-layer
+prototype candidate. Native KiCad DRC reports zero errors and zero unconnected
+pads and zero violations. Thirty-seven intentionally modified embedded
+footprints are locked to `FocalPoint.pretty` and independently audited. It is
+not orderable until the enclosure interference defects are resolved, an
+independent review is completed, and the JLCPCB upload is checked.
 
 The production stack-up, internal-plane policy, routing classes, and mandatory
 USB impedance confirmation are defined in [PCB_FABRICATION.md](PCB_FABRICATION.md).
@@ -22,8 +23,8 @@ The refresh script refuses to overwrite a board that has already gained
 KiCad-owned electrical work. Once schematic capture or manual placement starts,
 move Ergogen changes across deliberately instead of replacing the board.
 
-Open `focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pro` and
-`focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pcb` in KiCad 10. The
+Open `focalpoint_rev_a_release_candidate.kicad_pro` and
+`focalpoint_rev_a_release_candidate.kicad_pcb` in KiCad 10. The
 active 116 mm square design presents 16 input positions in a 4×4 layout: 13
 direct-scan MX hot-swap keys plus the top-left EC11 encoder, top-right analog
 joystick, and bottom-right capacitive touch input. Every mechanical key has an
@@ -50,10 +51,10 @@ After refilling zones, running native DRC, and saving its zero-violation report:
 
 ```sh
 python3 hardware/kicad/build_release_candidate.py \
-  --drc-report hardware/kicad/DRC_pinoutfix_drcfix2_native.rpt
+  --drc-report hardware/kicad/DRC_release_candidate_native.rpt
 ```
 
-The output is `release_candidate_pinoutfix/` plus candidate ZIP archives. Read
+The output is `release_candidate/` plus candidate ZIP archives. Read
 `RELEASE_STATUS.txt`; do not order if it says `NOT YET ORDERABLE`. The
 checked-in DRC report is evidence of routing connectivity, not a zero-warning
 release report, so the build command intentionally rejects it until the

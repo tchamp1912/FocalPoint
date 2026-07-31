@@ -1,0 +1,4 @@
+board=focalpoint_rev_a_release_candidate.kicad_pcb
+vendored_release_footprints=37
+uuid_metadata_ignored=yes
+geometry_mismatches=0

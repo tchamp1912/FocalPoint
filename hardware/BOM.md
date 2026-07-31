@@ -166,7 +166,7 @@ pad. Quote USB-C as hybrid assembly.
    reviewer checklist and `CAPTURE_GAP_RESOLUTIONS.md` for resolved/new gaps.*
 2. Use exact manufacturer footprints, complete the six-layer route, and pass
    native KiCad DRC on
-   `kicad/focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pcb`.
+   `kicad/focalpoint_rev_a_release_candidate.kicad_pcb`.
 3. Check antenna exclusion on every copper layer and against battery/base/screws.
 4. Import populated STEP models and pass enclosure interference review.
 5. Redesign the battery pocket to at least 42 x 39 x 8 mm plus cable relief.

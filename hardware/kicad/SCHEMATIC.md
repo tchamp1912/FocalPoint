@@ -4,7 +4,7 @@ Status: **design capture + datasheet-controlled schematic/footprint repair
 complete; error-level ERC passes 0/0 (`focalpoint.kicad_sch`); the corrected
 six-layer PCB has zero schematic/PCB pin-net mismatches and zero unrouted
 connections. Native KiCad DRC on
-`focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pcb` and final manufacturing
+`focalpoint_rev_a_release_candidate.kicad_pcb` and final manufacturing
 artifact review remain required** (release blocker 1, `BOM.md`). Transcription judgment calls and
 the items a reviewer must check are in `TRANSCRIPTION_NOTES.md`; resolved
 capture questions are recorded in `../CAPTURE_GAP_RESOLUTIONS.md`.
@@ -298,7 +298,7 @@ requirements recorded in `BOM.md`/`bom.csv`.
 ## 9. Remaining steps to close blocker 1
 
 1. Run native KiCad DRC to zero violations on
-   `focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pcb`.
+   `focalpoint_rev_a_release_candidate.kicad_pcb`.
 2. Regenerate and verify Gerbers, PTH/NPTH drill files, BOM, and component
    placement from that exact PCB revision.
 3. Complete the JLC upload/rotation review and independent human schematic/PCB

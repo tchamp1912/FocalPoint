@@ -1,0 +1,3 @@
+schematic_numbered_pins=350
+pcb_numbered_pads=372
+mismatches=0

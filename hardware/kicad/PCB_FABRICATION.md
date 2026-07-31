@@ -1,6 +1,6 @@
 # FocalPoint Rev A PCB fabrication constraints
 
-`focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pcb` is the corrected, fully
+`focalpoint_rev_a_release_candidate.kicad_pcb` is the corrected, fully
 routed 116 x 116 mm, 1.6 mm, six-layer Rev A release candidate. Its order stack
 is JLCPCB's controlled-impedance option **JLC06161H-3313**. Do not substitute
 a generic six-layer construction.
@@ -47,7 +47,7 @@ the In1 and In4 Gerbers should contain filled regions, not only pads.
 ```sh
 /Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli pcb export gerbers \
   --layers In1.Cu,In4.Cu --output hardware/kicad/gerbers \
-  hardware/kicad/focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pcb
+  hardware/kicad/focalpoint_rev_a_release_candidate.kicad_pcb
 ```
 
 ## Routing classes
@@ -104,7 +104,7 @@ audit, and native DRC. Then regenerate the complete candidate package:
 
 ```sh
 python3 hardware/kicad/build_release_candidate.py \
-  --drc-report hardware/kicad/DRC_pinoutfix_drcfix2_native.rpt
+  --drc-report hardware/kicad/DRC_release_candidate_native.rpt
 ```
 
 The builder regenerates Gerbers, separate PTH/NPTH drill files, placement,

@@ -20,13 +20,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 KICAD = ROOT / "hardware" / "kicad"
-BOARD = KICAD / "focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pcb"
-PROJECT = KICAD / "focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pro"
+BOARD = KICAD / "focalpoint_rev_a_release_candidate.kicad_pcb"
+PROJECT = KICAD / "focalpoint_rev_a_release_candidate.kicad_pro"
 SCHEMATIC = KICAD / "focalpoint.kicad_sch"
 PROCUREMENT_BOM = ROOT / "hardware" / "bom.csv"
-OUT = KICAD / "release_candidate_pinoutfix"
-ARCHIVE = KICAD / "focalpoint_rev_a_pinoutfix_release_candidate.zip"
-GERBER_ARCHIVE = KICAD / "focalpoint_rev_a_pinoutfix_gerbers_candidate.zip"
+OUT = KICAD / "release_candidate"
+ARCHIVE = KICAD / "focalpoint_rev_a_release_candidate.zip"
+GERBER_ARCHIVE = KICAD / "focalpoint_rev_a_release_candidate_gerbers.zip"
 
 GERBER_LAYERS = ",".join(
     [
@@ -115,7 +115,7 @@ def build(args: argparse.Namespace) -> None:
         gerbers.mkdir()
         reports.mkdir()
 
-        positions = assembly / "focalpoint_rev_a_pinoutfix_positions.csv"
+        positions = assembly / "focalpoint_rev_a_positions.csv"
         command(
             cli,
             "pcb",
@@ -253,22 +253,26 @@ def build(args: argparse.Namespace) -> None:
                 )
 
         evidence = [
-            KICAD / "erc.rpt",
-            KICAD / "drcfix2_static_audit.txt",
-            KICAD / "drcfix2_schematic_pcb_net_compare.txt",
+            KICAD / "erc_release_candidate.rpt",
+            KICAD / "release_candidate_static_audit.txt",
+            KICAD / "release_candidate_schematic_pcb_net_compare.txt",
+            KICAD / "release_candidate_footprint_audit.txt",
         ]
         documentation = [
             PROCUREMENT_BOM,
             ROOT / "hardware" / "BOM.md",
             ROOT / "hardware" / "BRINGUP_TEST_PLAN.md",
+            ROOT / "hardware" / "TASKS.md",
             KICAD / "PCB_FABRICATION.md",
             KICAD / "LCSC_MATCH_VALIDATION.md",
             KICAD / "DECISIONS.md",
             KICAD / "SCHEMATIC.md",
             KICAD / "TRANSCRIPTION_NOTES.md",
+            KICAD / "COMPONENT_MODEL_SOURCING.md",
             BOARD,
             PROJECT,
             SCHEMATIC,
+            KICAD / "fp-lib-table",
         ]
         for source in documentation:
             shutil.copy2(source, stage / source.name)
@@ -276,6 +280,8 @@ def build(args: argparse.Namespace) -> None:
             if not source.is_file():
                 raise SystemExit(f"missing validation evidence: {source}")
             shutil.copy2(source, reports / source.name)
+        shutil.copytree(KICAD / "FocalPoint.pretty", stage / "FocalPoint.pretty")
+        shutil.copytree(KICAD / "FocalPoint.3dshapes", stage / "FocalPoint.3dshapes")
 
         drc_clean = False
         if args.drc_report:
@@ -305,16 +311,18 @@ def build(args: argparse.Namespace) -> None:
             "- PCB unrouted connections: 0\n"
             "- independent copper-clearance audit: 0 violations\n"
             "- fabrication-minimum audit: 0 violations\n"
+            "- project-local release-footprint geometry mismatches: 0\n"
             f"- JLC assembly BOM/placement cross-check: {len(included)} placed parts\n"
             f"- JLC BOM lines requiring live match or consignment: {len(unmatched_rows)}\n"
             "- Gerbers and separate PTH/NPTH drill files regenerated from the exact PCB\n"
             f"- native KiCad DRC report supplied and clean: {'YES' if drc_clean else 'NO'}\n\n"
             "MANDATORY BEFORE ORDERING:\n"
-            "1. Supply a native KiCad zero-violation DRC report for the exact PCB above.\n"
-            "2. Upload BOM/positions to JLC and confirm every MPN, side, and rotation.\n"
-            "3. Select JLC06161H-3313, 1.6 mm, ENIG, impedance control, and\n"
+            "1. Upload BOM/positions to JLC and confirm every MPN, side, and rotation.\n"
+            "2. Select JLC06161H-3313, 1.6 mm, ENIG, impedance control, and\n"
             "   epoxy-filled/capped via-in-pad. Populate exactly two boards.\n"
-            "4. Review antenna keepout, USB-C, LEDs/sockets, controls, and enclosure fit.\n"
+            "3. Complete printed/purchased-part fit review for the enclosure,\n"
+            "   antenna keepout, USB-C, LEDs/sockets, encoder, and joystick.\n"
+            "4. Complete an independent schematic/PCB review.\n"
             "5. Treat both boards as prototypes and complete BRINGUP_TEST_PLAN.md.\n"
         )
 

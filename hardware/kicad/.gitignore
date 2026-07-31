@@ -6,5 +6,10 @@ __pycache__/
 archive/
 tools/*.jar
 release_candidate_pinoutfix/
+release_candidate/
 focalpoint_rev_a_pinoutfix_gerbers_candidate.zip
 focalpoint_rev_a_pinoutfix_release_candidate.zip
+focalpoint_rev_a_release_candidate.zip
+focalpoint_rev_a_release_candidate_gerbers.zip
+focalpoint_rev_a_release_final_pinoutfix_drcfix*_candidate.kicad_pcb
+focalpoint_rev_a_release_final_pinoutfix_drcfix*_candidate.kicad_pro

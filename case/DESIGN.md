@@ -29,21 +29,24 @@ prototype values, not production dimensions.
 <!-- BEGIN GENERATED PARAMETERS (case/freecad/enclosure.py) -->
 | Parameter | Value | Unit |
 |---|---:|---|
-| PCB width | 108 | mm |
-| PCB depth | 108 | mm |
+| PCB width | 116 | mm |
+| PCB depth | 116 | mm |
 | PCB thickness | 1.6 | mm |
-| PCB clearance | 3 | mm |
-| Shell width | 114 | mm |
-| Shell depth | 114 | mm |
+| PCB clearance | 4.5 | mm |
+| Shell width | 125 | mm |
+| Shell depth | 125 | mm |
 | Corner radius | 6 | mm |
 | Wall | 2.4 | mm |
 | Floor | 2.4 | mm |
 | Front height | 11 | mm |
-| Rear height | 18.97 | mm |
+| Rear height | 19.74 | mm |
 | Forward slope | 4 | deg |
 | Plate thickness | 1.5 | mm |
 | MX plate cutout | 14.05 | mm |
-| Shell-to-puck angle | 2 | deg |
+| Joystick body | 18.2 x 21.7 | mm |
+| Joystick height above PCB | 11.2 | mm |
+| Joystick projection below PCB | 2.5 | mm |
+| Joystick top opening | 20 | mm |
 | Circular puck radius | 43 | mm |
 | Grommet edge inset | 7 | mm |
 | Grommet stock thickness | 1.59 | mm |
@@ -51,36 +54,45 @@ prototype values, not production dimensions.
 | Grommet projection | 0.79 | mm |
 | Fit clearance (non-latching) | 0.3 | mm |
 | Insert boss OD | 9 | mm |
+| Insert screw-axis edge inset | 3 | mm |
 | Insert pilot diameter | 4 | mm |
 | Insert pilot depth | 5.5 | mm |
 | Plate screw clearance | 2.9 | mm |
 | Battery pocket | 43.0 x 40.0 | mm |
 | Battery pocket floor Z | -2 | mm |
-| Battery cavity depth | 8.64 | mm |
+| Battery cavity depth | 9.02 | mm |
 | USB opening width | 10.14 | mm |
 | Reset pinhole | 2 | mm |
+| FocalPoint mark | 23.0 x 17.2 | mm |
+| FocalPoint engraving depth | 0.25 | mm |
 <!-- END GENERATED PARAMETERS -->
 
 Fit-test ranges for the print iterations: shell clearance per PCB side
-1.0–3.0 mm, wall 2.0–3.0 mm, corner radius 6–15 mm, forward slope 3–6°,
+3.0–5.0 mm, wall 2.0–3.0 mm, corner radius 6–15 mm, forward slope 3–6°,
 circular base diameter 80–94 mm, printed-part clearance per printer.
 Heights are component-driven; the grommet recess matches the selected sheet
 stock.
 
 The action-key edge is **front**; the joystick/encoder rail is **rear**. The
-keycap plate slopes downward toward the front. Prefer a continuous internal
-wedge or stepped internal bosses while keeping the exterior side wall smooth.
+keycap plate slopes downward toward the front.
+
+**Rev A redesign (WP4-1): the rectangular shell itself carries no wedge at
+all.** Both the top plate and the bottom shell are plain, uniform-height
+rounded prisms — flat, unangled parts. The entire forward slope comes from
+rigidly rotating each flat prism once, by the full angle, about the same
+front-bottom-wall datum: the keyboard portion is never itself shaped as a
+wedge, only tilted as a rigid body. The bottom shell's tilt is what carries
+it across the puck at an angle (see "Bottom grommet / foot" below) — the
+puck itself is never rotated.
 
 ## Recorded mechanical decisions (Rev A)
 
-- **PCB retention: switch-hung, not boss-supported.** The four Ø9 heat-set
-  insert bosses pass through Ø10.5 corner relief cutouts in the PCB
-  (`hardware/ergogen/config.yaml`, outline `pcb_reliefs`) with 0.75 mm radial
-  clearance. The bosses carry only the M2.5 plate screws; the PCB hangs from
-  the switches clipped into the plate. Rationale: one screw path per corner
-  (a boss cannot take a plate screw and a PCB screw), and no standoff-height
-  tolerance chain against a sloped datum. Consequence: the PCB must never be
-  pressed against while unsupported — see `hardware/ASSEMBLY.md`.
+- **PCB retention: switch-hung, not boss-supported.** Four M2.5 screw shafts
+  run through the narrow side channels outside the rectangular PCB. Their Ø9
+  heat-set-insert bosses overlap the PCB only in XY and stop 0.30 mm below its
+  underside, so no corner reliefs are required. The PCB hangs from switches
+  clipped into the plate and must never be pressed while unsupported; see
+  `hardware/ASSEMBLY.md`.
 - **Inserts:** McMaster `94180A321` (M2.5 × 0.45 × 3.4 mm) in blind Ø4.0 ×
   5.5 mm pilots (recommended pilot ~Ø4.0, ≥4.5 mm deep). Print coupons before
   ordering.
@@ -92,15 +104,14 @@ wedge or stepped internal bosses while keeping the exterior side wall smooth.
   giving ≥8 mm of cavity depth below the hot-swap sockets and a ≥2 mm solid
   web above the grommet recess. A 12 mm-wide JST-SH pigtail bay opens off the
   pocket's +X wall (provisional side until the connector is placed in KiCad).
-- **USB-C:** opening derived from the GCT `USB4105-GF-A-060` shell
-  (8.94 × 3.26 mm) + 0.6 mm clearance per side; it is an open-top notch in
-  the rear wall closed from above by the plate, because the connector top
-  clears the plate underside by only ~0.24 mm. X position provisional until
-  KiCad edge placement exists.
+- **USB-C/JST-SH:** the rear USB notch is derived from the GCT
+  `USB4105-GF-A-060` shell (8.94 × 3.26 mm) + 0.6 mm clearance per side and is
+  open through the plate at exact routed J1 x=146 mm. An 8 × 8 mm service
+  window above top-mounted J2 clears the JST-SH body and pigtail.
 - **Reset:** Ø2.0 pinhole through the floor (outside the puck), assuming the
   B3U-1000P is placed on the PCB bottom side over the hole. Provisional.
-- **Antenna vs. metal fastener:** the rear-right insert boss stays at its
-  corner; the antenna keep-out is positioned inboard so the metal M2.5 insert
+- **Antenna vs. metal fastener:** the antenna keep-out is positioned inboard
+  of the rear-right side boss so the metal M2.5 insert
   stays ≥8 mm from the keep-out volume. The keep-out box is still a
   placeholder to be replaced from the Raytac MDBT50Q datasheet at placement.
 - **Touch coupling:** a conductive-foam pillar (~Ø12, ~5 mm free height)
@@ -114,8 +125,16 @@ wedge or stepped internal bosses while keeping the exterior side wall smooth.
 
 Rev A should use a replaceable laser-cut or die-cut circular silicone/EPDM pad
 seated in the shallow pocket of an 86 mm circular structural puck, not an
-overmold. The puck stays flat on the desk while the rectangular shell intersects
-its upper portion at 2°, producing the subtle angled-base expression.
+overmold. The puck stays flat and level on the desk — it is never rotated —
+while the flat, unwedged rectangular shell is rigidly rotated by the full
+forward slope (4°) and bisects the puck's upper portion at that angle,
+producing the subtle angled-base expression. Because the shell's rectangular
+footprint overhangs the puck by roughly 35 mm at each corner, those corners
+show the tilted shell underside directly (unsupported by the puck), which is
+the visible "floating corner" look — measured at ~6.5 mm above the puck's
+own bottom plane at the front corners, rising to ~13.4 mm at the rear ones
+(the full 4° now expressed as shell tilt, rather than half of it, per the
+WP4-1 redesign above).
 
 - Selected stock: 1/16 in (1.59 mm) silicone disc (BOM: McMaster `8525T575`),
   50–70 Shore A, in a 0.8 mm recess → ~0.8 mm proud, inside the 0.6–1.0 mm
@@ -150,11 +169,14 @@ its upper portion at 2°, producing the subtle angled-base expression.
 
 ## First-print acceptance gates
 
-- All four corner fasteners engage without forcing or bowing the PCB, and
-  every boss passes freely through its PCB corner relief.
+- All four side-channel fasteners engage without forcing or bowing the PCB;
+  screw shafts clear its edge and every boss remains below its underside.
 - Switches latch into the plate and hot-swap sockets remain unloaded.
 - Ceramic caps clear adjacent caps and the sloped shell throughout travel.
-- Encoder and joystick can reach their full motion without touching the shell.
+- The Alps RKJXV122400R body (18.2 × 21.7 × 11.2 mm), solder lugs and
+  2.5 mm terminal projection clear the PCB, neighboring switches and lower
+  shell; its Ø4 mm shaft reaches the full ±23° motion inside the Ø20 top
+  opening without touching the shell.
 - USB-C inserts straight without using the connector as a structural stop.
 - Battery drops into its pocket, cannot contact switch pins, screws, or the
   antenna keep-out, and its pigtail folds into the relief bay unpinched.
