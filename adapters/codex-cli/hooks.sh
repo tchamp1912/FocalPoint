@@ -48,9 +48,7 @@ FOCALPOINT="${FOCALPOINT_PATH:-focalpoint}"
 channel_pull() {
   [ -n "${FOCALPOINT_CHANNEL_ID:-}" ] || return 0
   command -v fpctl-agent >/dev/null 2>&1 || return 0
-  # Codex's hook protocol reserves stdout, so this is notification-only until
-  # Codex offers an additional-context field; never consume unread mail here.
-  true
+  fpctl-agent channel read --channel "$FOCALPOINT_CHANNEL_ID" 2>/dev/null || true
 }
 payload=$(cat 2>/dev/null) || exit 0
 
@@ -241,7 +239,6 @@ if [ "$defer_permission_wait" -eq 1 ]; then
   exit 0
 fi
 
-# Hook stdout is part of Codex's hook protocol; never write to it.
 "$FOCALPOINT" set-state "${args[@]}" >/dev/null 2>&1 || true
 if [ "$event" = "SessionStart" ] || [ "$event" = "Stop" ]; then channel_pull; fi
 exit 0

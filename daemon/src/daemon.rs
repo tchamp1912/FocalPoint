@@ -2193,6 +2193,7 @@ fn dispatch(
                 .and_then(|m| m.as_object())
                 .cloned()
                 .unwrap_or_default();
+            let joining_channel = meta.get("channel_id").and_then(serde_json::Value::as_str).map(str::to_string);
             eprintln!(
                 "[session-input] cmd=set-meta id={} pid={} tty={} mux={} managed={} relaunch={}",
                 diagnostic_text(session),
@@ -2212,6 +2213,14 @@ fn dispatch(
                 Instant::now(),
             );
             apply_effects(effects, ctx, host_tx);
+            // Claude Code's SessionStart uses set-meta before its first state
+            // event. Joining here makes its startup backlog pull meaningful
+            // without registering a state-less session in the registry.
+            if let Some(channel_id) = joining_channel.as_deref() {
+                let mut state = shared.lock().unwrap();
+                if let Some(channel) = state.channels.channels.get_mut(channel_id) { channel.join_at_tail(session.to_string()); }
+            }
+            save_snapshot(shared);
             Dispatch::Reply(serde_json::json!({ "ok": true }))
         }
         "list-sessions" => {
