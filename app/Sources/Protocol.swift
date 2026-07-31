@@ -236,6 +236,21 @@ struct SessionInfo: Identifiable, Equatable {
     /// Adapter-reported total context-window capacity from
     /// `meta["context_window"]`. Preferred over the model-name fallback.
     var reportedContextWindow: Double?
+    /// True when `meta.managed` (PROTOCOL.md §4) is truthy — the adapter's
+    /// SessionStart hook detected it's running inside a multiplexer (tmux)
+    /// and reported a precise, background-capable input channel (`mux_pane`),
+    /// by adapter hooks. Drives the managed badge.
+    var managed: Bool = false
+    /// Stable identity and relationship assigned by `fpctl-agent launch`.
+    /// These are deliberately independent of the mutable session id so a
+    /// compacted/relaunched agent stays in the same orchestration group.
+    var orchestratorTaskID: String?
+    var orchestrationRole: String?
+    var managerTaskID: String?
+
+    /// Single source of truth for managed-ness presentation.
+    var isManaged: Bool { managed }
+    var isOrchestrator: Bool { orchestrationRole == "orchestrator" }
 
     /// Display precedence per PROTOCOL.md §3: name → label → kind.
     var title: String {

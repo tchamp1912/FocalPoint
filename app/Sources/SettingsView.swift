@@ -262,12 +262,12 @@ struct SessionHistoryView: View {
             Spacer(minLength: 8)
             if model.resumeCommand(for: entry) != nil {
                 Button { model.recoverSession(entry) } label: {
-                    Label("Resume", systemImage: "arrow.clockwise")
+                    Label("Resume Managed", systemImage: "arrow.clockwise")
                         .font(.caption)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .help("Reopen this \(entry.kind) conversation in a new Terminal at its working directory")
+                .help("Reopen this \(entry.kind) conversation under FocalPoint's managed tmux transport")
             }
             VStack(alignment: .trailing, spacing: 2) {
                 Text(durationString(entry.endedAt.timeIntervalSince(entry.startedAt)))
@@ -280,7 +280,7 @@ struct SessionHistoryView: View {
         .contentShape(Rectangle())
         .contextMenu {
             if model.resumeCommand(for: entry) != nil {
-                Button("Resume Session") { model.recoverSession(entry) }
+                Button("Resume as Managed Session") { model.recoverSession(entry) }
                 Divider()
             }
             if let cwd = entry.cwd {
@@ -648,21 +648,6 @@ struct HotkeysSettingsView: View {
                 }
                 Text("Global hotkeys work system-wide without Accessibility permission. Every combo must include at least one modifier key (\u{2303}\u{2325}\u{21E7}\u{2318}) so normal typing elsewhere is never affected.")
                     .font(.caption).foregroundStyle(.secondary)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Attention cycle order").font(.subheadline).bold()
-                    Picker("", selection: $model.attentionCycleOrder) {
-                        ForEach(AttentionCycleOrder.allCases) { order in
-                            Text(order.display).tag(order)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.radioGroup)
-                    Text("Order used by \u{201C}Focus Next/Previous Attention Session\u{201D} below \u{2014} which of the waiting/error sessions each press jumps to.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                .padding(16)
-                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
 
                 VStack(spacing: 0) {
                     ForEach(HotkeyActionID.allCases) { action in

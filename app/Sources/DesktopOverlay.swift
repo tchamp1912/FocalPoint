@@ -41,6 +41,16 @@ struct DesktopWidgetView: View {
         VStack(alignment: .leading, spacing: 0) {
             dragHandle
             Divider().padding(.horizontal, 10)
+            if let status = model.managedRelaunchStatus {
+                ManagedRelaunchBanner(
+                    status: status,
+                    compact: true,
+                    onDismiss: model.dismissManagedRelaunchStatus
+                )
+                .padding(.horizontal, 7)
+                .padding(.vertical, 5)
+                Divider().padding(.horizontal, 10)
+            }
             content
         }
         .padding(.vertical, 8)
@@ -105,7 +115,7 @@ struct DesktopWidgetView: View {
             .padding(.vertical, 12)
             } else {
             VStack(spacing: 1) {
-                ForEach(model.sessions) { s in
+                ForEach(model.elevatedSessions) { s in
                     // See MenuContentView: the row being renamed must stay
                     // outside the Button, because `.disabled()` would
                     // propagate into the text field and make it unusable.
@@ -123,6 +133,15 @@ struct DesktopWidgetView: View {
                             .disabled(s.connected && s.slot == nil)
                         }
                     }
+                    // The daemon owns attention priority. Highlight only the
+                    // next row it selected instead of independently inferring
+                    // priority from state in the app.
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(attentionColor(for: s).opacity(
+                                shouldHighlightAttention(s) ? 0.22 : 0
+                            ))
+                    )
                     // Persistent outline for the last session FocalPoint itself
                     // focused. A stroked edge, not a fill: on the liquid-glass
                     // background a translucent fill washes out and barely
@@ -143,6 +162,11 @@ struct DesktopWidgetView: View {
                     // for widget options.
                     .contextMenu {
                         Button("Rename\u{2026}") { renamingID = s.id }
+                        Divider()
+                        Button("Relaunch as Managed Session") {
+                            model.relaunchAsManaged(s)
+                        }
+                        .disabled(!model.canRelaunchAsManaged(s))
                         Divider()
                         // See MenuContentView: End Session quits the agent
                         // process; Remove Session just drops the row.
@@ -181,6 +205,15 @@ struct DesktopWidgetView: View {
     private func usageRow(_ provider: String, label: String, percent: Double, reset: Date?) -> some View {
         UsageMeterBar(label: "\(provider.capitalized) \(label)",
                       labelWidth: 54, percent: percent, reset: reset, style: .widget)
+    }
+
+    private func shouldHighlightAttention(_ session: SessionInfo) -> Bool {
+        session.connected && !session.pendingReopen && !model.isStale(session)
+            && model.isNextAttentionSession(session)
+    }
+
+    private func attentionColor(for session: SessionInfo) -> Color {
+        (model.styles[session.state] ?? defaultStyle(session.state)).color
     }
 
     private func sessionRow(_ s: SessionInfo) -> some View {
@@ -226,6 +259,17 @@ struct DesktopWidgetView: View {
                         .help("Over the configured token/cost budget")
                 }
                 Spacer(minLength: 4)
+                orchestrationBadge(s)
+                if s.isManaged {
+                    Image(systemName: "terminal.fill")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.accentColor.opacity(0.12)))
+                        .fixedSize()
+                        .help("Managed session — FocalPoint can route attention and input to it precisely in the background")
+                }
                 if model.showModelBadge, let badge = s.modelBadge {
                     Text(badge).font(.system(size: 9)).foregroundStyle(.tertiary)
                 }
@@ -268,6 +312,29 @@ struct DesktopWidgetView: View {
         .padding(.vertical, 5)
         .contentShape(Rectangle())
         .opacity(dimmed ? 0.55 : 1)
+    }
+
+    @ViewBuilder
+    private func orchestrationBadge(_ session: SessionInfo) -> some View {
+        if let number = model.orchestratorNumber(for: session) {
+            let count = model.managedSessionCount(for: session)
+            Text("O\(number)·\(count)")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(Color.purple)
+                .padding(.horizontal, 4).padding(.vertical, 3)
+                .background(Capsule().fill(Color.purple.opacity(0.14)))
+                .fixedSize()
+                .help("Orchestrator O\(number) — manages \(count) session\(count == 1 ? "" : "s")")
+        } else if let number = model.managingOrchestratorNumber(for: session),
+                  let manager = model.managingOrchestrator(for: session) {
+            Text("O\(number)")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(Color.purple)
+                .padding(.horizontal, 4).padding(.vertical, 3)
+                .overlay(Capsule().stroke(Color.purple.opacity(0.45), lineWidth: 1))
+                .fixedSize()
+                .help("Managed by O\(number): \(manager.title)")
+        }
     }
 }
 
@@ -337,17 +404,23 @@ final class DesktopOverlayController: NSObject, NSWindowDelegate {
         super.init()
         // @Published emits its current value immediately to new subscribers,
         // so this also sets correct initial visibility at launch.
-        cancellable = Publishers.CombineLatest4(model.$desktopWidgetMode, model.$aggregate,
-                                                 model.$sessions, model.$desktopWidgetHotkeyHidden)
+        let visibilityInputs = Publishers.CombineLatest4(
+            model.$desktopWidgetMode, model.$aggregate,
+            model.$sessions, model.$desktopWidgetHotkeyHidden
+        )
+        cancellable = Publishers.CombineLatest(visibilityInputs, model.$managedRelaunchStatus)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] mode, aggregate, sessions, hotkeyHidden in
+            .sink { [weak self] inputs, relaunchStatus in
+                let (mode, aggregate, sessions, hotkeyHidden) = inputs
                 self?.updateVisibility(mode: mode, aggregate: aggregate, sessions: sessions,
-                                        hotkeyHidden: hotkeyHidden)
+                                        hotkeyHidden: hotkeyHidden,
+                                        hasRelaunchStatus: relaunchStatus != nil)
             }
     }
 
     private func updateVisibility(mode: DesktopWidgetMode, aggregate: AgentState,
-                                   sessions: [SessionInfo], hotkeyHidden: Bool) {
+                                   sessions: [SessionInfo], hotkeyHidden: Bool,
+                                   hasRelaunchStatus: Bool) {
         guard !hotkeyHidden else { setVisible(false); return }
         switch mode {
         case .hidden:
@@ -355,7 +428,7 @@ final class DesktopOverlayController: NSObject, NSWindowDelegate {
         case .always:
             setVisible(true)
         case .autoHideIdle:
-            setVisible(aggregate != .idle || !sessions.isEmpty)
+            setVisible(aggregate != .idle || !sessions.isEmpty || hasRelaunchStatus)
         }
     }
 

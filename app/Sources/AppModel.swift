@@ -25,22 +25,6 @@ enum DesktopWidgetMode: String, CaseIterable, Identifiable {
     }
 }
 
-/// How the "next/previous attention session" hotkeys order sessions that
-/// need attention (waiting/error). Persisted like the other settings.
-enum AttentionCycleOrder: String, CaseIterable, Identifiable {
-    case oldestFirst      // ignores severity; longest-neglected session first
-    case severityFirst    // error before waiting; oldest first within each
-
-    var id: String { rawValue }
-
-    var display: String {
-        switch self {
-        case .oldestFirst:   return "Oldest first"
-        case .severityFirst: return "Errors before waiting"
-        }
-    }
-}
-
 @MainActor
 final class AppModel: ObservableObject {
     static let shared = AppModel()
@@ -65,14 +49,31 @@ final class AppModel: ObservableObject {
         }
     }
     private let maxSessionHistoryEntries = 200
+    /// Explicit live-session promotions waiting for the daemon's
+    /// `session-ended` event. A process cannot be adopted into tmux, so the
+    /// handoff is necessarily quit first, then resume under the managed
+    /// launcher. Runtime-only: a failed app relaunch must never surprise the
+    /// user by resuming an old conversation later.
+    private var pendingManagedRelaunch: Set<String> = []
+    private var attachedManagedRelaunches: Set<String> = []
+    /// User-visible state for the most recently requested managed relaunch.
+    /// Progress is replaced by a terminal success/error until dismissed.
+    @Published private(set) var managedRelaunchStatus: ManagedRelaunchStatus?
     /// The session FocalPoint itself last told to come forward — via a row
-    /// click, a `key1`–`9` hotkey, or an attention/session-nav hotkey (see
-    /// `focusSession`). Best-effort, not a true "frontmost window" signal:
+    /// click, a `key1`–`9` hotkey, or an all-session navigation hotkey (see
+    /// `focusSession`). Attention navigation is resolved inside the daemon,
+    /// so it clears this value rather than guessing the daemon's cursor.
+    /// Best-effort, not a true "frontmost window" signal:
     /// the daemon has no concept of focus (Focus is a one-shot bounce, per
     /// PROTOCOL.md §3), and this can't see focus changes made outside
     /// FocalPoint (e.g. manually clicking a different terminal). Runtime-only,
     /// not persisted — a fresh launch has no known focus.
     @Published var focusedSessionID: String?
+    /// Session priority as owned by focalpointd, highest priority first.
+    /// This is presentation state only: the daemon also resolves and focuses
+    /// the next/previous session, so every controller follows one cursor and
+    /// one ordering decision.
+    @Published private(set) var attentionOrder: [String] = []
 
     // Styles
     @Published var styles: [AgentState: StateStyle] = defaultStyles
@@ -154,10 +155,6 @@ final class AppModel: ObservableObject {
             if cursorUsageEnabled { cursorUsageMonitor?.start() } else { cursorUsageMonitor?.stop() }
         }
     }
-    /// Ordering used by the attention-next/prev focus hotkeys.
-    @Published var attentionCycleOrder: AttentionCycleOrder {
-        didSet { UserDefaults.standard.set(attentionCycleOrder.rawValue, forKey: "attentionCycleOrder") }
-    }
     /// Per-user budget thresholds (Settings → Agent Integrations → Budget
     /// alerts) — nil means "off". `object(forKey:)` (rather than
     /// `integer(forKey:)`/`double(forKey:)`, which default to 0) is what
@@ -225,12 +222,11 @@ final class AppModel: ObservableObject {
     private var timer: Timer?
     private var codexUsageMonitor: CodexUsageMonitor?
     private var cursorUsageMonitor: CursorUsageMonitor?
-    /// Last session focused by the attention/session-nav hotkeys, so the next
-    /// press can advance relative to it rather than always restarting at the
-    /// front of the list. Deliberately not persisted or @Published — pure
-    /// runtime bookkeeping, not user-facing state.
-    private var lastAttentionFocusID: String?
+    /// Last session focused by the all-session navigation hotkeys, so the next
+    /// press advances relative to it. Attention navigation is daemon-owned.
     private var lastSessionFocusID: String?
+    /// Guards a connect-time response from overwriting a newer stream event.
+    private var attentionOrderRevision: UInt64 = 0
 
     private init() {
         let d = UserDefaults.standard
@@ -261,11 +257,6 @@ final class AppModel: ObservableObject {
         showModelBadge = d.object(forKey: "showModelBadge") as? Bool ?? true
         codexUsageEnabled = d.object(forKey: "codexUsageEnabled") as? Bool ?? false
         cursorUsageEnabled = d.object(forKey: "cursorUsageEnabled") as? Bool ?? true
-        if let raw = d.string(forKey: "attentionCycleOrder"), let order = AttentionCycleOrder(rawValue: raw) {
-            attentionCycleOrder = order
-        } else {
-            attentionCycleOrder = .severityFirst
-        }
         tokenBudget = d.object(forKey: "tokenBudget") as? Int
         costBudget = d.object(forKey: "costBudget") as? Double
         staleThresholdMinutes = d.object(forKey: "staleThresholdMinutes") as? Int ?? 5
@@ -294,6 +285,21 @@ final class AppModel: ObservableObject {
         if n > 0 { return n }
         if sessions.isEmpty && aggregate.needsAttention { return 1 }
         return 0
+    }
+
+    /// The highest-priority eligible row. The daemon owns the independent
+    /// next/previous cycling cursor; this value is only the widget highlight.
+    var highlightedAttentionSessionID: String? {
+        attentionOrder.first { id in
+            sessions.contains {
+                $0.id == id && $0.connected && !$0.pendingReopen
+                    && $0.state.needsAttention
+            }
+        }
+    }
+
+    func isNextAttentionSession(_ session: SessionInfo) -> Bool {
+        session.id == highlightedAttentionSessionID
     }
 
     var aggregateStyle: StateStyle { styles[aggregate] ?? defaultStyle(aggregate) }
@@ -345,6 +351,7 @@ final class AppModel: ObservableObject {
     // MARK: - Lifecycle
 
     func start() {
+        log("app model start socket=\(focalpointSocketPath())")
         client.startSubscribe(
             onStatus: { up in
                 Task { @MainActor in AppModel.shared.setConnected(up) }
@@ -364,27 +371,39 @@ final class AppModel: ObservableObject {
     }
 
     private func setConnected(_ up: Bool) {
+        let previous = connected
         connected = up
+        log("daemon status previous=\(previous) connected=\(up) rows=\(sessions.count)")
         if !up {
             // Daemon gone: clear live view but keep last-known styles for the editor.
             sessions = []
             aggregate = .idle
             usage = []
+            attentionOrder = []
+            attentionOrderRevision &+= 1
         }
     }
 
     /// On (re)connect, refresh styles and sessions via one-shot requests.
     /// Older daemons return "unknown cmd"; we detect that and use defaults.
     private func refreshOnConnect() {
+        let resyncID = String(DispatchTime.now().uptimeNanoseconds, radix: 16)
+        let started = DispatchTime.now().uptimeNanoseconds
+        let expectedAttentionRevision = attentionOrderRevision
+        log("resync begin id=\(resyncID)")
         let client = self.client
         DispatchQueue.global(qos: .userInitiated).async {
             let stylesResp = client.request(["cmd": "get-styles"])
             let sessResp = client.request(["cmd": "list-sessions"])
             let usageResp = client.request(["cmd": "get-usage"])
+            let attentionResp = client.request(["cmd": "get-attention-order"])
             Task { @MainActor in
                 self.applyStylesResponse(stylesResp)
-                self.applySessionsResponse(sessResp)
+                let elapsedMs = (DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
+                self.applySessionsResponse(sessResp, resyncID: resyncID, elapsedMs: elapsedMs)
                 self.applyUsageResponse(usageResp)
+                self.applyAttentionOrderResponse(attentionResp,
+                                                 expectedRevision: expectedAttentionRevision)
             }
         }
     }
@@ -393,8 +412,9 @@ final class AppModel: ObservableObject {
 
     private func handleEvent(_ e: [String: Any]) {
         guard let ev = e["event"] as? String else { return }
-        if ProcessInfo.processInfo.environment["FOCALPOINT_DEBUG"] != nil {
-            log("event: \(e)")
+        if ["state", "session", "session-ended", "session-disconnected",
+            "session-rekeyed", "managed-relaunch", "attention-order"].contains(ev) {
+            logEventSummary(e, event: ev)
         }
         switch ev {
         case "state":
@@ -405,6 +425,8 @@ final class AppModel: ObservableObject {
             upsertSession(e)
         case "session-ended":
             if let id = e["session"] as? String {
+                let previous = sessions.first(where: { $0.id == id })
+                log("row remove event=session-ended id=\(boundedLogField(id)) existed=\(previous != nil) slot=\(previous?.slot.map(String.init) ?? "-") state=\(previous?.state.rawValue ?? "-") connected=\(previous?.connected.description ?? "-") managed=\(previous?.managed.description ?? "-")")
                 recordSessionEnded(id)
                 sessions.removeAll { $0.id == id }
                 if focusedSessionID == id { focusedSessionID = nil }
@@ -418,6 +440,7 @@ final class AppModel: ObservableObject {
             // flips `connected` back to true via `upsertSession`.
             if let id = e["session"] as? String,
                let idx = sessions.firstIndex(where: { $0.id == id }) {
+                log("row disconnect id=\(boundedLogField(id)) slot=\(sessions[idx].slot.map(String.init) ?? "-") state=\(sessions[idx].state.rawValue)")
                 sessions[idx].connected = false
                 if focusedSessionID == id { focusedSessionID = nil }
                 sortSessions()
@@ -432,9 +455,20 @@ final class AppModel: ObservableObject {
             if let oldID = e["old_session"] as? String,
                let newID = e["new_session"] as? String,
                let idx = sessions.firstIndex(where: { $0.id == oldID }) {
+                log("row rekey old=\(boundedLogField(oldID)) new=\(boundedLogField(newID)) slot=\(sessions[idx].slot.map(String.init) ?? "-")")
                 sessions[idx].id = newID
+                if pendingManagedRelaunch.remove(oldID) != nil {
+                    pendingManagedRelaunch.insert(newID)
+                }
+                if managedRelaunchStatus?.sessionID == oldID {
+                    managedRelaunchStatus?.sessionID = newID
+                }
                 if focusedSessionID == oldID { focusedSessionID = newID }
             }
+        case "managed-relaunch":
+            handleManagedRelaunchEvent(e)
+        case "attention-order":
+            applyAttentionOrder(e["sessions"], source: "event")
         case "usage":
             upsertUsage(e)
         case "style":
@@ -446,6 +480,13 @@ final class AppModel: ObservableObject {
         default:
             break   // key/dial/joy events are not surfaced in the UI
         }
+    }
+
+    /// Log only the protocol fields needed to reconstruct row identity and
+    /// routing. Deliberately do not serialize the event or its full `meta`.
+    private func logEventSummary(_ event: [String: Any], event name: String) {
+        let meta = event["meta"] as? [String: Any]
+        log("event=\(boundedLogField(name)) id=\(boundedLogField(event["session"])) state=\(boundedLogField(event["state"])) slot=\(boundedLogField(event["slot"])) kind=\(boundedLogField(event["kind"])) pid=\(boundedLogField(meta?["pid"])) tty=\(boundedLogField(meta?["tty"])) mux=\(boundedLogField(meta?["mux_pane"])) managed=\(boundedLogField(meta?["managed"])) role=\(boundedLogField(meta?["orchestration_role"])) manager=\(boundedLogField(meta?["manager_task_id"])) old=\(boundedLogField(event["old_session"])) new=\(boundedLogField(event["new_session"])) status=\(boundedLogField(event["status"])) launch=\(boundedLogField(event["launch_id"]))")
     }
 
     private func upsertSession(_ e: [String: Any]) {
@@ -464,19 +505,28 @@ final class AppModel: ObservableObject {
         let model = meta?["model"] as? String
         let contextTokens = (meta?["context_tokens"] as? NSNumber)?.doubleValue
         let reportedContextWindow = (meta?["context_window"] as? NSNumber)?.doubleValue
+        let managed = Self.parseManaged(meta?["managed"])
+        let orchestratorTaskID = meta?["orchestrator_task_id"] as? String
+        let orchestrationRole = meta?["orchestration_role"] as? String
+        let managerTaskID = meta?["manager_task_id"] as? String
         let stats = Self.parseStats(meta)
         // A live `session` event carries no `connected` key and means the
         // session is active — default true. `list-sessions` includes the flag
         // explicitly (false for tombstoned/disconnected rows).
         let connected = e["connected"] as? Bool ?? true
 
+        let operation: String
         if let idx = sessions.firstIndex(where: { $0.id == id }) {
+            operation = "update"
             var s = sessions[idx]
             if s.state != newState { s.state = newState; s.lastChange = Date() }
             s.connected = connected
-            // Any real daemon event confirms the reopened session actually
-            // registered — it's no longer just an optimistic placeholder.
-            s.pendingReopen = false
+            // A live managed relaunch is correlated by the daemon. Late
+            // events from the old provider must not clear its pending state;
+            // only the matching replacement's managed registration does.
+            if !pendingManagedRelaunch.contains(id) || managed == true {
+                s.pendingReopen = false
+            }
             s.kind = kind
             if let label = label { s.label = label }
             // Assigned unconditionally, unlike label: a cleared rename comes
@@ -491,9 +541,17 @@ final class AppModel: ObservableObject {
             if let reportedContextWindow = reportedContextWindow {
                 s.reportedContextWindow = reportedContextWindow
             }
+            // Like model/cwd: only overwrite when this event's meta actually
+            // carries the key, so a later event with a slimmer meta doesn't
+            // clobber a managed session back to false.
+            if let managed = managed { s.managed = managed }
+            if let orchestratorTaskID { s.orchestratorTaskID = orchestratorTaskID }
+            if let orchestrationRole { s.orchestrationRole = orchestrationRole }
+            if let managerTaskID { s.managerTaskID = managerTaskID }
             if meta != nil { s.stats = stats }
             sessions[idx] = s
         } else {
+            operation = "insert"
             var s = SessionInfo(id: id, kind: kind, label: label, name: name,
                                  slot: slot, state: newState, connected: connected,
                                  cwd: cwd,
@@ -501,8 +559,13 @@ final class AppModel: ObservableObject {
             s.model = model
             s.contextTokens = contextTokens
             s.reportedContextWindow = reportedContextWindow
+            if let managed = managed { s.managed = managed }
+            s.orchestratorTaskID = orchestratorTaskID
+            s.orchestrationRole = orchestrationRole
+            s.managerTaskID = managerTaskID
             sessions.append(s)
         }
+        log("row \(operation) id=\(boundedLogField(id)) slot=\(slot.map(String.init) ?? "-") state=\(newState.rawValue) connected=\(connected) managed=\(managed.map(String.init) ?? "-") role=\(boundedLogField(orchestrationRole)) manager=\(boundedLogField(managerTaskID)) pid=\(boundedLogField(meta?["pid"])) tty=\(boundedLogField(meta?["tty"])) mux=\(boundedLogField(meta?["mux_pane"]))")
         sortSessions()
     }
 
@@ -519,6 +582,33 @@ final class AppModel: ObservableObject {
             default:           return a.id < b.id
             }
         }
+    }
+
+    /// UI-only elevation. Numbered-slot navigation keeps using `sessions` in
+    /// daemon slot order; this view projection cannot change key routing.
+    var elevatedSessions: [SessionInfo] {
+        sessions.filter(\.isOrchestrator) + sessions.filter { !$0.isOrchestrator }
+    }
+
+    var orchestratorSessions: [SessionInfo] { sessions.filter(\.isOrchestrator) }
+
+    func orchestratorNumber(for session: SessionInfo) -> Int? {
+        guard session.isOrchestrator else { return nil }
+        return orchestratorSessions.firstIndex(where: { $0.id == session.id }).map { $0 + 1 }
+    }
+
+    func managingOrchestrator(for session: SessionInfo) -> SessionInfo? {
+        guard let managerTaskID = session.managerTaskID else { return nil }
+        return orchestratorSessions.first { $0.orchestratorTaskID == managerTaskID }
+    }
+
+    func managingOrchestratorNumber(for session: SessionInfo) -> Int? {
+        managingOrchestrator(for: session).flatMap { orchestratorNumber(for: $0) }
+    }
+
+    func managedSessionCount(for orchestrator: SessionInfo) -> Int {
+        guard let taskID = orchestrator.orchestratorTaskID else { return 0 }
+        return sessions.lazy.filter { $0.managerTaskID == taskID }.count
     }
 
     private func upsertUsage(_ event: [String: Any]) {
@@ -552,9 +642,13 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func applySessionsResponse(_ resp: [String: Any]?) {
+    private func applySessionsResponse(_ resp: [String: Any]?, resyncID: String, elapsedMs: UInt64) {
         guard let resp = resp, (resp["ok"] as? Bool) == true,
-              let arr = resp["sessions"] as? [[String: Any]] else { return }
+              let arr = resp["sessions"] as? [[String: Any]] else {
+            log("resync sessions unavailable id=\(resyncID) elapsed_ms=\(elapsedMs)")
+            return
+        }
+        let before = Set(sessions.map(\.id))
         sessionsSupported = true
         var seen = Set<String>()
         for item in arr {
@@ -569,6 +663,9 @@ final class AppModel: ObservableObject {
         // resumed agent never registers).
         sessions.removeAll { !seen.contains($0.id) && !$0.pendingReopen }
         sortSessions()
+        let after = Set(sessions.map(\.id))
+        let removed = before.subtracting(after).sorted().map { boundedLogField($0, limit: 80) }.joined(separator: ",")
+        log("resync sessions complete id=\(resyncID) elapsed_ms=\(elapsedMs) received=\(arr.count) rows=\(sessions.count) removed=[\(String(removed.prefix(1_000)))]")
     }
 
     private func applyUsageResponse(_ response: [String: Any]?) {
@@ -586,6 +683,44 @@ final class AppModel: ObservableObject {
         .sorted { $0.provider < $1.provider }
     }
 
+    private func applyAttentionOrderResponse(_ response: [String: Any]?,
+                                             expectedRevision: UInt64) {
+        guard attentionOrderRevision == expectedRevision else {
+            log("attention order response ignored reason=newer-event revision=\(attentionOrderRevision) expected=\(expectedRevision)")
+            return
+        }
+        guard let response, (response["ok"] as? Bool) == true else {
+            log("attention order unavailable error=\(boundedLogField(response?["error"]))")
+            return
+        }
+        applyAttentionOrder(response["sessions"], source: "resync")
+    }
+
+    /// Accept only a bounded, unique list of non-empty IDs. This keeps a
+    /// malformed peer from driving unbounded UI/log work and avoids logging
+    /// arbitrary response fields.
+    private func applyAttentionOrder(_ raw: Any?, source: String) {
+        guard let values = raw as? [Any], values.count <= 1_024 else {
+            log("attention order rejected source=\(source) reason=shape-or-count")
+            return
+        }
+        var order: [String] = []
+        var seen = Set<String>()
+        order.reserveCapacity(values.count)
+        for value in values {
+            guard let id = value as? String, !id.isEmpty, id.count <= 512,
+                  seen.insert(id).inserted else {
+                log("attention order rejected source=\(source) reason=invalid-id")
+                return
+            }
+            order.append(id)
+        }
+        attentionOrder = order
+        attentionOrderRevision &+= 1
+        let preview = order.prefix(12).map { boundedLogField($0, limit: 80) }.joined(separator: ",")
+        log("attention order applied source=\(source) count=\(order.count) ids=[\(preview)]")
+    }
+
     /// Well-known numeric meta keys (PROTOCOL.md §4) → SessionStat. Absent
     /// or non-numeric keys are simply skipped, so an adapter reporting only
     /// some stats (or none) never produces a placeholder/zero badge.
@@ -598,6 +733,28 @@ final class AppModel: ObservableObject {
             }
         }
         return result
+    }
+
+    /// Parses `meta.managed` (PROTOCOL.md §4: meta values may be string or
+    /// number — there's no wire-level boolean) into a `Bool?`. Accepts a JSON
+    /// boolean/`NSNumber`, or the strings adapters actually shell out (e.g.
+    /// `--meta managed=true`), including a bare "1"/"0". Returns nil when the
+    /// key is absent or unrecognized, so callers can distinguish "not present
+    /// in this event" from "present and false" — see the `upsertSession`
+    /// callers, which only assign when non-nil (mirrors how `model`/`cwd` are
+    /// merged: a slimmer follow-up event shouldn't clobber the last-known value).
+    static func parseManaged(_ raw: Any?) -> Bool? {
+        guard let raw else { return nil }
+        if let b = raw as? Bool { return b }
+        if let n = raw as? NSNumber { return n.boolValue }
+        if let s = raw as? String {
+            switch s.lowercased() {
+            case "true", "1": return true
+            case "false", "0": return false
+            default: return nil
+            }
+        }
+        return nil
     }
 
     static func parseUsage(_ raw: [String: Any]?) -> [String: Double]? {
@@ -620,6 +777,7 @@ final class AppModel: ObservableObject {
     /// Focus/bounce a session by tapping its numbered key (PROTOCOL.md §3 Focus).
     func focusSession(_ s: SessionInfo) {
         focusedSessionID = s.id
+        log("focus requested id=\(boundedLogField(s.id)) slot=\(s.slot.map(String.init) ?? "-") state=\(s.state.rawValue) connected=\(s.connected) managed=\(s.managed)")
         if s.connected, let slot = s.slot {
             // Live session with a slot: same path a numbered-key press takes.
             client.send(["cmd": "inject", "kind": "key", "control": "key\(slot)", "action": "tap"])
@@ -636,30 +794,23 @@ final class AppModel: ObservableObject {
 
     // MARK: - Focus-navigation hotkeys (attention-next/prev, session-next/prev)
 
-    /// Sessions needing attention (waiting/error), ordered per
-    /// `attentionCycleOrder`. Slotless sessions are excluded — there's no
-    /// numbered key to tap for them.
-    private var orderedAttentionSessions: [SessionInfo] {
-        let candidates = sessions.filter { $0.connected && $0.state.needsAttention && $0.slot != nil }
-        switch attentionCycleOrder {
-        case .oldestFirst:
-            return candidates.sorted { $0.lastChange < $1.lastChange }
-        case .severityFirst:
-            return candidates.sorted { a, b in
-                if a.state != b.state { return a.state == .error }
-                return a.lastChange < b.lastChange
-            }
-        }
-    }
-
     /// Every focusable session in registration (slot) order — `sessions` is
     /// already kept sorted that way by `sortSessions()`.
     private var orderedAllSessions: [SessionInfo] {
         sessions.filter { $0.connected && $0.slot != nil }
     }
 
-    func focusNextAttentionSession() { advanceFocus(in: orderedAttentionSessions, cursor: \.lastAttentionFocusID, delta: 1) }
-    func focusPrevAttentionSession() { advanceFocus(in: orderedAttentionSessions, cursor: \.lastAttentionFocusID, delta: -1) }
+    func focusNextAttentionSession() {
+        log("attention focus requested direction=next priority_head=\(boundedLogField(highlightedAttentionSessionID)) order_count=\(attentionOrder.count)")
+        focusedSessionID = nil
+        client.send(["cmd": "focus-next-attention"])
+    }
+
+    func focusPrevAttentionSession() {
+        log("attention focus requested direction=previous priority_head=\(boundedLogField(highlightedAttentionSessionID)) order_count=\(attentionOrder.count)")
+        focusedSessionID = nil
+        client.send(["cmd": "focus-prev-attention"])
+    }
     func focusNextSession() { advanceFocus(in: orderedAllSessions, cursor: \.lastSessionFocusID, delta: 1) }
     func focusPrevSession() { advanceFocus(in: orderedAllSessions, cursor: \.lastSessionFocusID, delta: -1) }
 
@@ -805,16 +956,25 @@ final class AppModel: ObservableObject {
     }
 
     /// Open `file` (a directory, or a `.command` launcher) in the user's
-    /// chosen terminal — or the system default handler when none is set / it's
-    /// no longer installed. Plain `NSWorkspace`, not `osascript` UI-scripting:
+    /// chosen terminal — or Apple Terminal when none is set / it's no longer
+    /// installed. Explicitly choosing Terminal prevents a user's `.command`
+    /// file association (for example, Script Editor) from intercepting the
+    /// managed-session launcher. Plain `NSWorkspace`, not `osascript` UI-scripting:
     /// the latter needs Accessibility access this app doesn't (and shouldn't
     /// have to) request.
     private func openWithTerminal(_ file: URL) {
         let config = NSWorkspace.OpenConfiguration()
-        if let app = preferredTerminalURL() {
-            NSWorkspace.shared.open([file], withApplicationAt: app, configuration: config)
+        let terminal = preferredTerminalURL()
+            ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal")
+        if let app = terminal {
+            let bundleID = Bundle(url: app)?.bundleIdentifier ?? app.lastPathComponent
+            log("terminal open requested file=\(boundedLogField(file.lastPathComponent)) terminal=\(boundedLogField(bundleID))")
+            NSWorkspace.shared.open([file], withApplicationAt: app, configuration: config) { application, error in
+                log("terminal open completed file=\(boundedLogField(file.lastPathComponent)) accepted=\(application != nil) pid=\(application?.processIdentifier.description ?? "-") error=\(boundedLogField(error?.localizedDescription))")
+            }
         } else {
-            NSWorkspace.shared.open(file)
+            let accepted = NSWorkspace.shared.open(file)
+            log("terminal open fallback file=\(boundedLogField(file.lastPathComponent)) accepted=\(accepted)")
         }
     }
 
@@ -841,7 +1001,7 @@ final class AppModel: ObservableObject {
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
     }
 
-    /// The shell command that resumes an ended session's conversation, or nil
+    /// The provider command that resumes a session's conversation, or nil
     /// if its tool has no resume-by-id (Cursor/generic). Claude Code and Codex
     /// both resume by the session id we already store: `claude --resume <id>`
     /// / `codex resume <id>`. The id is single-quoted for the shell.
@@ -854,22 +1014,191 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Recover an ended session from History: reopen its agent conversation in
-    /// a new Terminal window at its working directory. Writes a temporary
+    /// Whether an unmanaged live row can be safely promoted right now. Resume
+    /// restores a transcript, not an in-flight tool execution, so thinking,
+    /// running, compacting, and error sessions are intentionally gated out.
+    func canRelaunchAsManaged(_ session: SessionInfo) -> Bool {
+        guard session.connected, !session.isManaged, !session.pendingReopen,
+              session.kind == "claude" || session.kind == "codex",
+              session.cwd != nil else { return false }
+        return session.state == .idle || session.state == .waiting || session.state == .done
+    }
+
+    /// Explicitly promote a live Claude/Codex conversation to the managed
+    /// tmux transport. The daemon gracefully stops the old process; its
+    /// `session-ended` event is the handoff point that starts the resume.
+    func relaunchAsManaged(_ session: SessionInfo) {
+        let eligible = canRelaunchAsManaged(session)
+        let alreadyPending = pendingManagedRelaunch.contains(session.id)
+        log("managed relaunch click id=\(boundedLogField(session.id)) state=\(session.state.rawValue) connected=\(session.connected) managed=\(session.managed) pending=\(session.pendingReopen) kind=\(boundedLogField(session.kind)) cwd_present=\(session.cwd != nil) eligible=\(eligible) already_pending=\(alreadyPending)")
+        guard eligible, !alreadyPending else {
+            log("managed relaunch rejected-locally id=\(boundedLogField(session.id))")
+            return
+        }
+
+        pendingManagedRelaunch.insert(session.id)
+        log("managed relaunch requested id=\(boundedLogField(session.id)) slot=\(session.slot.map(String.init) ?? "-") state=\(session.state.rawValue) kind=\(boundedLogField(session.kind))")
+        managedRelaunchStatus = ManagedRelaunchStatus(
+            sessionID: session.id,
+            sessionTitle: session.title,
+            phase: .requesting,
+            detail: "Waiting for FocalPoint to accept the handoff."
+        )
+        if let idx = sessions.firstIndex(where: { $0.id == session.id }) {
+            sessions[idx].pendingReopen = true
+        }
+        let client = self.client
+        let targetID = session.id
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let response = client.request([
+                "cmd": "relaunch-managed-session",
+                "session": targetID,
+            ], timeout: 2)
+            guard response?["ok"] as? Bool == true else {
+                let message = response?["error"] as? String
+                    ?? "Could not reach the FocalPoint daemon."
+                Task { @MainActor [weak self] in
+                    self?.clearManagedRelaunch(targetID)
+                    self?.setManagedRelaunchStatus(
+                        id: targetID, phase: .rejected, detail: message
+                    )
+                    log("relaunchAsManaged: \(message)")
+                }
+                return
+            }
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+            guard let self, self.pendingManagedRelaunch.contains(targetID) else { return }
+            self.clearManagedRelaunch(targetID)
+            self.setManagedRelaunchStatus(
+                id: targetID,
+                phase: .timedOut,
+                detail: "No managed replacement registered within 30 seconds."
+            )
+            log("relaunchAsManaged: timed out waiting for managed registration: \(targetID)")
+        }
+    }
+
+    private func handleManagedRelaunchEvent(_ event: [String: Any]) {
+        guard let id = event["session"] as? String,
+              let status = event["status"] as? String else { return }
+        log("managed relaunch event id=\(boundedLogField(id)) status=\(boundedLogField(status)) launch=\(boundedLogField(event["launch_id"])) tmux=\(boundedLogField(event["tmux_session"])) error=\(boundedLogField(event["error"]))")
+        switch status {
+        case "quitting":
+            setManagedRelaunchStatus(
+                id: id, phase: .quitting,
+                detail: "Gracefully stopping the current agent process."
+            )
+        case "launched":
+            setManagedRelaunchStatus(
+                id: id, phase: .launched,
+                detail: "Waiting for the resumed agent to reconnect."
+            )
+            guard let launchID = event["launch_id"] as? String,
+                  let tmuxSession = event["tmux_session"] as? String else {
+                clearManagedRelaunch(id)
+                setManagedRelaunchStatus(
+                    id: id, phase: .failed,
+                    detail: "The daemon returned an incomplete launch event."
+                )
+                return
+            }
+            if attachedManagedRelaunches.insert(launchID).inserted {
+                openManagedTmuxSession(tmuxSession, launchID: launchID)
+            }
+        case "complete":
+            clearManagedRelaunch(id)
+            setManagedRelaunchStatus(
+                id: id, phase: .complete,
+                detail: "The resumed agent registered successfully."
+            )
+        case "failed":
+            clearManagedRelaunch(id)
+            let message = event["error"] as? String ?? "The daemon could not complete the handoff."
+            setManagedRelaunchStatus(id: id, phase: .failed, detail: message)
+            log("managed relaunch failed: \(message)")
+        default:
+            break
+        }
+    }
+
+    private func setManagedRelaunchStatus(
+        id: String, phase: ManagedRelaunchPhase, detail: String
+    ) {
+        let existingTitle = managedRelaunchStatus?.sessionID == id
+            ? managedRelaunchStatus?.sessionTitle : nil
+        let title = existingTitle
+            ?? sessions.first(where: { $0.id == id })?.title
+            ?? "Session"
+        managedRelaunchStatus = ManagedRelaunchStatus(
+            sessionID: id,
+            sessionTitle: title,
+            phase: phase,
+            detail: String(detail.prefix(240))
+        )
+    }
+
+    func dismissManagedRelaunchStatus() {
+        guard managedRelaunchStatus?.phase.isTerminal == true else { return }
+        managedRelaunchStatus = nil
+    }
+
+    private func clearManagedRelaunch(_ id: String) {
+        pendingManagedRelaunch.remove(id)
+        if let idx = sessions.firstIndex(where: { $0.id == id }) {
+            sessions[idx].pendingReopen = false
+        }
+    }
+
+    private func openManagedTmuxSession(_ tmuxSession: String, launchID: String) {
+        let quotedSession = "'" + tmuxSession.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        let script = """
+        #!/bin/zsh -l
+        TMUX_BIN=$(command -v tmux)
+        if [ -z "$TMUX_BIN" ] && [ -x /opt/homebrew/bin/tmux ]; then TMUX_BIN=/opt/homebrew/bin/tmux; fi
+        if [ -z "$TMUX_BIN" ] && [ -x /usr/local/bin/tmux ]; then TMUX_BIN=/usr/local/bin/tmux; fi
+        if [ -z "$TMUX_BIN" ]; then print -u2 'tmux is not installed.'; exit 1; fi
+        exec "$TMUX_BIN" attach-session -t \(quotedSession)
+        """
+        let launcher = FileManager.default.temporaryDirectory
+            .appendingPathComponent("focalpoint-attach-\(launchID).command")
+        do {
+            try script.write(to: launcher, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700],
+                                                  ofItemAtPath: launcher.path)
+            openWithTerminal(launcher)
+        } catch {
+            log("openManagedTmuxSession: failed to write launcher: \(error)")
+        }
+    }
+
+    /// Recover an ended session from History under the managed tmux launcher
+    /// in a new Terminal window at its working directory. Writes a temporary
     /// `.command` launcher and opens it with `NSWorkspace` (Terminal is the
     /// default handler for `.command`) rather than osascript-scripting a
     /// terminal — so it needs no Automation/Accessibility permission, same
     /// reasoning as `openInTerminal`. The resumed session re-registers with
     /// the daemon via its adapter hooks, so it reappears as a live session.
     func recoverSession(_ entry: SessionHistoryEntry) {
+        launchManagedSession(entry)
+    }
+
+    private func launchManagedSession(_ entry: SessionHistoryEntry) {
         guard let cmd = resumeCommand(for: entry) else { return }
         let cwd = entry.cwd ?? NSHomeDirectory()
         let quotedCwd = "'" + cwd.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        let runner = NSHomeDirectory() + "/.config/focalpoint/focalpoint-run.sh"
+        let quotedRunner = "'" + runner.replacingOccurrences(of: "'", with: "'\\''") + "'"
         let script = """
-        #!/bin/bash
-        # FocalPoint session recovery — reopens \(entry.kind) session \(entry.sessionID).
+        #!/bin/zsh -l
+        # FocalPoint managed session recovery — reopens \(entry.kind) session \(entry.sessionID).
         cd \(quotedCwd) 2>/dev/null || cd
-        exec \(cmd)
+        if [ ! -x \(quotedRunner) ]; then
+          print -u2 'FocalPoint managed-session launcher is not installed.'
+          exit 1
+        fi
+        exec \(quotedRunner) \(cmd)
         """
         let launcher = FileManager.default.temporaryDirectory
             .appendingPathComponent("focalpoint-resume-\(entry.sessionID).command")
@@ -893,16 +1222,20 @@ final class AppModel: ObservableObject {
     /// never lands (resume was refused — e.g. a still-running bg agent — or
     /// the tool assigned a new id).
     private func optimisticallyReopen(_ entry: SessionHistoryEntry) {
+        let operation: String
         if let idx = sessions.firstIndex(where: { $0.id == entry.sessionID }) {
+            operation = "update"
             sessions[idx].pendingReopen = true
             sessions[idx].connected = true
         } else {
+            operation = "insert"
             var s = SessionInfo(id: entry.sessionID, kind: entry.kind, label: entry.title,
                                 name: nil, slot: nil, state: .idle, connected: true,
                                 cwd: entry.cwd, firstSeen: Date(), lastChange: Date(), stats: [:])
             s.pendingReopen = true
             sessions.append(s)
         }
+        log("optimistic reopen \(operation) id=\(boundedLogField(entry.sessionID)) kind=\(boundedLogField(entry.kind)) rows=\(sessions.count)")
         sortSessions()
         let targetID = entry.sessionID
         DispatchQueue.main.asyncAfter(deadline: .now() + 90) { [weak self] in
@@ -913,6 +1246,7 @@ final class AppModel: ObservableObject {
             if let idx = self.sessions.firstIndex(where: { $0.id == targetID }),
                self.sessions[idx].pendingReopen {
                 self.sessions.remove(at: idx)
+                log("optimistic reopen timeout-remove id=\(boundedLogField(targetID)) rows=\(self.sessions.count)")
             }
         }
     }
