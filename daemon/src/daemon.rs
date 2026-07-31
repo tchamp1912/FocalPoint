@@ -16,6 +16,7 @@
 //! to a device that (re)appears.
 
 use crate::config::{Action, Config};
+use crate::channel::{valid_kind, Channels, BODY_MAX_CHARS};
 use crate::protocol::{
     control_id, control_name, joy_id, joy_name, DeviceEvent, HostCmd, Pattern, State,
 };
@@ -443,6 +444,7 @@ fn launch_orchestrated_session(
     task_id: &str,
     role: &str,
     manager_task_id: Option<&str>,
+    channel_id: Option<&str>,
 ) -> Result<serde_json::Value, String> {
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
@@ -545,13 +547,17 @@ fn launch_orchestrated_session(
     let manager_export = manager_task_id
         .map(|id| format!("export FOCALPOINT_MANAGER_TASK_ID={}\n", shell_quote(id)))
         .unwrap_or_default();
+    let channel_export = channel_id
+        .map(|id| format!("export FOCALPOINT_CHANNEL_ID={}\n", shell_quote(id)))
+        .unwrap_or_default();
     let script = format!(
-        "#!/bin/bash\nset -e\nrm -f -- {}\ncd -- {}\nexport FOCALPOINT_ORCHESTRATOR_TASK_ID={}\nexport FOCALPOINT_ORCHESTRATION_ROLE={}\n{}exec {} {}\n",
+        "#!/bin/bash\nset -e\nrm -f -- {}\ncd -- {}\nexport FOCALPOINT_ORCHESTRATOR_TASK_ID={}\nexport FOCALPOINT_ORCHESTRATION_ROLE={}\n{}{}exec {} {}\n",
         shell_quote(&launcher.display().to_string()),
         shell_quote(&cwd.display().to_string()),
         shell_quote(task_id),
         shell_quote(role),
         manager_export,
+        channel_export,
         shell_quote(&runner.display().to_string()),
         provider_command,
     );
@@ -592,6 +598,7 @@ fn launch_orchestrated_session(
         "cwd": cwd,
         "role": role,
         "manager_task_id": manager_task_id,
+        "channel_id": channel_id,
         "terminal_bundle_id": terminal_bundle_id,
         "status": "launching",
     }))
@@ -743,6 +750,11 @@ pub struct Shared {
     pub usage: HashMap<String, serde_json::Map<String, serde_json::Value>>,
     /// Per-state render styles (defaults + config/`set-style` overrides).
     pub styles: StyleTable,
+    /// Daemon-owned persisted mailboxes. Message bodies never leave this
+    /// object through the wake transport.
+    pub channels: Channels,
+    /// Monotonic debounce timestamps are deliberately process-local.
+    pub channel_wake_last: HashMap<String, Instant>,
     /// Whether a device is currently attached and responsive.
     pub device_present: bool,
 }
@@ -802,6 +814,78 @@ fn orchestrated_session_target(
         return Err("orchestrated stop/read supports only claude and codex".into());
     }
     Ok(session)
+}
+
+#[cfg(unix)]
+fn channel_actor(registry: &Registry, task_id: &str) -> Result<Session, String> {
+    if !valid_orchestrator_task_id(task_id) { return Err("invalid channel task id".into()); }
+    let matches: Vec<Session> = registry.list().into_iter().filter(|session| {
+        meta_truthy(session.meta.get("managed"))
+            && matches!(session.kind.as_deref(), Some("claude" | "codex"))
+            && session.meta.get("orchestrator_task_id").and_then(serde_json::Value::as_str) == Some(task_id)
+    }).collect();
+    match matches.len() {
+        1 => Ok(matches.into_iter().next().unwrap()),
+        0 => Err("no live managed session owns that channel task id".into()),
+        _ => Err("multiple live sessions own that channel task id".into()),
+    }
+}
+
+#[cfg(unix)]
+const CHANNEL_WAKE_PING: &str = "FocalPoint: you have channel mail. Run fpctl-agent channel read --channel \"$FOCALPOINT_CHANNEL_ID\".";
+
+/// The only inter-session injection. Its payload is a source constant; it
+/// never contains a message body, kind, sender, or any other channel data.
+#[cfg(unix)]
+fn maybe_wake_channel_member(ctx: &EventCtx, channel: &str, recipient: &Session) {
+    if recipient.state != State::Idle || recipient.state == State::Waiting { return; }
+    // The degraded tier remains visible to a human for unmanaged sessions,
+    // missing panes, and a deliberately disabled managed wake.
+    if !ctx.config.channel.wake_managed() || !channel_wake_allowed(recipient) {
+        ctx.broadcast(&serde_json::json!({"event":"channel-notify","channel":channel,"session":recipient.id}).to_string());
+        return;
+    }
+    let Some(pane) = recipient.meta.get("mux_pane").and_then(serde_json::Value::as_str).filter(|pane| !pane.is_empty()) else {
+        ctx.broadcast(&serde_json::json!({"event":"channel-notify","channel":channel,"session":recipient.id}).to_string());
+        return;
+    };
+    let allowed = {
+        let mut state = ctx.shared.lock().unwrap();
+        let now = Instant::now();
+        match state.channel_wake_last.get(&recipient.id) {
+            Some(last) if now.duration_since(*last) < Duration::from_secs(3) => false,
+            _ => { state.channel_wake_last.insert(recipient.id.clone(), now); true }
+        }
+    };
+    if !allowed { return; }
+    let pane = pane.to_string();
+    std::thread::spawn(move || {
+        let _ = Command::new("tmux").args(["send-keys", "-t", &pane, CHANNEL_WAKE_PING, "Enter"]).status();
+    });
+}
+
+#[cfg(unix)]
+fn channel_public(channel: &crate::channel::Channel) -> serde_json::Value {
+    serde_json::json!({"channel_id": channel.id, "owner_session": channel.owner_session,
+        "members": channel.members.keys().collect::<Vec<_>>(), "closed": false})
+}
+
+#[cfg(unix)]
+fn channel_post_target(channel: &crate::channel::Channel, actor: &str, requested_to: &str) -> Result<String, String> {
+    if !channel.members.contains_key(actor) { return Err("session is not a channel member".into()); }
+    if actor == channel.owner_session {
+        if requested_to != "channel" && !channel.members.contains_key(requested_to) { return Err("recipient is not a channel member".into()); }
+        Ok(requested_to.to_string())
+    } else {
+        if requested_to != "channel" && requested_to != channel.owner_session { return Err("workers may post only to their channel owner".into()); }
+        Ok(channel.owner_session.clone())
+    }
+}
+
+#[cfg(unix)]
+fn channel_wake_allowed(recipient: &Session) -> bool {
+    recipient.state == State::Idle && recipient.state != State::Waiting && meta_truthy(recipient.meta.get("managed"))
+        && recipient.meta.get("mux_pane").and_then(serde_json::Value::as_str).is_some_and(|pane| !pane.is_empty())
 }
 
 #[cfg(unix)]
@@ -1189,7 +1273,7 @@ fn restore_instant(saved_at_unix_ms: u64, elapsed_ms: u64) -> Instant {
 #[cfg(unix)]
 fn save_snapshot(shared: &Mutex<Shared>) {
     let now = Instant::now();
-    let (sessions, tombstones, usage, attention_order) = {
+    let (sessions, tombstones, usage, attention_order, channels) = {
         let s = shared.lock().unwrap();
         let sessions: Vec<serde_json::Value> = s
             .registry
@@ -1220,6 +1304,7 @@ fn save_snapshot(shared: &Mutex<Shared>) {
             tombstones,
             s.usage.clone(),
             s.registry.attention_order_override(),
+            s.channels.clone(),
         )
     };
     let snapshot = serde_json::json!({
@@ -1228,6 +1313,7 @@ fn save_snapshot(shared: &Mutex<Shared>) {
         "tombstones": tombstones,
         "usage": usage,
         "attention_order": attention_order,
+        "channels": channels,
     });
     let path = crate::paths::daemon_state_path();
     if let Some(parent) = path.parent() {
@@ -1250,11 +1336,12 @@ fn load_snapshot(
 ) -> (
     Registry,
     HashMap<String, serde_json::Map<String, serde_json::Value>>,
+    Channels,
 ) {
     let empty = || {
         (
             Registry::new(ttl).with_tombstone_ttl(tombstone_ttl),
-            HashMap::new(),
+            HashMap::new(), Channels::default(),
         )
     };
     let Ok(data) = std::fs::read_to_string(crate::paths::daemon_state_path()) else {
@@ -1318,7 +1405,8 @@ fn load_snapshot(
         });
     let mut registry = Registry::restore(ttl, tombstone_ttl, sessions, tombstones);
     registry.restore_attention_order(attention_order);
-    (registry, usage)
+    let channels = root.get("channels").cloned().and_then(|value| serde_json::from_value(value).ok()).unwrap_or_default();
+    (registry, usage, channels)
 }
 
 /// One-shot startup reconciliation (Part 4): a restored session might have
@@ -1709,11 +1797,13 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
     // `focalpoint sessions`/`focalpoint usage` until adapters naturally
     // re-report. Missing/corrupt snapshot: silently empty, same as before
     // this feature existed.
-    let (registry, usage) = load_snapshot(ttl, tombstone_ttl);
+    let (registry, usage, channels) = load_snapshot(ttl, tombstone_ttl);
     let shared = Arc::new(Mutex::new(Shared {
         registry,
         usage,
         styles: config.style_table(),
+        channels,
+        channel_wake_last: HashMap::new(),
         device_present: false,
     }));
     // One-shot reconciliation against live OS facts, before anything else
@@ -2074,6 +2164,16 @@ fn dispatch(
                 Instant::now(),
             );
             apply_effects(effects, ctx, host_tx);
+            // Managed launch exports this id; the adapter reports it back in
+            // metadata when the real provider session registers. Joining here
+            // starts exactly at the current tail, never at channel creation.
+            if let (Some(id), Some(meta)) = (session, value.get("meta").and_then(|m| m.as_object())) {
+                if let Some(channel_id) = meta.get("channel_id").and_then(serde_json::Value::as_str) {
+                    let mut state = shared.lock().unwrap();
+                    if let Some(channel) = state.channels.channels.get_mut(channel_id) { channel.join_at_tail(id.to_string()); }
+                }
+            }
+            save_snapshot(shared);
             Dispatch::Reply(serde_json::json!({ "ok": true }))
         }
         "set-meta" => {
@@ -2316,6 +2416,60 @@ fn dispatch(
                 "messages": messages,
             }))
         }
+        "channel-create" => {
+            let Some(task_id) = value.get("task_id").and_then(serde_json::Value::as_str) else { return err("channel-create requires task_id"); };
+            let actor = match channel_actor(&shared.lock().unwrap().registry, task_id) { Ok(actor) => actor, Err(message) => return err(&message) };
+            if actor.meta.get("orchestration_role").and_then(serde_json::Value::as_str) != Some("orchestrator") { return err("only an orchestrator may create a channel"); }
+            let channel = shared.lock().unwrap().channels.create(actor.id, task_id.to_string());
+            save_snapshot(shared);
+            Dispatch::Reply(serde_json::json!({"ok": true, "channel_id": channel.id}))
+        }
+        "channel-members" | "channel-close" | "channel-read" | "channel-post" => {
+            let Some(task_id) = value.get("task_id").and_then(serde_json::Value::as_str) else { return err("channel request requires task_id"); };
+            let Some(channel_id) = value.get("channel").and_then(serde_json::Value::as_str) else { return err("channel request requires channel"); };
+            let actor = match channel_actor(&shared.lock().unwrap().registry, task_id) { Ok(actor) => actor, Err(message) => return err(&message) };
+            if cmd == "channel-close" {
+                let mut state = shared.lock().unwrap();
+                let Some(channel) = state.channels.channels.get(channel_id) else { return err("unknown channel"); };
+                if channel.owner_session != actor.id { return err("only the creating orchestrator may close this channel"); }
+                state.channels.channels.remove(channel_id);
+                drop(state); save_snapshot(shared);
+                return Dispatch::Reply(serde_json::json!({"ok": true, "channel_id": channel_id, "closed": true}));
+            }
+            if cmd == "channel-members" {
+                let state = shared.lock().unwrap();
+                let Some(channel) = state.channels.channels.get(channel_id) else { return err("unknown channel"); };
+                if !channel.members.contains_key(&actor.id) { return err("session is not a channel member"); }
+                return Dispatch::Reply(serde_json::json!({"ok": true, "channel": channel_public(channel)}));
+            }
+            if cmd == "channel-read" {
+                let since = value.get("since").and_then(serde_json::Value::as_u64);
+                let tail = value.get("tail").and_then(serde_json::Value::as_u64).unwrap_or(20);
+                if !(1..=100).contains(&tail) { return err("channel read tail must be 1-100"); }
+                let mut state = shared.lock().unwrap();
+                let Some(channel) = state.channels.channels.get_mut(channel_id) else { return err("unknown channel"); };
+                let (messages, next) = match channel.read(&actor.id, since, tail as usize) { Ok(value) => value, Err(message) => return err(&message) };
+                drop(state); save_snapshot(shared);
+                return Dispatch::Reply(serde_json::json!({"ok":true,"channel_id":channel_id,"messages":messages,"next_cursor":next}));
+            }
+            let Some(body) = value.get("body").and_then(serde_json::Value::as_str) else { return err("channel post requires body"); };
+            let kind = value.get("kind").and_then(serde_json::Value::as_str).unwrap_or("note");
+            if !valid_kind(kind) { return err("invalid channel message kind"); }
+            if body.chars().count() > BODY_MAX_CHARS { return err("channel body exceeds 4096 characters"); }
+            let requested_to = value.get("to").and_then(serde_json::Value::as_str).unwrap_or("channel");
+            let (message, recipients) = {
+                let mut state = shared.lock().unwrap();
+                let Some(channel) = state.channels.channels.get_mut(channel_id) else { return err("unknown channel"); };
+                let to = match channel_post_target(channel, &actor.id, requested_to) { Ok(to) => to, Err(message) => return err(&message) };
+                let message = channel.post(actor.id.clone(), to.clone(), kind.to_string(), body.to_string(), unix_ms_now());
+                let recipient_ids: Vec<String> = if to == "channel" { channel.members.keys().filter(|id| **id != actor.id).cloned().collect() } else { vec![to] };
+                (message, recipient_ids)
+            };
+            let recipient_sessions: Vec<Session> = { let state = shared.lock().unwrap(); recipients.iter().filter_map(|id| state.registry.session_or_tombstone(id)).collect() };
+            for recipient in recipient_sessions { maybe_wake_channel_member(ctx, channel_id, &recipient); }
+            save_snapshot(shared);
+            Dispatch::Reply(serde_json::json!({"ok":true,"message":message}))
+        }
         "relaunch-managed-session" => {
             let Some(id) = value.get("session").and_then(|s| s.as_str()) else {
                 return err("relaunch-managed-session requires 'session'");
@@ -2526,6 +2680,10 @@ fn dispatch(
                     }
                 },
             };
+            let channel_id = match value.get("channel_id") {
+                None | Some(serde_json::Value::Null) => None,
+                Some(value) => match value.as_str() { Some(id) => Some(id), None => return err("launch-session 'channel_id' must be a string or null") },
+            };
             if let Err(message) = validate_orchestration_relationship(
                 &shared.lock().unwrap().registry,
                 role,
@@ -2533,6 +2691,12 @@ fn dispatch(
                 manager_task_id,
             ) {
                 return err(&message);
+            }
+            if let Some(channel_id) = channel_id {
+                let state = shared.lock().unwrap();
+                let Some(channel) = state.channels.channels.get(channel_id) else { return err("unknown channel"); };
+                let Some(manager) = manager_task_id else { return err("launch --channel requires manager_task_id"); };
+                if channel.owner_task_id != manager { return err("channel is not owned by that orchestrator task"); }
             }
             match launch_orchestrated_session(
                 provider,
@@ -2542,6 +2706,7 @@ fn dispatch(
                 task_id,
                 role,
                 manager_task_id,
+                channel_id,
             ) {
                 Ok(response) => Dispatch::Reply(response),
                 Err(message) => err(&message),
@@ -2664,6 +2829,26 @@ pub async fn run(_opts: DaemonOpts) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn channel_rejects_non_member_and_worker_to_worker_posts() {
+        let mut channel = crate::channel::Channel::new("ch-1".into(), "owner".into(), "task".into());
+        channel.join_at_tail("worker-a".into());
+        channel.join_at_tail("worker-b".into());
+        assert!(channel_post_target(&channel, "outsider", "channel").is_err());
+        assert!(channel_post_target(&channel, "worker-a", "worker-b").is_err());
+        assert_eq!(channel_post_target(&channel, "worker-a", "channel").unwrap(), "owner");
+    }
+
+    #[test]
+    fn channel_wake_excludes_waiting_sessions() {
+        let mut meta = serde_json::Map::new();
+        meta.insert("managed".into(), serde_json::json!(true));
+        meta.insert("mux_pane".into(), serde_json::json!("%12"));
+        let session = Session { id: "s".into(), kind: Some("claude".into()), label: None, name: None,
+            meta, slot: Some(1), state: State::Waiting, last_update: Instant::now() };
+        assert!(!channel_wake_allowed(&session));
+    }
     use serde_json::json;
 
     #[test]

@@ -59,6 +59,20 @@ pub struct SessionConfig {
     pub tombstone_ttl_minutes: Option<u64>,
 }
 
+/// `[channel]` delivery controls. Channel storage itself is always available;
+/// this only controls the optional managed tmux wake tier.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ChannelConfig {
+    /// Default-on for managed sessions. A disabled wake never affects pull
+    /// delivery or human-visible channel notifications.
+    #[serde(default)]
+    pub wake_managed: Option<bool>,
+}
+
+impl ChannelConfig {
+    pub fn wake_managed(&self) -> bool { self.wake_managed.unwrap_or(true) }
+}
+
 impl SessionConfig {
     /// Effective TTL: `None` means "never expire".
     pub fn ttl(&self) -> Option<std::time::Duration> {
@@ -100,6 +114,8 @@ pub struct Config {
     pub dial: DialConfig,
     #[serde(default)]
     pub session: SessionConfig,
+    #[serde(default)]
+    pub channel: ChannelConfig,
     /// Keyed by state name (`idle`..`error`). Overrides the default style.
     #[serde(default)]
     pub styles: HashMap<String, StyleConfig>,

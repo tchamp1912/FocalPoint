@@ -7,6 +7,7 @@
 pub mod actions;
 pub mod client;
 pub mod config;
+pub mod channel;
 pub mod daemon;
 pub mod identity;
 pub mod paths;

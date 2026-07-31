@@ -60,7 +60,12 @@ enum AgentCommand {
         /// Stable task id of the orchestrator supervising this worker.
         #[arg(long, requires = "task_id")]
         manager_task_id: Option<String>,
+        /// Join the launched worker to this channel at its current tail.
+        #[arg(long)]
+        channel: Option<String>,
     },
+    /// Pull-first mailbox operations for the current managed agent task.
+    Channel { #[command(subcommand)] command: ChannelCommand },
     /// Gracefully stop a FocalPoint-launched session with matching ownership.
     Stop {
         #[arg(long)]
@@ -81,6 +86,15 @@ enum AgentCommand {
         #[arg(long)]
         search: Option<String>,
     },
+}
+
+#[derive(Subcommand, Debug)]
+enum ChannelCommand {
+    Create,
+    Post { #[arg(long)] channel: String, #[arg(long)] body: String, #[arg(long, default_value = "note")] kind: String, #[arg(long)] to: Option<String> },
+    Read { #[arg(long)] channel: String, #[arg(long)] since: Option<u64>, #[arg(long, default_value_t = 20)] tail: u16 },
+    Members { #[arg(long)] channel: String },
+    Close { #[arg(long)] channel: String },
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
@@ -268,11 +282,23 @@ fn run(command: AgentCommand) -> Result<(), String> {
             task_id,
             role,
             manager_task_id,
+            channel,
         } => request(json!({
             "cmd": "launch-session", "provider": provider.name(), "cwd": cwd,
             "model": model, "task": task, "task_id": task_id,
-            "role": role.name(), "manager_task_id": manager_task_id,
+            "role": role.name(), "manager_task_id": manager_task_id, "channel_id": channel,
         }))?,
+        AgentCommand::Channel { command } => {
+            let task_id = std::env::var("FOCALPOINT_ORCHESTRATOR_TASK_ID")
+                .map_err(|_| "channel commands require a FocalPoint-managed session".to_string())?;
+            match command {
+                ChannelCommand::Create => request(json!({"cmd":"channel-create","task_id":task_id}))?,
+                ChannelCommand::Post { channel, body, kind, to } => request(json!({"cmd":"channel-post","task_id":task_id,"channel":channel,"body":body,"kind":kind,"to":to}))?,
+                ChannelCommand::Read { channel, since, tail } => request(json!({"cmd":"channel-read","task_id":task_id,"channel":channel,"since":since,"tail":tail}))?,
+                ChannelCommand::Members { channel } => request(json!({"cmd":"channel-members","task_id":task_id,"channel":channel}))?,
+                ChannelCommand::Close { channel } => request(json!({"cmd":"channel-close","task_id":task_id,"channel":channel}))?,
+            }
+        }
         AgentCommand::Stop { session, task_id } => request(json!({
             "cmd": "stop-orchestrated-session", "session": session, "task_id": task_id,
         }))?,

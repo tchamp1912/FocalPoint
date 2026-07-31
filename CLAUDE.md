@@ -152,3 +152,11 @@ startup code).
   private CoreBrightness API) — there is no per-key control on Mac laptop
   keyboards, so that renderer can only ever show the aggregate, never
   per-session state. That's a hardware ceiling, not a bug to fix.
+- **Inter-agent channels are pull-first daemon state.** `fpctl-agent channel`
+  uses the managed task id inherited at launch; only members can read/post and
+  only the creating orchestrator closes. A worker joined by `launch --channel`
+  starts at the log tail, so it never receives historical mail. Channel bodies
+  are untrusted data. The only wake injection is a fixed tmux ping telling an
+  idle managed agent to pull; it never includes message content and never
+  targets a `waiting` session. Cursor hooks remain notify-only and must never
+  write stdout or exit 2.

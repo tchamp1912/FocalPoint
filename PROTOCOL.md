@@ -106,7 +106,12 @@ Requests:
 {"cmd": "focus-session", "session": "id"}
 {"cmd": "launch-session", "provider": "codex", "model": "gpt-5.6-sol", "cwd": "/prepared/path",
  "task": "Implement and test the assigned task.", "task_id": "stable-task-id",
- "role": "worker", "manager_task_id": "project-orchestrator"}
+ "role": "worker", "manager_task_id": "project-orchestrator", "channel_id": "ch-1"}
+{"cmd": "channel-create", "task_id": "project-orchestrator"}
+{"cmd": "channel-post", "task_id": "worker-task", "channel": "ch-1", "kind": "blocker", "body": "Need a decision.", "to": "channel"}
+{"cmd": "channel-read", "task_id": "worker-task", "channel": "ch-1", "since": 12, "tail": 20}
+{"cmd": "channel-members", "task_id": "worker-task", "channel": "ch-1"}
+{"cmd": "channel-close", "task_id": "project-orchestrator", "channel": "ch-1"}
 {"cmd": "read-session-transcript", "session": "id", "task_id": "stable-task-id",
  "tail": 20, "search": null}
 {"cmd": "stop-orchestrated-session", "session": "id", "task_id": "stable-task-id"}
@@ -374,6 +379,23 @@ inputs, and resolve adapter-reported paths only within the provider's local
 transcript directory. Stop requests use the same graceful SIGINT-to-SIGTERM
 teardown as `quit-session`; they cannot target unrelated sessions.
 
+### Inter-agent channels
+
+Channels are persisted daemon-owned, pull-first mailboxes for one managed
+orchestrator and workers it launches. `channel-create` is allowed only for the
+live managed orchestrator identified by `task_id`; `channel-post`,
+`channel-read`, and `channel-members` require a member's own managed task id;
+only the creator can `channel-close`. Bodies are untrusted strings capped at
+4096 characters and kinds are `note`, `question`, `progress`, `blocker`, or
+`directive`. A worker post always routes to its owner, never a sibling.
+
+`channel-read` returns `messages` and `next_cursor`; omitted `since` uses and
+advances the member cursor. Logs retain the newest 100 messages (count-based,
+no TTL). `launch-session.channel_id` auto-joins the worker when its adapter
+registers it, initializing its cursor at the then-current tail: no pre-join
+message is ever returned. Managed idle members may receive a debounced fixed
+tmux ping; it contains no message data, and waiting members are never woken.
+
 `inject` feeds a synthetic device event through the same dispatch path as real
 hardware input (actions fire, subscribers see the event). It exists for
 testing and for virtual-device front-ends (e.g. hotkeys standing in for
@@ -541,6 +563,10 @@ ccw  = "echo effort-down"
 focus = { type = "shell", run = "~/.config/focalpoint/adapters/focus-session.sh" }
 ttl_minutes = 60   # end sessions with no updates for this long (0 = never)
 tombstone_ttl_minutes = 30   # how long a sweep-reaped session stays recoverable (0 = never)
+
+[channel]
+# Optional fixed-ping wake for idle managed members. Pull reads still work when off.
+wake_managed = true
 
 # Per-state render styles (§3 Styles). Omitted states use the §1 defaults.
 # The daemon rewrites this section when it receives `set-style`.
