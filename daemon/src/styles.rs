@@ -99,7 +99,10 @@ mod tests {
 
     #[test]
     fn period_is_clamped() {
-        assert_eq!(Style::new([0, 0, 0], Pattern::Blink, 10).period_ms, PERIOD_MIN);
+        assert_eq!(
+            Style::new([0, 0, 0], Pattern::Blink, 10).period_ms,
+            PERIOD_MIN
+        );
         assert_eq!(
             Style::new([0, 0, 0], Pattern::Blink, 60000).period_ms,
             PERIOD_MAX

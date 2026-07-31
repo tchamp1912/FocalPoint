@@ -185,11 +185,19 @@ impl Pattern {
 pub enum HostCmd {
     Ping,
     SetState(State),
-    SetLed { index: u8, r: u8, g: u8, b: u8 },
+    SetLed {
+        index: u8,
+        r: u8,
+        g: u8,
+        b: u8,
+    },
     SetHostMode(bool),
     /// Per-key session state. `key` is the 1..=12 numbered key (slot). `state`
     /// is `None` to empty the slot (`0xFF`), else that session's state.
-    SetKeyState { key: u8, state: Option<State> },
+    SetKeyState {
+        key: u8,
+        state: Option<State>,
+    },
     /// Override a state's render style (PROTOCOL.md §2). `period_ms` is
     /// little-endian in the report.
     SetStateStyle {
@@ -382,7 +390,11 @@ mod tests {
         .encode();
         assert_eq!(&buf[0..3], &[CMD_SET_KEY_STATE, 3, 2]);
         // None => 0xFF (slot empty)
-        let empty = HostCmd::SetKeyState { key: 3, state: None }.encode();
+        let empty = HostCmd::SetKeyState {
+            key: 3,
+            state: None,
+        }
+        .encode();
         assert_eq!(&empty[0..3], &[CMD_SET_KEY_STATE, 3, KEY_STATE_EMPTY]);
     }
 
@@ -399,7 +411,7 @@ mod tests {
         assert_eq!(buf[1], State::Waiting.id()); // 3
         assert_eq!(&buf[2..5], &[30, 144, 255]);
         assert_eq!(buf[5], Pattern::Blink.id()); // 2
-        // 800 = 0x0320 => LE bytes 0x20, 0x03
+                                                 // 800 = 0x0320 => LE bytes 0x20, 0x03
         assert_eq!(buf[6], 0x20);
         assert_eq!(buf[7], 0x03);
         assert_eq!(800u16, u16::from_le_bytes([buf[6], buf[7]]));
@@ -456,7 +468,10 @@ mod tests {
         let mut buf = [0u8; 32];
         buf[0] = CMD_DIAL;
         buf[1] = 0xFF; // -1
-        assert_eq!(DeviceEvent::decode(&buf), Some(DeviceEvent::Dial { delta: -1 }));
+        assert_eq!(
+            DeviceEvent::decode(&buf),
+            Some(DeviceEvent::Dial { delta: -1 })
+        );
     }
 
     #[test]
@@ -464,7 +479,10 @@ mod tests {
         let mut buf = [0u8; 32];
         buf[0] = CMD_JOY;
         buf[1] = 2;
-        assert_eq!(DeviceEvent::decode(&buf), Some(DeviceEvent::Joy { gesture: 2 }));
+        assert_eq!(
+            DeviceEvent::decode(&buf),
+            Some(DeviceEvent::Joy { gesture: 2 })
+        );
 
         buf = [0u8; 32];
         buf[0] = CMD_PONG;

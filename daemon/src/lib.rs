@@ -13,3 +13,4 @@ pub mod paths;
 pub mod protocol;
 pub mod session;
 pub mod styles;
+pub mod transcript;

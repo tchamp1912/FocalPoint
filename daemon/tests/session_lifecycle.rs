@@ -21,6 +21,8 @@
 //! multiple tests run in parallel from the same `cargo test` runner.
 
 use serde_json::Value;
+use std::io::{BufRead, BufReader, Write};
+use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -124,7 +126,12 @@ impl TestDaemon {
 
     fn cli_ok(&self, args: &[&str]) {
         let out = self.cli(args);
-        assert!(out.status_ok, "`focalpoint {}` failed: {}", args.join(" "), out.stdout);
+        assert!(
+            out.status_ok,
+            "`focalpoint {}` failed: {}",
+            args.join(" "),
+            out.stdout
+        );
     }
 
     fn cli_json(&self, args: &[&str]) -> Value {
@@ -136,6 +143,17 @@ impl TestDaemon {
                 out.stdout
             )
         })
+    }
+
+    fn socket_json(&self, request: Value) -> Value {
+        let socket = self.dir.join("runtime/focalpoint.sock");
+        let mut stream = UnixStream::connect(socket).expect("connect daemon socket");
+        writeln!(stream, "{request}").expect("write daemon request");
+        let mut response = String::new();
+        BufReader::new(stream)
+            .read_line(&mut response)
+            .expect("read daemon response");
+        serde_json::from_str(response.trim()).expect("valid daemon JSON")
     }
 
     /// Kill and respawn against the *same* state/runtime dirs — the actual
@@ -168,16 +186,118 @@ impl Drop for TestDaemon {
 }
 
 #[test]
+fn daemon_owns_attention_order_cycles_and_persists_it() {
+    let mut d = TestDaemon::start();
+    for (id, state) in [("a", "waiting"), ("b", "error"), ("c", "running")] {
+        d.cli_ok(&["set-state", state, "--session", id, "--kind", "generic"]);
+    }
+
+    assert_eq!(
+        d.socket_json(serde_json::json!({"cmd": "get-attention-order"})),
+        serde_json::json!({"ok": true, "sessions": ["b", "a", "c"]})
+    );
+    let rejected = d.socket_json(serde_json::json!({
+        "cmd": "set-attention-order", "sessions": ["a", "b"]
+    }));
+    assert_eq!(rejected["ok"], false);
+
+    assert_eq!(
+        d.socket_json(serde_json::json!({
+            "cmd": "set-attention-order", "sessions": ["a", "c", "b"]
+        })),
+        serde_json::json!({"ok": true})
+    );
+    assert_eq!(
+        d.socket_json(serde_json::json!({"cmd": "focus-next-attention"})),
+        serde_json::json!({"ok": true, "session": "a"})
+    );
+    assert_eq!(
+        d.socket_json(serde_json::json!({"cmd": "focus-next-attention"})),
+        serde_json::json!({"ok": true, "session": "b"})
+    );
+    assert_eq!(
+        d.socket_json(serde_json::json!({"cmd": "focus-prev-attention"})),
+        serde_json::json!({"ok": true, "session": "a"})
+    );
+
+    d.restart();
+    assert_eq!(
+        d.socket_json(serde_json::json!({"cmd": "get-attention-order"})),
+        serde_json::json!({"ok": true, "sessions": ["a", "c", "b"]})
+    );
+}
+
+#[test]
+fn orchestrator_controls_require_matching_task_and_hide_transcript_path() {
+    let d = TestDaemon::start();
+    d.cli_ok(&[
+        "set-state",
+        "running",
+        "--session",
+        "owned",
+        "--kind",
+        "claude",
+        "--meta",
+        "managed=true",
+        "--meta",
+        "orchestrator_task_id=task-1",
+        "--meta",
+        "transcript_path=/tmp/private.jsonl",
+    ]);
+    let listed = d.socket_json(serde_json::json!({"cmd": "list-sessions"}));
+    assert!(listed["sessions"][0]["meta"]
+        .get("transcript_path")
+        .is_none());
+
+    let rejected = d.socket_json(serde_json::json!({
+        "cmd": "stop-orchestrated-session", "session": "owned", "task_id": "task-2"
+    }));
+    assert_eq!(rejected["ok"], false);
+    assert_eq!(
+        d.socket_json(serde_json::json!({
+            "cmd": "read-session-transcript", "session": "owned", "task_id": "task-2"
+        }))["ok"],
+        false
+    );
+    let stopped = d.socket_json(serde_json::json!({
+        "cmd": "stop-orchestrated-session", "session": "owned", "task_id": "task-1"
+    }));
+    assert_eq!(stopped["ok"], true);
+    assert_eq!(stopped["status"], "stopping");
+    assert!(d
+        .cli_json(&["sessions", "--json"])
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn basic_lifecycle_and_explicit_end_session_leaves_no_tombstone() {
     let d = TestDaemon::start();
 
     d.cli_ok(&[
-        "set-state", "running", "--session", "s1", "--kind", "generic",
-        "--cwd", "/tmp/proj", "--label", "First",
+        "set-state",
+        "running",
+        "--session",
+        "s1",
+        "--kind",
+        "generic",
+        "--cwd",
+        "/tmp/proj",
+        "--label",
+        "First",
     ]);
     d.cli_ok(&[
-        "set-state", "waiting", "--session", "s1", "--kind", "generic",
-        "--cwd", "/tmp/proj", "--label", "First",
+        "set-state",
+        "waiting",
+        "--session",
+        "s1",
+        "--kind",
+        "generic",
+        "--cwd",
+        "/tmp/proj",
+        "--label",
+        "First",
     ]);
     let sessions = d.cli_json(&["sessions", "--json"]);
     let arr = sessions.as_array().unwrap();
@@ -186,14 +306,28 @@ fn basic_lifecycle_and_explicit_end_session_leaves_no_tombstone() {
     assert_eq!(arr[0]["state"], "waiting");
 
     d.cli_ok(&["end-session", "s1"]);
-    assert_eq!(d.cli_json(&["sessions", "--json"]).as_array().unwrap().len(), 0);
+    assert_eq!(
+        d.cli_json(&["sessions", "--json"])
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
 
     // A brand-new registration with the exact same signals must NOT recover
     // s1's history — end-session must have cleared any tombstone-eligible
     // trace outright, not just hidden it.
     d.cli_ok(&[
-        "set-state", "thinking", "--session", "s2", "--kind", "generic",
-        "--cwd", "/tmp/proj", "--label", "First",
+        "set-state",
+        "thinking",
+        "--session",
+        "s2",
+        "--kind",
+        "generic",
+        "--cwd",
+        "/tmp/proj",
+        "--label",
+        "First",
     ]);
     let sessions = d.cli_json(&["sessions", "--json"]);
     let arr = sessions.as_array().unwrap();
@@ -207,33 +341,78 @@ fn compaction_continuation_carries_stats_and_resets_context() {
     let d = TestDaemon::start();
 
     d.cli_ok(&[
-        "set-state", "running", "--session", "old", "--kind", "claude",
-        "--cwd", "/tmp/proj", "--label", "My Chat",
-        "--meta", "tty=/dev/test-tty-1",
-        "--meta", "turns=30", "--meta", "tool_calls=550",
-        "--meta", "cost_usd=1.5", "--meta", "context_tokens=116821",
+        "set-state",
+        "running",
+        "--session",
+        "old",
+        "--kind",
+        "claude",
+        "--cwd",
+        "/tmp/proj",
+        "--label",
+        "My Chat",
+        "--meta",
+        "tty=/dev/test-tty-1",
+        "--meta",
+        "turns=30",
+        "--meta",
+        "tool_calls=550",
+        "--meta",
+        "cost_usd=1.5",
+        "--meta",
+        "context_tokens=116821",
     ]);
     d.cli_ok(&[
-        "set-state", "compacting", "--session", "old", "--kind", "claude",
-        "--cwd", "/tmp/proj", "--meta", "tty=/dev/test-tty-1",
+        "set-state",
+        "compacting",
+        "--session",
+        "old",
+        "--kind",
+        "claude",
+        "--cwd",
+        "/tmp/proj",
+        "--meta",
+        "tty=/dev/test-tty-1",
     ]);
     d.cli_ok(&[
-        "set-state", "thinking", "--session", "new", "--kind", "claude",
-        "--cwd", "/tmp/proj", "--label", "My Chat",
-        "--meta", "tty=/dev/test-tty-1",
-        "--meta", "turns=3", "--meta", "tool_calls=12",
-        "--meta", "cost_usd=0.2", "--meta", "context_tokens=4000",
+        "set-state",
+        "thinking",
+        "--session",
+        "new",
+        "--kind",
+        "claude",
+        "--cwd",
+        "/tmp/proj",
+        "--label",
+        "My Chat",
+        "--meta",
+        "tty=/dev/test-tty-1",
+        "--meta",
+        "turns=3",
+        "--meta",
+        "tool_calls=12",
+        "--meta",
+        "cost_usd=0.2",
+        "--meta",
+        "context_tokens=4000",
     ]);
 
     let sessions = d.cli_json(&["sessions", "--json"]);
     let arr = sessions.as_array().unwrap();
-    assert_eq!(arr.len(), 1, "old must have been rekeyed into new, not left as a duplicate");
+    assert_eq!(
+        arr.len(),
+        1,
+        "old must have been rekeyed into new, not left as a duplicate"
+    );
     let s = &arr[0];
     assert_eq!(s["session"], "new");
     assert_eq!(s["meta"]["turns"], 33); // 30 + 3
     assert_eq!(s["meta"]["tool_calls"], 562); // 550 + 12
     assert!((s["meta"]["cost_usd"].as_f64().unwrap() - 1.7).abs() < 1e-9); // 1.5 + 0.2
-    assert_eq!(s["meta"]["context_tokens"], 4000, "instantaneous key: plain overwrite, not carried");
+    assert_eq!(
+        s["meta"]["context_tokens"], 4000,
+        "instantaneous key: plain overwrite, not carried"
+    );
     assert_eq!(s["meta"]["compactions"], 1);
 }
 
@@ -242,12 +421,26 @@ fn dead_pid_sweep_reaps_and_tombstone_is_recoverable() {
     let d = TestDaemon::start();
 
     d.cli_ok(&[
-        "set-state", "running", "--session", "old", "--kind", "generic",
-        "--cwd", "/tmp/proj",
-        "--meta", "pid=999999999", // not a real process on any sane system
-        "--meta", "tty=/dev/test-tty-dead",
+        "set-state",
+        "running",
+        "--session",
+        "old",
+        "--kind",
+        "generic",
+        "--cwd",
+        "/tmp/proj",
+        "--meta",
+        "pid=999999999", // not a real process on any sane system
+        "--meta",
+        "tty=/dev/test-tty-dead",
     ]);
-    assert_eq!(d.cli_json(&["sessions", "--json"]).as_array().unwrap().len(), 1);
+    assert_eq!(
+        d.cli_json(&["sessions", "--json"])
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 
     // The real dead-pid sweep (daemon.rs) runs on a 30s cadence — wait for
     // it to actually reap this session, rather than asserting the mechanism
@@ -268,9 +461,18 @@ fn dead_pid_sweep_reaps_and_tombstone_is_recoverable() {
     // in a new terminal. Recovery consumes the tombstone, so only the
     // reconnected session remains.
     d.cli_ok(&[
-        "set-state", "thinking", "--session", "new", "--kind", "generic",
-        "--cwd", "/tmp/proj",
-        "--meta", "pid=999999999", "--meta", "tty=/dev/test-tty-other",
+        "set-state",
+        "thinking",
+        "--session",
+        "new",
+        "--kind",
+        "generic",
+        "--cwd",
+        "/tmp/proj",
+        "--meta",
+        "pid=999999999",
+        "--meta",
+        "tty=/dev/test-tty-other",
     ]);
     let sessions = d.cli_json(&["sessions", "--json"]);
     let arr = sessions.as_array().unwrap();
@@ -283,13 +485,30 @@ fn label_and_cwd_recovery_after_dead_tty_reap() {
     let d = TestDaemon::start();
 
     d.cli_ok(&[
-        "set-state", "running", "--session", "old", "--kind", "claude",
-        "--cwd", "/tmp/proj", "--label", "Resumed Chat",
-        "--meta", "tty=/dev/fp-test-nonexistent-1",
-        "--meta", "pid=111111",
-        "--meta", "turns=7",
+        "set-state",
+        "running",
+        "--session",
+        "old",
+        "--kind",
+        "claude",
+        "--cwd",
+        "/tmp/proj",
+        "--label",
+        "Resumed Chat",
+        "--meta",
+        "tty=/dev/fp-test-nonexistent-1",
+        "--meta",
+        "pid=111111",
+        "--meta",
+        "turns=7",
     ]);
-    assert_eq!(d.cli_json(&["sessions", "--json"]).as_array().unwrap().len(), 1);
+    assert_eq!(
+        d.cli_json(&["sessions", "--json"])
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 
     // Dead-tty sweep: the pty device never existed, so reap is deterministic
     // once the 30s interval fires — same cadence as the dead-pid test above.
@@ -304,11 +523,22 @@ fn label_and_cwd_recovery_after_dead_tty_reap() {
 
     // Different pid *and* tty — only label+cwd can match (2-of-4 pooled rule).
     d.cli_ok(&[
-        "set-state", "thinking", "--session", "new", "--kind", "claude",
-        "--cwd", "/tmp/proj", "--label", "Resumed Chat",
-        "--meta", "tty=/dev/fp-test-nonexistent-2",
-        "--meta", "pid=222222",
-        "--meta", "turns=1",
+        "set-state",
+        "thinking",
+        "--session",
+        "new",
+        "--kind",
+        "claude",
+        "--cwd",
+        "/tmp/proj",
+        "--label",
+        "Resumed Chat",
+        "--meta",
+        "tty=/dev/fp-test-nonexistent-2",
+        "--meta",
+        "pid=222222",
+        "--meta",
+        "turns=1",
     ]);
     let sessions = d.cli_json(&["sessions", "--json"]);
     let arr = sessions.as_array().unwrap();
@@ -322,8 +552,18 @@ fn restart_persists_session_and_usage() {
     let mut d = TestDaemon::start();
 
     d.cli_ok(&[
-        "set-state", "running", "--session", "s1", "--kind", "generic",
-        "--cwd", "/tmp/proj", "--label", "Persisted", "--meta", "turns=5",
+        "set-state",
+        "running",
+        "--session",
+        "s1",
+        "--kind",
+        "generic",
+        "--cwd",
+        "/tmp/proj",
+        "--label",
+        "Persisted",
+        "--meta",
+        "turns=5",
     ]);
     d.cli_ok(&["set-usage", "claude", "--meta", "five_hour_used=42"]);
 
@@ -345,10 +585,20 @@ fn restart_preserves_tombstone_for_recovery() {
     let mut d = TestDaemon::start();
 
     d.cli_ok(&[
-        "set-state", "running", "--session", "old", "--kind", "generic",
-        "--cwd", "/tmp/proj", "--label", "Survives Restart",
-        "--meta", "pid=999999998",
-        "--meta", "turns=12",
+        "set-state",
+        "running",
+        "--session",
+        "old",
+        "--kind",
+        "generic",
+        "--cwd",
+        "/tmp/proj",
+        "--label",
+        "Survives Restart",
+        "--meta",
+        "pid=999999998",
+        "--meta",
+        "turns=12",
     ]);
 
     // Restart while the session is still "live" on disk — startup
@@ -364,10 +614,20 @@ fn restart_preserves_tombstone_for_recovery() {
     assert_eq!(after[0]["connected"], serde_json::json!(false));
 
     d.cli_ok(&[
-        "set-state", "thinking", "--session", "new", "--kind", "generic",
-        "--cwd", "/tmp/proj", "--label", "Survives Restart",
-        "--meta", "pid=999999998",
-        "--meta", "tty=/dev/fp-test-other",
+        "set-state",
+        "thinking",
+        "--session",
+        "new",
+        "--kind",
+        "generic",
+        "--cwd",
+        "/tmp/proj",
+        "--label",
+        "Survives Restart",
+        "--meta",
+        "pid=999999998",
+        "--meta",
+        "tty=/dev/fp-test-other",
     ]);
     let sessions = d.cli_json(&["sessions", "--json"]);
     let arr = sessions.as_array().unwrap();
@@ -409,13 +669,25 @@ fn tombstone_infinite_ttl_recovers_after_simulated_long_gap() {
     );
 
     d.cli_ok(&[
-        "set-state", "thinking", "--session", "new", "--kind", "generic",
-        "--cwd", "/tmp/proj", "--label", "Old Chat",
-        "--meta", "tty=/dev/test-tty-different",
+        "set-state",
+        "thinking",
+        "--session",
+        "new",
+        "--kind",
+        "generic",
+        "--cwd",
+        "/tmp/proj",
+        "--label",
+        "Old Chat",
+        "--meta",
+        "tty=/dev/test-tty-different",
     ]);
     let sessions = d.cli_json(&["sessions", "--json"]);
     let arr = sessions.as_array().unwrap();
     assert_eq!(arr.len(), 1);
     assert_eq!(arr[0]["session"], "new");
-    assert_eq!(arr[0]["meta"]["turns"], 11, "must have recovered ancient's carried stats");
+    assert_eq!(
+        arr[0]["meta"]["turns"], 11,
+        "must have recovered ancient's carried stats"
+    );
 }

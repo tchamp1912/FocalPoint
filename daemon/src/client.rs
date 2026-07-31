@@ -229,9 +229,9 @@ pub fn set_usage(provider: &str, meta: &[String]) -> Result<(), CliError> {
                 2,
             ));
         };
-        let value = raw.parse::<f64>().map_err(|_| {
-            CliError::new(format!("usage value for {key:?} must be numeric"), 2)
-        })?;
+        let value = raw
+            .parse::<f64>()
+            .map_err(|_| CliError::new(format!("usage value for {key:?} must be numeric"), 2))?;
         if !value.is_finite() {
             return Err(CliError::new(
                 format!("usage value for {key:?} must be finite"),
@@ -256,7 +256,10 @@ pub fn set_usage(provider: &str, meta: &[String]) -> Result<(), CliError> {
 pub fn usage(json: bool) -> Result<(), CliError> {
     let resp = request(serde_json::json!({ "cmd": "get-usage" }))?;
     expect_ok(&resp)?;
-    let usage = resp.get("usage").cloned().unwrap_or_else(|| serde_json::json!({}));
+    let usage = resp
+        .get("usage")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
     if json {
         println!("{usage}");
     } else {
@@ -307,12 +310,7 @@ pub fn sessions(json: bool) -> Result<(), CliError> {
             .and_then(|v| v.as_u64())
             .map(|n| n.to_string())
             .unwrap_or_else(|| "-".into());
-        let field = |k: &str| {
-            s.get(k)
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string()
-        };
+        let field = |k: &str| s.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
         let cwd = s
             .get("meta")
             .and_then(|m| m.get("cwd"))
@@ -384,9 +382,9 @@ pub fn set_led(index: &str, r: u8, g: u8, b: u8) -> Result<(), CliError> {
     let idx: u8 = if index.eq_ignore_ascii_case("all") {
         0xFF
     } else {
-        index
-            .parse()
-            .map_err(|_| CliError::new(format!("invalid index {index:?}; use 0..=255 or 'all'"), 2))?
+        index.parse().map_err(|_| {
+            CliError::new(format!("invalid index {index:?}; use 0..=255 or 'all'"), 2)
+        })?
     };
     let resp = request(serde_json::json!({
         "cmd": "set-led",
@@ -429,7 +427,10 @@ pub fn watch() -> Result<(), CliError> {
 pub fn ping() -> Result<(), CliError> {
     let resp = request(serde_json::json!({ "cmd": "ping" }))?;
     expect_ok(&resp)?;
-    let device = resp.get("device").and_then(|v| v.as_bool()).unwrap_or(false);
+    let device = resp
+        .get("device")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     if device {
         println!("ok: daemon up, device present");
         Ok(())
@@ -454,7 +455,15 @@ pub fn styles(json: bool) -> Result<(), CliError> {
     }
     println!("{:<9} {:<15} {:<9} PERIOD_MS", "STATE", "RGB", "PATTERN");
     // Emit in the canonical state order.
-    for state in ["idle", "thinking", "running", "waiting", "done", "error", "compacting"] {
+    for state in [
+        "idle",
+        "thinking",
+        "running",
+        "waiting",
+        "done",
+        "error",
+        "compacting",
+    ] {
         let Some(s) = styles.get(state) else { continue };
         let rgb = s
             .get("rgb")
@@ -473,7 +482,10 @@ pub fn styles(json: bool) -> Result<(), CliError> {
             .and_then(|v| v.as_u64())
             .map(|n| n.to_string())
             .unwrap_or_default();
-        println!("{state:<9} {:<15} {pattern:<9} {period}", format!("[{rgb}]"));
+        println!(
+            "{state:<9} {:<15} {pattern:<9} {period}",
+            format!("[{rgb}]")
+        );
     }
     Ok(())
 }
@@ -529,8 +541,7 @@ pub fn inject_dial(delta: i64) -> Result<(), CliError> {
 /// `focalpoint inject joy <gesture>`
 #[cfg(unix)]
 pub fn inject_joy(gesture: &str) -> Result<(), CliError> {
-    let resp =
-        request(serde_json::json!({ "cmd": "inject", "kind": "joy", "gesture": gesture }))?;
+    let resp = request(serde_json::json!({ "cmd": "inject", "kind": "joy", "gesture": gesture }))?;
     expect_ok(&resp)?;
     println!("ok");
     Ok(())

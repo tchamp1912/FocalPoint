@@ -158,7 +158,8 @@ fn tty_for_pid(pid: i32) -> Option<String> {
 }
 
 fn resolve_tty(pid: Option<i32>) -> Option<String> {
-    pid.and_then(tty_for_pid).or_else(|| own_tty().and_then(|t| usable_tty(&t)))
+    pid.and_then(tty_for_pid)
+        .or_else(|| own_tty().and_then(|t| usable_tty(&t)))
 }
 
 fn repair_cached_identity(session_id: &str, mut identity: Identity) -> Identity {
@@ -280,7 +281,13 @@ mod tests {
     struct FakeProcessSource(HashMap<i32, FakeProcess>);
 
     impl FakeProcessSource {
-        fn insert(&mut self, pid: i32, ppid: Option<i32>, comm: &'static str, cmd: &[&'static str]) {
+        fn insert(
+            &mut self,
+            pid: i32,
+            ppid: Option<i32>,
+            comm: &'static str,
+            cmd: &[&'static str],
+        ) {
             self.0.insert(
                 pid,
                 FakeProcess {
@@ -329,7 +336,15 @@ mod tests {
             400,
             Some(100),
             "claude",
-            &["claude", "daemon", "run", "--origin", "transient", "--spawned-by", "{}"],
+            &[
+                "claude",
+                "daemon",
+                "run",
+                "--origin",
+                "transient",
+                "--spawned-by",
+                "{}",
+            ],
         );
         src.insert(100, Some(2), "claude", &["claude"]);
         src.insert(2, Some(1), "zsh", &["-zsh"]);
@@ -364,28 +379,28 @@ mod tests {
     fn usable_tty_rejects_generic_dev_tty() {
         assert_eq!(usable_tty("/dev/tty"), None);
         assert_eq!(usable_tty("??"), None);
-        assert_eq!(
-            usable_tty("ttys003"),
-            Some("/dev/ttys003".to_string())
-        );
-        assert_eq!(
-            usable_tty("/dev/ttys024"),
-            Some("/dev/ttys024".to_string())
-        );
+        assert_eq!(usable_tty("ttys003"), Some("/dev/ttys003".to_string()));
+        assert_eq!(usable_tty("/dev/ttys024"), Some("/dev/ttys024".to_string()));
     }
 
     #[test]
     fn empty_negative_cache_is_not_trusted_and_rewalks() {
         // Isolate from other tests / the real user's state dir.
-        let tmp = std::env::temp_dir()
-            .join(format!("focalpoint-identity-poison-{}", std::process::id()));
+        let tmp =
+            std::env::temp_dir().join(format!("focalpoint-identity-poison-{}", std::process::id()));
         std::env::set_var("XDG_STATE_HOME", &tmp);
 
         let id = "poisoned-session";
         // A prior SessionStart lost the walk race and cached a fully-empty
         // identity. Without the trust guard this would be returned verbatim
         // forever; with it, resolve_identity re-walks instead.
-        save_identity(id, &Identity { tty: None, pid: None });
+        save_identity(
+            id,
+            &Identity {
+                tty: None,
+                pid: None,
+            },
+        );
 
         let resolved = resolve_identity(id, "definitely-not-a-real-comm", false);
         // The re-walk finds no such agent (so pid stays None here), but the
@@ -405,7 +420,8 @@ mod tests {
     #[test]
     fn identity_cache_round_trips() {
         // Isolate from other tests / the real user's state dir.
-        let tmp = std::env::temp_dir().join(format!("focalpoint-identity-test-{}", std::process::id()));
+        let tmp =
+            std::env::temp_dir().join(format!("focalpoint-identity-test-{}", std::process::id()));
         std::env::set_var("XDG_STATE_HOME", &tmp);
 
         let id = "test-session-abc";

@@ -162,7 +162,9 @@ impl Config {
                 );
                 continue;
             };
-            let period = sc.period_ms.unwrap_or_else(|| default_style(state).period_ms);
+            let period = sc
+                .period_ms
+                .unwrap_or_else(|| default_style(state).period_ms);
             table.set(state, Style::new(sc.rgb, pattern, period));
         }
         table
@@ -182,7 +184,8 @@ impl Config {
             std::fs::create_dir_all(parent)
                 .map_err(|e| format!("failed to create {}: {e}", parent.display()))?;
         }
-        std::fs::write(path, updated).map_err(|e| format!("failed to write {}: {e}", path.display()))
+        std::fs::write(path, updated)
+            .map_err(|e| format!("failed to write {}: {e}", path.display()))
     }
 }
 
@@ -300,7 +303,10 @@ ttl_minutes = 30
                 run: "focus.sh".into()
             })
         );
-        assert_eq!(cfg.session.ttl(), Some(std::time::Duration::from_secs(30 * 60)));
+        assert_eq!(
+            cfg.session.ttl(),
+            Some(std::time::Duration::from_secs(30 * 60))
+        );
     }
 
     #[test]
@@ -418,18 +424,23 @@ cw = "echo up"
 
     #[test]
     fn edit_style_toml_creates_from_empty() {
-        let updated =
-            edit_style_toml("", State::Error, Style::new([242, 64, 64], Pattern::Blink, 250))
-                .expect("edit");
+        let updated = edit_style_toml(
+            "",
+            State::Error,
+            Style::new([242, 64, 64], Pattern::Blink, 250),
+        )
+        .expect("edit");
         assert!(updated.contains("[styles.error]"));
         assert!(Config::from_toml(&updated).is_ok());
     }
 
     #[test]
     fn explicit_none_action_parses() {
-        let cfg = Config::from_toml(r#"[actions]
+        let cfg = Config::from_toml(
+            r#"[actions]
 accept = { type = "none" }
-"#)
+"#,
+        )
         .expect("parse");
         assert_eq!(cfg.action_for("accept"), Action::None);
     }
