@@ -3,7 +3,7 @@ IC,MCU radio,Raytac,MDBT50Q-1MV2,1,2,JLC SMT,C5118826,V1-V2,Custom footprint and
 Connector,USB-C,GCT,USB4105-GF-A-060,1,2,JLC hybrid,C3025063,V1-V2,Case integration pending,J1
 Protection,USB data ESD,Texas Instruments,TPD2EUSB30DRTR,1,2,JLC SMT,C97502,V1-V2,Never substitute C3011197,U2
 Protection,VBUS TVS,Nexperia,PESD5V0S1UL,1,2,JLC SMT,C85402,V1-V2,LCSC lists packing suffix 315; live stock pending,D14
-Protection,USB CC ESD,Nexperia,PESD5V0X2BT,1,2,JLC SMT,consign,V1-V2 prov,dual low-cap TVS on CC1/CC2 (TPD2EUSB30 covers D+/- only); combined USB-C array alt at matcher; see CAPTURE_GAP_RESOLUTIONS.md,D15
+Protection,USB CC ESD,Nexperia,"PESD5V0U2BT,215",1,2,JLC SMT,C85399,V1-V2,dual 5V bidirectional ESD on CC1/CC2; SOT-23 pin 1/2 protected and pin 3 common to GND matches PCB; exact LCSC listing and Nexperia pinout verified 2026-07-30,D15
 Power,Charger power path,Texas Instruments,BQ24074RGTR,1,2,JLC SMT,C54313,V1-V2,400mA charge thermal test pending; programming network verified vs TI SLUS810N 2026-07-28,U3
 Power,3V3 buck-boost,Texas Instruments,TPS63031DSKT,1,2,JLC SMT,C15516,V1-V2,Exact layout required; LCSC stocks reel suffix DSKR (same device),U4
 Power,5V RGB boost,Texas Instruments,TPS61023DRLR,1,2,JLC SMT,C919459,V1-V2,Exact layout required,U5
@@ -14,10 +14,10 @@ Sensor,Touch,Microchip,AT42QT1010-TSHR,1,2,JLC SMT,C74512,V1-V2,Physical test pe
 Sensor,Fuel gauge,Analog Devices,MAX17048G+T10,1,2,JLC SMT,C2682616,V1-V2,Validate with cell,U9
 Battery,Protected LiPo,TinyCircuits,ASR00012,1,2,User,,V1-V2,1000mAh 42x39x5.5mm JST-SH; verify pigtail polarity (unstandardized); silkscreen polarity marks required,BT1 (off-board)
 Connector,Battery header,JST,SM02B-SRSS-TB(LF)(SN),1,2,JLC SMT,C160402,V1-V2,Verify polarity; SH contacts rated ~1A — zero margin at pack limit,J2
-Control,Joystick,Alps Alpine,RKJX21224001,1,2,JLC SMT,C2886732,V1,SMD lugs + FPC tail per Alps drawing; FPC interconnect open schematic item; THT RKJXV122400R-class fallback,JS1
+Control,Joystick,Alps Alpine,RKJXV122400R,1,2,User THT,C918854,V1,Rev A baseline; local footprint from Alps Drawing No.1 update 2510; hand-solder all terminals and four lugs; verify physical sample before release,JS1
 Control,Encoder,Alps Alpine,EC11E15244G1,1,2,User THT,C370970,V1-V2,CAD check pending,ENC1
 Control,Encoder knob,Mentor,505.6131,1,2,User,,V1-V2,12mm diameter,KNOB1
-Control,Hot-swap socket,Kailh,CPG151101S11,13,26,JLC bottom SMT,C2803348,V1,JLC may add unavoidable attrition; footprint acceptance pending,HS1-HS13
+Control,Hot-swap socket,Kailh,CPG151101S11,13,26,JLC bottom SMT,C2803348,V1-V3 footprint,Local footprint from KHA-PG1511-094EN Rev B / KH-PS-1607-10 Rev B; JLC placement acceptance pending,HS1-HS13
 Control,Tactile MX switch,Kailh,CPG151101D280,13,26,User,,V1,Exactly two devices,SW1-SW13 (removable)
 Keycap,Clear DSA 1u,Adafruit,5068,12,2 packs,User,,V1-V2,Twelve per pack; exact two-device quantity,KC1-KC12
 Keycap,Ceramic 1u,Cerakey,F SET-RX1U,1,1 pack,User,,V1,Four pack,KC13
@@ -25,35 +25,35 @@ Switch,Reset boot,Omron,B3U-1000P,2,4,JLC SMT,C231329,V1,Case access pending,SW1
 Programming,SWD,Tag-Connect,TC2030-IDC-NL,1,1 footprint,None,,V1,External cable required,J3 (footprint only)
 Inductor,3V3 inductor,Sunlord,SWPA3015S1R5MT,1,2,JLC SMT,C83434,V1-V2 prov,1.5uH 3.0x3.0x1.5mm Isat>=2.3A DCR 65mR max; provisional equivalent of Coilcraft LPS3015-152MLB — verify L/Isat/DCR vs TPS63031 datasheet,L1
 Inductor,RGB inductor,Sunlord,MWSA0402S-1R0MT,1,2,JLC SMT,C408332,V1-V2 prov,1uH 4.4x4.2mm Isat 7A rated 6A DCR 27mR; provisional equivalent of Coilcraft XEL4030-102ME — verify L/Isat/DCR vs TPS61023 datasheet,L2
-Resistor,USB CC,Yageo,RC0603FR-075K1L,2,4,JLC SMT,consign,V1-V2 prov,5.1k 1%; JLC reels are assembler inventory,R1-R2
-Resistor,USB data series DNP,Yageo,RC0603FR-0722RL,2,4,JLC SMT,consign,V1-V2 prov,22R 1%; normally DNP until final Raytac USB review,R3-R4
-Resistor,BQ ISET,Yageo,RC0603FR-072K21L,1,2,JLC SMT,consign,V1-V2 prov,2.21k 1%; 403mA fast charge (KISET 890 AΩ),R5
-Resistor,BQ ILIM,Yageo,RC0603FR-073K09L,1,2,JLC SMT,consign,V1-V2 prov,3.09k 1%; ~521mA typ input limit (KILIM 1610 AΩ; EN2=1/EN1=0),R6
-Resistor,BQ ITERM,Yageo,RC0603FR-072K94L,1,2,JLC SMT,consign,V1-V2 prov,2.94k 1%; ITERM pin 15 verified on BQ24074 (SLUS810N); ~40mA = 10% of fast charge,R7
-Resistor,BQ timer,Yageo,RC0603FR-0746K4L,1,2,JLC SMT,consign,V1-V2 prov,46.4k 1%; ~37min precharge / ~6.2h fast-charge timeout,R8
-Resistor,Boost FB top,Yageo,RC0603FR-07732KL,1,2,JLC SMT,consign,V1-V2 prov,732k 1%,R9
-Resistor,100k network,Yageo,RC0603FR-07100KL,4,8,JLC SMT,consign,V1-V2 prov,Provisional set: boost FB bottom and RGB EN/QOD/OE pulls,R10-R13
-Resistor,10k network,Yageo,RC0603FR-0710KL,4,8,JLC SMT,consign,V1-V2 prov,Provisional set: charger TS (fixed-TS decision in kicad/DECISIONS.md) and reset/boot/control pulls,R14-R17
-Resistor,I2C pullups,Yageo,RC0603FR-074K7L,2,4,JLC SMT,consign,V1-V2 prov,4.7k 1% for fuel gauge,R18-R19
-Resistor,RGB input and touch series,Yageo,RC0603FR-071K0L,2,4,JLC SMT,consign,V1-V2 prov,1k 1%,R20-R21
-Resistor,RGB data,Yageo,RC0603FR-0733RL,1,2,JLC SMT,consign,V1-V2 prov,33R 1%,R22
-Resistor,Joystick SAADC series,Yageo,RC0603FR-071K0L,2,4,JLC SMT,consign,V1-V2 prov,1k 1% series to SAADC per axis (JOY_X/JOY_Y); pairs with C35-C36 fc~16kHz; see CAPTURE_GAP_RESOLUTIONS.md,R23-R24
-Resistor,FG_ALRT pullup,Yageo,RC0603FR-07100KL,1,2,JLC SMT,consign,V1-V2 prov,100k 1% pull-up for MAX17048 ALRT open-drain (not shared with SDA/SCL); see CAPTURE_GAP_RESOLUTIONS.md,R25
-Capacitor,100nF bypass,Murata,GRM188R71C104KA01D,22,44,JLC SMT,C45000,V1-V2 prov,Provisional set: 13 LEDs plus nine local IC bypass capacitors,C1-C22
+Resistor,USB CC,Yageo,RC0603FR-075K1L,2,4,JLC SMT,C105580,V1-V2,5.1k 1%; exact LCSC MPN/package match verified 2026-07-30,R1-R2
+Resistor,USB data series DNP,Yageo,RC0603FR-0722RL,2,4,DNP,,V1-V2 prov,22R 1%; do not populate for Rev A; 0R copper bypasses carry D+/D- and these footprints are tuning options,R3-R4
+Resistor,BQ ISET,Yageo,RC0603FR-072K21L,1,2,JLC SMT,C273748,V1-V2,2.21k 1%; 403mA fast charge (KISET 890 AΩ); exact LCSC match verified 2026-07-30,R5
+Resistor,BQ ILIM,Yageo,RC0603FR-073K09L,1,2,JLC SMT,C185334,V1-V2,3.09k 1%; ~521mA typ input limit (KILIM 1610 AΩ; EN2=1/EN1=0); exact LCSC match verified 2026-07-30,R6
+Resistor,BQ ITERM,TA-I Tech,RMS06FT2941,1,2,JLC SMT,C209098,V1-V2,2.94k 1% 0603 stocked equivalent; ITERM pin 15 verified on BQ24074 (SLUS810N); ~40mA = 10% of fast charge,R7
+Resistor,BQ timer,Yageo,RC0603FR-0746K4L,1,2,JLC SMT,C165747,V1-V2,46.4k 1%; ~37min precharge / ~6.2h fast-charge timeout; exact LCSC match verified 2026-07-30,R8
+Resistor,Boost FB top,Yageo,RC0603FR-07732KL,1,2,JLC SMT,C246003,V1-V2,732k 1%; exact LCSC match verified 2026-07-30,R9
+Resistor,100k network,Yageo,RC0603FR-07100KL,4,8,JLC SMT,C14675,V1-V2,Boost FB bottom and RGB EN/QOD/OE pulls; exact LCSC match verified 2026-07-30,R10-R13
+Resistor,10k network,Yageo,RC0603FR-0710KL,4,8,JLC SMT,C98220,V1-V2,Charger TS and reset/boot/control pulls; exact LCSC match verified 2026-07-30,R14-R17
+Resistor,I2C pullups,Yageo,RC0603FR-074K7L,2,4,JLC SMT,C99782,V1-V2,4.7k 1% for fuel gauge; exact LCSC match verified 2026-07-30,R18-R19
+Resistor,RGB input and touch series,Yageo,RC0603FR-071KL,2,4,JLC SMT,C22548,V1-V2,1k 1%; corrected to Yageo's orderable MPN and exact LCSC match verified 2026-07-30,R20-R21
+Resistor,RGB data,Yageo,RC0603FR-0733RL,1,2,JLC SMT,C108661,V1-V2,33R 1%; exact LCSC match verified 2026-07-30,R22
+Resistor,Joystick SAADC series,Yageo,RC0603FR-071KL,2,4,JLC SMT,C22548,V1-V2,1k 1% series to SAADC per axis (JOY_X/JOY_Y); corrected orderable MPN; pairs with C35-C36 fc~16kHz,R23-R24
+Resistor,FG_ALRT pullup,Yageo,RC0603FR-07100KL,1,2,JLC SMT,C14675,V1-V2,100k 1% pull-up for MAX17048 ALRT open-drain (not shared with SDA/SCL); exact LCSC match verified 2026-07-30,R25
+Capacitor,100nF bypass,Murata,GRM188R71C104KA01D,21,42,JLC SMT,C45000,V1-V2 prov,Final captured set: C1-C21; cross-checked against the release PCB,C1-C21
 Capacitor,Radio bulk 4.7uF,Murata,GRM188R60J475KE19D,1,2,JLC SMT,C71631,V1-V2 prov,At Raytac supply input,C23
 Capacitor,BQ 4.7uF,Murata,GRM188R60J475KE19D,2,4,JLC SMT,C71631,V1-V2 prov,6.3V X5R,C24-C25
-Capacitor,BQ 1uF,Murata,GRM188R61A105KA61D,1,2,JLC SMT,consign,V1-V2 prov,10V X5R,C26
-Capacitor,3V3 10uF,Murata,GRM188R60J106ME84D,3,6,JLC SMT,consign,V1-V2 prov,6.3V X7R; MPN is NRND — nearest LCSC-stocked sibling GRM188R60J106ME47D C77041; resolve at matcher pass,C27-C29
-Capacitor,Boost input 10uF,Murata,GRM21BR61A106KE19L,1,2,JLC SMT,consign,V1-V2 prov,10V X5R,C30
-Capacitor,Boost output 22uF,Murata,GRM31CR61A226KE19L,2,4,JLC SMT,consign,V1-V2 prov,10V X5R; MPN obsolete — substitute at schematic capture,C31-C32
-Capacitor,Load switch CT,Murata,GRM1555C1H221JA01D,1,2,JLC SMT,consign,V1-V2 prov,220pF C0G,C33
-Capacitor,Touch Cs,Murata,GRM188R71H103KA01D,1,2,JLC SMT,consign,V1-V2 prov,10nF X7R,C34
-Capacitor,Joystick SAADC shunt,Murata,GRM188R71H103KA01D,2,4,JLC SMT,consign,V1-V2 prov,10nF X7R shunt to GND per axis; SAADC anti-alias and sampling reservoir,C35-C36
+Capacitor,BQ 1uF,Murata,GRM188R61A105KA61D,1,2,JLC SMT,C86012,V1-V2,10V X5R; exact LCSC MPN/package match verified 2026-07-30,C26
+Capacitor,3V3 10uF,Murata,GRM188B31A106ME69D,3,6,JLC SMT,C162265,V1-V2,10V 0603; package-compatible replacement for the earlier NRND part; exact LCSC match verified 2026-07-30,C27-C29
+Capacitor,Boost input 10uF,Murata,GRM188B31A106ME69D,1,2,JLC SMT,C162265,V1-V2,10V 0603 X5R; replaces the footprint-incompatible 0805 choice; exact LCSC match verified 2026-07-30,C30
+Capacitor,Boost output 22uF,Samsung Electro-Mechanics,CL10A226MP7LUNC,2,4,JLC SMT,C2762595,V1-V2,10V X5R 0603; replaces the obsolete footprint-incompatible 1206 choice; two parallel capacitors retained; verify effective capacitance during 5V rail load test,C31-C32
+Capacitor,Load switch CT,Murata,GRM1885C1H221GA01D,1,2,JLC SMT,C440180,V1-V2,220pF C0G 0603 ±2%; replaces the footprint-incompatible 0402 choice; exact LCSC match verified 2026-07-30,C33
+Capacitor,Touch Cs,Murata,GRM188R71H103KA01D,1,2,JLC SMT,C77053,V1-V2,10nF X7R; exact LCSC match verified 2026-07-30,C34
+Capacitor,Joystick SAADC shunt,Murata,GRM188R71H103KA01D,2,4,JLC SMT,C77053,V1-V2,10nF X7R shunt to GND per axis; exact LCSC match verified 2026-07-30,C35-C36
 Mechanical,Insert,McMaster-Carr,94180A321,4,8,User,,V1,Supplier pack minimum may create excess; boss redesign required,INS1-INS4
 Mechanical,Screw,TR Fastenings,TR00004792-000,4,8,User,,V1,M2.5x8 ISO 7380-1 A2 stainless; fit validation required,SCR1-SCR4
 Mechanical,Silicone sheet,McMaster-Carr,8525T575,1 disc,1 sheet,User,,V1-V2,Cut two 72mm discs; 60A 1/16in sheet,FOOT1
 Mechanical,Transfer adhesive,3M,467MP,1 disc,1 sheet or roll,User,,V1-V2,Cut two 72mm adhesive discs,ADH1
-Fabrication,Bare PCB,JLCPCB,108x108mm 4-layer FR-4 ENIG 1.6mm,1,5 bare / 2 assembled,JLCPCB,,SPEC,Fabrication minimum may be five; populate exactly two; final Gerber archive controls,PCB1
+Fabrication,Bare PCB,JLCPCB,116x116mm 6-layer JLC06161H-3313 FR-4 ENIG 1.6mm order class,1,5 bare / 2 assembled,JLCPCB,,SPEC,Fabrication minimum may be five; populate exactly two; select epoxy-filled and capped via-in-pad plus impedance control; final Gerber archive controls,PCB1
 Fabrication,Top enclosure,JLC3DP,MJF PA12 black from focalpoint-top.step,1,2,JLC3DP,,SPEC,RF-transparent polymer; final STEP controls geometry,TOP1
 Fabrication,Bottom enclosure,JLC3DP,MJF PA12 black from focalpoint-bottom.step,1,2,JLC3DP,,SPEC,Final STEP controls geometry,BOTTOM1
 Fabrication,Circular base,JLC3DP,MJF PA12 black from focalpoint-grommet.step,1,2,JLC3DP,,SPEC,Circular puck; silicone disc bonds underneath,BASE1

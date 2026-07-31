@@ -98,7 +98,7 @@ blocking, not a warning.
 |---|---|---|---|---|
 | 4.1 | SWD detect | nRF52840-DK + TC2030 reads the MDBT50Q IDCODE via J3 | | |
 | 4.2 | Flash bring-up firmware | flashes + runs; RTT/log banner | | |
-| 4.3 | Fuel gauge I²C | U9 MAX17048 ACKs on FG_SDA/FG_SCL (P0.26/P0.27); reports plausible SOC/VCELL | | |
+| 4.3 | Fuel gauge I²C | U9 MAX17048 ACKs on FG_SDA/FG_SCL (P1.15/P0.30; module pads 8/14); reports plausible SOC/VCELL | | |
 | 4.4 | /CHG + /PGOOD | CHG_STAT (P0.12) and PGOOD (P0.14) read correct states on USB-present/charging | | |
 | 4.5 | Charge current | with a **partially discharged** pack (verified polarity, §1.2), fast-charge ≈ 400 mA (ISET 2.21 k); tapers to ~40 mA termination (ITERM) | | |
 | 4.6 | Safety timer | charge completes / terminates within the 6.2 h TMR window (spot-check, don't force full cycle) | | |
@@ -115,7 +115,7 @@ NTC brought to TS, or a reduced charge rate — record which.
 
 Drive each input physically; confirm the correct control ID over raw HID
 (`focalpointd` event log). Direct GPIO scan — **no matrix diodes** (D1–D13
-dropped per the pending BOM revision).
+removed in the applied BOM revision).
 
 | # | Input | GPIO (SCHEMATIC §3) | Pass criteria | U1 | U2 |
 |---|---|---|---|---|---|

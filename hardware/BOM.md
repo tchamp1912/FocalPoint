@@ -1,10 +1,10 @@
 # Rev A engineering BOM
 
-Status: **NOT order-ready.** ICs, mechanicals, and long-lead parts are frozen;
-every passive value set, count, and designator range is **provisional pending
-schematic capture and ERC** — `hardware/kicad/` has no `.kicad_sch` yet, so
-the passive lines are engineering estimates, not netlist output. Design basis:
-108 x 108 mm PCB, 114 x 114 mm enclosure, thirteen RGB MX keys plus encoder,
+Status: **prototype candidate, not order-ready.** The schematic is captured and
+passes ERC; the fully routed six-layer PCB has zero unconnected pads. The
+remaining electrical release gates are disposition of the saved DRC warnings,
+independent review, and JLCPCB's live component/rotation check. Design basis:
+116 x 116 mm PCB, 122 x 122 mm enclosure, thirteen RGB MX keys plus encoder,
 analog joystick, and capacitive touch = sixteen logical inputs.
 
 `bom.csv` is the machine-readable procurement list for **two finished devices**.
@@ -45,10 +45,10 @@ No line is production-approved until V1-V5 pass.
 | Fuel gauge | ADI `MAX17048G+T10` | 1 | JLC SMT | V1-V2; calibrate against final battery. `C2682616`. |
 | Battery | TinyCircuits `ASR00012` | 1 | User | V1-V2; protected, 1 A max, 42 x 39 x 5.5 mm, JST-SH pigtail. Verify pigtail polarity against the header before first plug-in (2-pin LiPo polarity is unstandardized); silkscreen polarity marks required. Pocket redesign required. |
 | Battery header | JST `SM02B-SRSS-TB(LF)(SN)` | 1 | JLC SMT | V1-V2; verify pack polarity; SH contacts are rated ~1 A — zero margin over the pack's 1 A limit. `C160402`. |
-| Joystick | Alps `RKJX21224001` | 1 | JLC SMT | V1/body clearance only; Alps drawing shows SMD solder lugs plus an FPC signal tail — not THT, so it moves off user assembly. FPC interconnect (connector or pads) is an open schematic item; a THT RKJXV122400R-class stick is the fallback. Tail, cap sweep, STEP, footprint, and opening are blockers. `C2886732`. |
+| Joystick | Alps `RKJXV122400R` | 1 | User THT | Rev A prototype baseline; direct PCB terminals and center push, 10 kΩ, 18.2 × 21.7 × 11.2 mm. Project-local footprint is transcribed from Alps Drawing No. 1 (catalog update 2510); Ø20 enclosure aperture is parameterized. LCSC `C918854`; Mouser `688-RKJXV122400R`. The low-profile RKJX21224001 remains a future option only. |
 | Encoder | Alps `EC11E15244G1` | 1 | User THT | V1-V2; exact lug holes/height need CAD validation. `C370970`. |
 | Knob | Mentor `505.6131` | 1 | User | V1-V2; 12 mm diameter, 6 mm shaft. |
-| Hot-swap socket | Kailh `CPG151101S11` | 13 | JLC bottom SMT | V1; replace legacy footprint with official land pattern; JLC acceptance pending. `C2803348`. |
+| Hot-swap socket | Kailh `CPG151101S11` | 13 | JLC bottom SMT | V1-V3 footprint; project-local land pattern transcribed from Kailh KHA-PG1511-094EN Rev B / KH-PS-1607-10 Rev B; placement/rotation and JLC acceptance pending. `C2803348`. |
 | Tactile MX switch | Kailh Polia `CPG151101D280` | 13 | User | V1; physical sample/supply gate remains. |
 | Frosted 1u cap | Adafruit `5068`, clear DSA 12-pack | 12 | User | V1-V2; 18.6 mm square leaves 1.4 mm between caps at 20 mm pitch. Buy two packs. |
 | Ceramic 1u cap | Cerakey `F SET-RX1U` four-pack | 1 used | User | V1; physically gauge before release. |
@@ -114,11 +114,11 @@ code was verified for that exact MPN during the 2026-07-28 sourcing pass; the
 line must either be consigned or substituted with a stocked equivalent during
 the live-matcher pass (release blocker 9). Every code present was individually
 verified against an LCSC/JLCPCB listing; none are guesses. Known flags:
-`GRM31CR61A226KE19L` (22 uF) is obsolete — substitute at schematic capture;
-`GRM188R60J106ME84D` (10 uF) is NRND with no LCSC listing found (nearest
-stocked sibling `GRM188R60J106ME47D`, `C77041`); `C45000` and `C71631` are
-deep-stocked at LCSC but flagged obsolete/NRND by some distributors — revisit
-at the matcher pass.
+The earlier `GRM31CR61A226KE19L` (22 uF, 1206) and
+`GRM188R60J106ME84D` (10 uF, 0603 NRND) choices were replaced in the release
+BOM with package-compatible, live-listed 0603 parts. `C45000` and `C71631`
+remain exact listed matches but are flagged obsolete/NRND by some
+distributors, so reconfirm them in JLC's live matcher.
 
 ## Mechanical parts
 
@@ -151,9 +151,8 @@ between neighbors. Exact cap geometry—not center placement—must be sampled.
 
 ## Assembly boundary
 
-JLCPCB reflows all SMT, especially QFN power parts, radio, LEDs, sockets,
-passives, and the joystick's SMD mounting lugs (its FPC signal-tail
-interconnect is an open schematic item — see the joystick row). The user
+JLCPCB reflows all SMT, especially QFN power parts, radio, LEDs, sockets, and
+passives. The user
 installs encoder, MX switches, keycaps, battery, inserts, screws, and circular
 pad. Quote USB-C as hybrid assembly.
 
@@ -161,17 +160,18 @@ pad. Quote USB-C as hybrid assembly.
 
 1. Complete and independently review the KiCad schematic; pass ERC.
    *Progress 2026-07-28: schematic transcribed (`kicad/focalpoint.kicad_sch`,
-   104 parts / 77 nets, all-local symbols) and **ERC passes 0/0** (errors +
+   106 footprints / 80 nets, all-local symbols) and **ERC passes 0/0** (errors +
    warnings); netlist exports clean; no dangling nets (verified). **Independent
    human review still owed** — see `kicad/TRANSCRIPTION_NOTES.md` for the
    reviewer checklist and `CAPTURE_GAP_RESOLUTIONS.md` for resolved/new gaps.*
-2. Use exact manufacturer footprints, complete a four-layer route, and pass DRC.
+2. Use exact manufacturer footprints, complete the six-layer route, and pass
+   native KiCad DRC on
+   `kicad/focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pcb`.
 3. Check antenna exclusion on every copper layer and against battery/base/screws.
 4. Import populated STEP models and pass enclosure interference review.
 5. Redesign the battery pocket to at least 42 x 39 x 8 mm plus cable relief.
-6. Model the joystick tail/cap sweep, resolve its FPC-tail interconnect
-   (connector or solder pads — or substitute a THT RKJXV122400R-class stick),
-   and replace its 20 mm placeholder opening.
+6. Place the RKJXV122400R footprint, verify its body/cap sweep against the
+   neighboring key and enclosure, and keep all four solder lugs accessible.
 7. Derive the USB opening from GCT's drawing.
 8. Freeze/sample frosted caps, ceramic cap, inserts, and circular pad.
 9. Manually validate every exact MPN, side, and rotation in JLC's live matcher.
@@ -210,9 +210,10 @@ PCBA/enclosure order is not justified.
 
 ## Fabricated items and reusable tooling
 
-- JLCPCB: five 108 x 108 mm, four-layer, 1.6 mm FR-4, ENIG bare boards; populate
-  exactly two. Five is treated as an unavoidable fabrication minimum, not a
-  third device.
+- JLCPCB: five 116 x 116 mm, six-layer, 1.6 mm order-class FR-4, ENIG bare
+  boards using JLC06161H-3313; populate exactly two. Select impedance control
+  and epoxy-filled/capped via-in-pad. Five is treated as an unavoidable
+  fabrication minimum, not a third device.
 - JLC3DP: two each of the top, bottom, and circular-base STEP files in black MJF
   PA12 nylon.
 - One Tag-Connect `TC2030-ARM2010-NL` cable and one Nordic `nRF52840-DK` are
@@ -225,7 +226,7 @@ PCBA/enclosure order is not justified.
 - [TI TPS63031](https://www.ti.com/lit/ds/symlink/tps63030.pdf)
 - [TI TPS61023](https://www.ti.com/lit/ds/symlink/tps61023.pdf)
 - [GCT USB4105](https://gct.co/files/specs/usb4105-spec.pdf)
-- [Alps RKJX21224001](https://tech.alpsalpine.com/e/products/detail/RKJX21224001/)
+- [Alps RKJXV122400R](https://tech.alpsalpine.com/e/products/detail/RKJXV122400R/)
 - [Sunlord SWPA series datasheet](https://ferrite.ru/upload/docs/pdf/products/sunlord/SWPA%20series%20of%20SMD%20Power%20Inductor.pdf)
 - [Sunlord MWSA0402S-1R0MT at JLCPCB](https://jlcpcb.com/partdetail/Sunlord-MWSA0402S1R0MT/C408332)
 - [Microchip AT42QT1010](https://ww1.microchip.com/downloads/en/DeviceDoc/40001946A.pdf)

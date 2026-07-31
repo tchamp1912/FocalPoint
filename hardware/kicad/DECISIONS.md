@@ -65,12 +65,18 @@
   gating only the LED chain with TPS22918 preserves that, and the switch's
   quick-output-discharge (QOD) yields a clean SK6812 power-on reset.
   Re-evaluate at schematic capture.
-- **Joystick mounting: SMD, JLC side.** The Alps RKJX21224001 is not
-  through-hole: the manufacturer drawing shows SMD solder lugs plus an FPC
-  signal tail (Mouser lists SMD termination). It moves from user assembly to
-  JLC-side reflow of the body lugs. Open item: the FPC tail needs an
-  interconnect (FPC connector or hand-solder pads) selected at schematic
-  capture; fallback is a THT RKJXV122400R-class substitute.
+- **Prototype joystick baseline: Alps RKJXV122400R through-hole.** The earlier
+  RKJX21224001 public outline
+  shows metal mounting lugs that Alps requires soldering to the substrate and
+  a separate seven-conductor FPC signal tail. It does not publish the lug land
+  pattern or enough FPC dimensions to select a connector. The project-local
+  CAD entry is therefore mechanical-only. Obtain the formal Alps delivery
+  drawing before choosing JLC assembly, a connector, or a direct-solder
+  process. Rev A prototypes therefore use the exact THT `RKJXV122400R`, which
+  is hand-solderable and exposes its electrical terminals directly. Capture
+  its manufacturer mounting-hole pattern and update the larger top opening and
+  11.2 mm body-height clearance before PCB/enclosure release. Keep
+  RKJX21224001 as a future low-profile option only.
 - **Matrix vs direct GPIO: direct preferred, matrix retained until schematic
   capture.** Full direct-scan signal budget (~29 GPIO): KEY1–KEY13 (13,
   enables any-key PORT wake), ENC_A/ENC_B/ENC_SW (3), JOY_X/JOY_Y (2, must
@@ -93,19 +99,20 @@ pin-to-pin connection, grounded in the frozen `bom.csv`). Key outcomes:
 - **Direct GPIO scan confirmed; matrix retired.** Assigning concrete nRF52840
   pins yields a 28-signal budget (KEY1–KEY13 on P1.00–P1.12, two analog axes on
   AIN0/AIN1, the rest on P0) — well inside the module's ~48 GPIO. This is the
-  confirmation the matrix-vs-direct decision above was waiting on. **Pending BOM
-  revision:** remove D1–D13 (1N4148W) and the 4×4 matrix; revalidate
-  `bom.csv`/`finalize_bom.py`/deck as one deliberate change (not yet applied).
+  confirmation the matrix-vs-direct decision above was waiting on. The BOM
+  revision removing D1–D13 and the 4×4 matrix has been applied and validated.
 - **Passive set fully allocated** against the frozen R1–R22 / C1–C34 designators;
   R10–R13 (100 k) and R14–R17 (10 k) networks are now assigned per-pin. The only
   unconfirmed node is C26 (BQ 1 µF) pending an SLUS810N pin check.
 - **New passive gaps surfaced for the BOM revision:** joystick SAADC filtering
-  (series R + cap per axis) is missing from the frozen set; the Alps FPC tail
+  (series R + cap per axis) was added as R23/R24 and C35/C36; the retired Alps FPC tail
   needs an interconnect selected; C31–C32 (obsolete) / C27–C29 (NRND) need
   stocked substitutes at the matcher pass.
-- **Status:** design capture done; eeschema transcription, custom symbols
-  (TPS61023, TPS22918, MAX17048, Alps joystick), ERC/DRC, and independent human
-  review remain open — blocker 1 is half-closed.
+- **Status:** schematic capture and custom symbols are complete; ERC passes
+  0/0. The corrected six-layer PCB is fully routed and its schematic/PCB
+  pin-net comparison passes with zero mismatches. Native DRC records zero
+  errors and zero unconnected pads with warnings still requiring disposition;
+  regenerated manufacturing outputs and independent human review remain open.
 
 ## Post-capture decisions — 2026-07-28 (owner-confirmed)
 
@@ -132,8 +139,8 @@ explicitly confirmed by the owner.
   removed D1–D13 (matrix retired, direct-scan confirmed); added R23–R24 (joystick
   SAADC 1 kΩ series), C35–C36 (10 nF shunt), R25 (100 kΩ FG_ALRT pull-up), D15
   (CC1/CC2 low-cap TVS). `finalize_bom.py` re-validated (60 lines / 23 frozen
-  rows). Still open for footprint capture: R20 RGB-vs-joystick allocation, local-
-  symbol pin numbering, joystick FPC interconnect.
+  rows). The Rev A joystick FPC issue is closed by selecting the through-hole
+  RKJXV122400R; other manufacturer-specific footprint and symbol audits remain.
 
 ## Review gates before ordering
 
@@ -145,3 +152,36 @@ explicitly confirmed by the owner.
 - Run KiCad ERC and DRC, inspect every footprint against its datasheet, and
   review schematic/PCB with another person.
 - Order unassembled PCBs or a small prototype quantity before an assembly run.
+
+## PCB routing decisions — 2026-07-30
+
+- **Six-layer prototype stack fixed:** JLCPCB `JLC06161H-3313`, selected as a
+  1.6 mm order. Copper order is F.Signal / In1.GND / In2.Signal / In3.Signal /
+  In4.+3V3 / B.Signal. The exact NP-155F 3313/0.55 mm core/2116/0.55 mm
+  core/3313 construction is embedded in
+  `focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pcb`.
+- **Routing connectivity complete:** the corrected release candidate
+  `focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pcb` reports zero
+  unconnected items after zone refill. FreeRouting was not used for the final
+  eleven connections; finite, clearance-conservative scripts completed them.
+- **Filled/capped via-in-pad accepted for the six-layer prototype:** trapped
+  module, USB-C, LED, resistor, and fuel-gauge pads use reviewed 0.25/0.15,
+  0.35/0.15, or 0.45/0.25 mm through-vias. The JLCPCB order must select
+  `Epoxy Filled & Capped`; these are not ordinary open vias under SMT pads.
+- **USB target recalculated from JLCPCB's live calculator:** 90.0093 ohm at
+  0.1420 mm design width and 0.1524 mm gap for coated outer-layer microstrip on
+  JLC06161H-3313. The current full-speed route is length-matched but changes
+  layers, so successful USB enumeration/data transfer on both prototypes is a
+  mandatory physical release gate before any larger quantity.
+- **Package pinouts revalidated after routing:** Raytac MDBT50Q Ver. L and the
+  U4–U9 vendor datasheets were used to repair physical pad numbering and power
+  topology. Routing-driven GPIO remaps are BOOST_EN=P1.13/pad 6,
+  FG_SDA=P1.15/pad 8, FG_SCL=P0.30/pad 14, and FG_ALRT=P0.24/pad 48.
+  `drcfix2_schematic_pcb_net_compare.txt` records zero mismatches and
+  `drcfix2_static_audit.txt` records zero clearance/fabrication-minimum
+  violations for the corrected candidate.
+- **Native KiCad DRC checkpoint:** the application-bundle CLI wrapper completed
+  DRC for `focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pcb`.
+  `DRC_pinoutfix_drcfix2_native.rpt` records zero errors and zero unconnected
+  pads, plus 183 warnings. Those warnings still require engineering
+  disposition before manufacturing files are labeled orderable.

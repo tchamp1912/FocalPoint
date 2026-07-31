@@ -4,9 +4,35 @@
       "defaults": {},
       "diff_pair_dimensions": [],
       "drc_exclusions": [],
-      "rules": {},
-      "track_widths": [],
-      "via_dimensions": []
+      "rules": {
+        "min_clearance": 0.15,
+        "min_connection": 0.15,
+        "min_copper_edge_clearance": 0.25,
+        "min_hole_clearance": 0.25,
+        "min_hole_to_hole": 0.25,
+        "min_track_width": 0.15,
+        "min_via_annular_width": 0.1,
+        "min_via_diameter": 0.6
+      },
+      "track_widths": [
+        0.2,
+        0.5,
+        1.0
+      ],
+      "via_dimensions": [
+        {
+          "diameter": 0.6,
+          "drill": 0.3
+        },
+        {
+          "diameter": 0.8,
+          "drill": 0.4
+        },
+        {
+          "diameter": 1.0,
+          "drill": 0.5
+        }
+      ]
     }
   },
   "boards": [],
@@ -16,13 +42,103 @@
   },
   "meta": {
     "filename": "focalpoint.kicad_pro",
-    "version": 1
+    "version": 3
   },
   "net_settings": {
-    "classes": [],
+    "classes": [
+      {
+        "bus_width": 12,
+        "clearance": 0.2,
+        "diff_pair_gap": 0.25,
+        "diff_pair_via_gap": 0.25,
+        "diff_pair_width": 0.2,
+        "line_style": 0,
+        "microvia_diameter": 0.3,
+        "microvia_drill": 0.1,
+        "name": "Default",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 2147483647,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.2,
+        "tuning_profile": "",
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "wire_width": 6
+      },
+      {
+        "bus_width": 12,
+        "clearance": 0.25,
+        "diff_pair_gap": 0.25,
+        "diff_pair_via_gap": 0.25,
+        "diff_pair_width": 0.2,
+        "line_style": 0,
+        "microvia_diameter": 0.3,
+        "microvia_drill": 0.1,
+        "name": "PWR_3V3_PLANE",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 2147483647,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.5,
+        "tuning_profile": "",
+        "via_diameter": 0.8,
+        "via_drill": 0.4,
+        "wire_width": 6
+      },
+      {
+        "bus_width": 12,
+        "clearance": 0.3,
+        "diff_pair_gap": 0.25,
+        "diff_pair_via_gap": 0.25,
+        "diff_pair_width": 0.2,
+        "line_style": 0,
+        "microvia_diameter": 0.3,
+        "microvia_drill": 0.1,
+        "name": "PWR_HIGH_CURRENT",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 2147483647,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 1.0,
+        "tuning_profile": "",
+        "via_diameter": 1.0,
+        "via_drill": 0.5,
+        "wire_width": 6
+      },
+      {
+        "bus_width": 12,
+        "clearance": 0.2,
+        "diff_pair_gap": 0.2,
+        "diff_pair_via_gap": 0.2,
+        "diff_pair_width": 0.27,
+        "line_style": 0,
+        "microvia_diameter": 0.3,
+        "microvia_drill": 0.1,
+        "name": "USB2_FS_PENDING_JLC_IMPEDANCE",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 2147483647,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.27,
+        "tuning_profile": "",
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "wire_width": 6
+      }
+    ],
     "meta": {
-      "version": 0
-    }
+      "version": 5
+    },
+    "netclass_assignments": {
+      "+3V3": "PWR_3V3_PLANE",
+      "+5V": "PWR_HIGH_CURRENT",
+      "+5V_LED": "PWR_HIGH_CURRENT",
+      "+BAT": "PWR_HIGH_CURRENT",
+      "SYS": "PWR_HIGH_CURRENT",
+      "VBUS": "PWR_HIGH_CURRENT",
+      "USB_DN_CONN": "USB2_FS_PENDING_JLC_IMPEDANCE",
+      "USB_DN_ESD": "USB2_FS_PENDING_JLC_IMPEDANCE",
+      "USB_DP_CONN": "USB2_FS_PENDING_JLC_IMPEDANCE",
+      "USB_DP_ESD": "USB2_FS_PENDING_JLC_IMPEDANCE"
+    },
+    "netclass_patterns": []
   },
   "pcbnew": {
     "page_layout_descr_file": ""

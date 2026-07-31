@@ -1,0 +1,6 @@
+baseline=focalpoint_radio_bottomright_6layer_pass2_powerfixed_candidate.kicad_pcb
+release=focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pcb
+new_track_or_via_items=1485
+different-net_shape_pairs_checked=1425201
+clearance_violations=0
+fabrication_minimum_violations=0

@@ -37,12 +37,12 @@ Leave the through-hole encoder and any through-hole joystick/header unpopulated
 for local installation. JLCPCB must populate every SMD part, including hot-swap
 sockets; do not substitute an SMD joystick that requires local reflow.
 
-> **Joystick sourcing note (open, tracked as WP2-6):** the BOM's Alps RKJX2
-> stick is an SMT part, which conflicts with the "no local reflow" rule
-> above. Either the assembler places it (JLC-side SMT) — in which case step 3
-> drops the joystick — or it is substituted with a THT RKJXV-class stick the
-> owner solders locally. The "user installs joystick" step is provisional
-> until that decision lands.
+> **Joystick assembly:** Rev A uses the Alps `RKJXV122400R` through-hole
+> joystick. Leave JS1 unpopulated at the assembler; insert it from the PCB top
+> and hand-solder every electrical terminal and all four metal mounting lugs
+> from the PCB bottom. Use at most 350°C for 3 seconds per joint, once, per
+> Alps' published hand-soldering conditions. The earlier low-profile FPC-tail
+> RKJX21224001 is not used in Rev A.
 
 ## Supplier path
 

@@ -1,3 +1,10 @@
 *.kicad_prl
 *-backups/
 *.lck
+__pycache__/
+.history/
+archive/
+tools/*.jar
+release_candidate_pinoutfix/
+focalpoint_rev_a_pinoutfix_gerbers_candidate.zip
+focalpoint_rev_a_pinoutfix_release_candidate.zip

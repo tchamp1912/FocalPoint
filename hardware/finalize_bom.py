@@ -46,7 +46,7 @@ REFS = {
     "BQ ITERM": "R7", "BQ timer": "R8", "Boost FB top": "R9",
     "100k network": "R10-R13", "10k network": "R14-R17",
     "I2C pullups": "R18-R19", "RGB input and touch series": "R20-R21",
-    "RGB data": "R22", "100nF bypass": "C1-C22",
+    "RGB data": "R22", "100nF bypass": "C1-C21",
     "Radio bulk 4.7uF": "C23", "BQ 4.7uF": "C24-C25",
     "BQ 1uF": "C26", "3V3 10uF": "C27-C29",
     "Boost input 10uF": "C30", "Boost output 22uF": "C31-C32",

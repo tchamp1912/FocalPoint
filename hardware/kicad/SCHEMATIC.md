@@ -1,11 +1,13 @@
 # Rev A schematic capture — connectivity specification
 
-Status: **design capture + eeschema transcription complete; ERC passes 0/0
-(errors and warnings, `focalpoint.kicad_sch`); independent human review + DRC
-still required** (release blocker 1, `BOM.md`). Transcription judgment calls and
-the items a reviewer must check are in `TRANSCRIPTION_NOTES.md`; the resolved
-capture-checks and new gaps (C26=IN bypass, FG_ALRT pull-up, R20 conflict,
-joystick filter values) are in `../CAPTURE_GAP_RESOLUTIONS.md`.
+Status: **design capture + datasheet-controlled schematic/footprint repair
+complete; error-level ERC passes 0/0 (`focalpoint.kicad_sch`); the corrected
+six-layer PCB has zero schematic/PCB pin-net mismatches and zero unrouted
+connections. Native KiCad DRC on
+`focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pcb` and final manufacturing
+artifact review remain required** (release blocker 1, `BOM.md`). Transcription judgment calls and
+the items a reviewer must check are in `TRANSCRIPTION_NOTES.md`; resolved
+capture questions are recorded in `../CAPTURE_GAP_RESOLUTIONS.md`.
 
 This document is the electrical source of truth for the Rev A schematic: every
 net and every pin-to-pin connection, grounded in the frozen `bom.csv`
@@ -14,15 +16,13 @@ eeschema drawing is transcription rather than design, and so the design can be
 reviewed by a person before any symbol is placed. It does **not** replace ERC —
 it is the input to it.
 
-Why a spec and not a `.kicad_sch` yet: hand/script-authored KiCad schematic
-files whose wires must land exactly on pins are error-prone and expensive to
-get ERC-clean, and blocker 1 requires human review in eeschema regardless. The
-engineering (topology, pin assignment, support networks) is here; drawing it is
-the mechanical step that follows.
+The checked-in `.kicad_sch` is now the electrical source consumed by KiCad.
+This document explains the intended topology and remains a human-review aid;
+the exported netlist and ERC report govern connectivity.
 
 Reference designators below are exactly those frozen in `bom.csv` (verified by
 `finalize_bom.py`). Where this capture implies a BOM change, it is called out as
-a **pending BOM revision** — the BOM is not edited here.
+an applied BOM revision documented in `bom.csv`.
 
 ---
 
@@ -35,7 +35,7 @@ USB-C VBUS ──[D14 TVS]──┬───────────────
 
 U3 BQ24074:  IN ─► [power path] ─► SYS ──┬─► U4 TPS63031 ──► +3V3 (always-on)
                                           ├─► U5 TPS61023 ──► +5V (RGB boost)
-             BAT ◄────────────────────────┴─ J2 ─ BT1 (LiPo, JST-SH)
+             BAT ◄────────────────────────┴─ J2 ─ off-board BT1 (LiPo, JST-SH)
 
 +5V ──► U7 AHCT VCC (always-on, upstream of switch)
 +5V ──► U6 TPS22918 IN ──(gated)──► +5V_LED ─► LED1..LED13 VDD
@@ -56,7 +56,7 @@ U3 BQ24074:  IN ─► [power path] ─► SYS ──┬─► U4 TPS63031 ─�
 | Consumer | Pin | Bypass (from C1–C22 100 nF set) | Bulk |
 |---|---|---|---|
 | U1 MDBT50Q VDD | module VDD | 1× 100 nF at pin | C23 4.7 µF |
-| U8 AT42QT1010 VDD | pin 1 | 1× 100 nF | — |
+| U8 AT42QT1010 VDD | pin 5 | 1× 100 nF | — |
 | U9 MAX17048 (VDD = cell, see §4) | — | 1× 100 nF | — |
 | U4 TPS63031 output | VOUT | (see §1.2) | C27–C29 10 µF |
 
@@ -75,41 +75,48 @@ U3 BQ24074:  IN ─► [power path] ─► SYS ──┬─► U4 TPS63031 ─�
 | /PGOOD | open-drain → U1 `PGOOD` (P0.14), pull-up **R16** 10 kΩ to +3V3 |
 | EN1, EN2 | strap EN2=1/EN1=0 for resistor-programmed ILIM (verify against SLUS810N Table; document strap) |
 | VSS/thermal pad | GND (thermal vias — QFN thermal test, blocker 10) |
-| VDPM / decouple | **C26** 1 µF (confirm exact pin vs datasheet) |
+| IN bypass | **C26** 1 µF from VBUS to GND |
 
-⚠ **Capture check:** confirm EN1/EN2 strap levels and the C26 net against
-SLUS810N — the 1 µF placement is the one node this spec marks *unconfirmed*.
+The exported netlist confirms C26 from VBUS to GND. Confirm EN1/EN2 strap
+behavior against SLUS810N before release.
 
 ### 1.2 U4 TPS63031 (3.3 V buck-boost) — U4, C15516 (DSKT fixed 3.3 V)
-| Pin | Net |
+| Physical pin | Function / net |
 |---|---|
-| VINA / VIN | SYS |
-| L1, L2 | **L1** Sunlord SWPA3015 1.5 µH |
-| VOUT | +3V3; **C27–C29** 10 µF (input + output split per datasheet) |
-| FB | tied per fixed-output DSKT rule (no divider) |
-| EN | +3V3 (always-on) or U1 GPIO if soft-start desired — **default tie high** |
-| PS/SYNC | GND (power-save enabled) or per datasheet |
-| GND / PGND | GND |
+| 1 | VOUT → +3V3 |
+| 2 / 4 | L2 / L1 → opposite ends of **L1** (Sunlord SWPA3015 1.5 µH) |
+| 3 / 9 / 11 | PGND / GND / exposed pad → GND |
+| 5 / 8 | VIN / VINA → SYS |
+| 6 | EN → +3V3 (always on) |
+| 7 | PS/SYNC → GND (power-save enabled) |
+| 10 | FB, fixed-output connection per TPS63031 datasheet |
+
+**C27–C29** provide the datasheet input/output capacitance split. The WSON
+footprint, exposed pad, and pin numbering are captured explicitly in both
+schematic and PCB.
 
 ### 1.3 U5 TPS61023 (5 V boost) — U5, C919459
-| Pin | Net |
+| Physical pin | Function / net |
 |---|---|
-| VIN | SYS; **C30** 10 µF |
-| SW | **L2** Sunlord MWSA0402 1.0 µH |
-| VOUT | +5V; **C31–C32** 22 µF (⚠ MPN obsolete — substitute at capture) |
-| FB | divider node: **R9** 732 kΩ (top, to VOUT) / **R10** 100 kΩ (bottom, to GND) → 0.6 V×(1+732/100) ≈ 4.99 V |
-| EN | U1 `BOOST_EN` (P0.11), pull-down **R11** 100 kΩ |
-| GND | GND |
+| 1 | FB: **R9** 732 kΩ to +5V / **R10** 100 kΩ to GND → ≈4.99 V |
+| 2 | EN → U1 `BOOST_EN` (P1.13 / module pad 6), pull-down **R11** 100 kΩ |
+| 3 | VIN → SYS; **C30** 10 µF |
+| 4 | GND |
+| 5 | SW; **L2** is connected between SYS and SW |
+| 6 | VOUT → +5V; **C31–C32** 22 µF |
+
+The inductor topology is `SYS → L2 → SW`; it is not connected between SW and
++5V.
 
 ### 1.4 U6 TPS22918 (LED load switch) — U6, C131941
-| Pin | Net |
+| Physical pin | Function / net |
 |---|---|
-| VIN | +5V |
-| VOUT | +5V_LED → LED1 VDD |
-| ON | U1 `RGB_PWR_EN` (P0.08), pull-down **R12** 100 kΩ (default off) |
-| QOD | to VOUT or per datasheet (quick-output-discharge for clean LED reset) |
-| CT | **C33** 220 pF to GND (slew-rate) |
-| GND | GND |
+| 1 | VIN → +5V |
+| 2 | GND |
+| 3 | ON → U1 `RGB_PWR_EN` (P0.08 / module pad 24), **R12** 100 kΩ pull-down |
+| 4 | CT → **C33** 220 pF to GND |
+| 5 | QOD per datasheet discharge connection |
+| 6 | VOUT → +5V_LED |
 
 ---
 
@@ -119,12 +126,12 @@ SLUS810N — the 1 µF placement is the one node this spec marks *unconfirmed*.
   - VBUS (both) → net VBUS → **D14** PESD5V0S1UL TVS to GND → U3 IN.
   - CC1 → **R1** 5.1 kΩ to GND; CC2 → **R2** 5.1 kΩ to GND (UFP/sink).
   - D+ pair tied, D− pair tied → **R3/R4** 22 Ω series (DNP by default) →
-    **U2 TPD2EUSB30** ESD → U1 MDBT50Q USB `D+`/`D−` (dedicated module pins).
+    **U2 TPD2EUSB30** ESD shunt → U1 MDBT50Q USB `D+`/`D−` (dedicated module pins).
   - SBU1/SBU2 → no-connect.
   - Shield → chassis/GND per EMC (single-point).
-- **U2 TPD2EUSB30** (C97502 — never substitute C3011197): I/O on the connector
-  side, protected I/O to the MCU side, VCC/GND per datasheet (it is a flow-through
-  ESD array).
+- **U2 TPD2EUSB30** (C97502 — never substitute C3011197) is captured as the
+  3-pin DRT shunt array: pin 1 USB D+, pin 2 USB D−, pin 3 GND. It is not a
+  powered or flow-through device.
 
 ⚠ **Capture check:** R3/R4 22 Ω are DNP placeholders pending the Raytac USB
 review — populate only if signal integrity requires.
@@ -150,55 +157,52 @@ P0.18 reserved as nRESET; P0.00/P0.01 left free for an optional 32.768 kHz LFXO.
 | TOUCH_OUT | **P0.15** | from U8 OUT (active per QT1010) |
 | RGB_DATA | **P0.06** | → U7 buffer input (3V3 logic) |
 | RGB_PWR_EN | **P0.08** | → U6 ON |
-| BOOST_EN | **P0.11** | → U5 EN |
+| BOOST_EN | **P1.13** (module pad 6) | → U5 EN; remapped for a manufacturable module escape |
 | CHG_STAT | **P0.12** | ← U3 /CHG (open-drain, pulled up) |
 | PGOOD | **P0.14** | ← U3 /PGOOD (open-drain, pulled up) |
-| FG_SDA | **P0.26** | I²C to U9 |
-| FG_SCL | **P0.27** | I²C to U9 |
-| FG_ALRT | **P0.07** | ← U9 /ALRT (open-drain) |
+| FG_SDA | **P1.15** (module pad 8) | I²C to U9 |
+| FG_SCL | **P0.30** (module pad 14) | I²C to U9 |
+| FG_ALRT | **P0.24** (module pad 48) | ← U9 /ALRT (open-drain) |
 | USB D+/D− | dedicated | to U2 |
 | SWDIO/SWDCLK | dedicated | to J3 |
 | nRESET | **P0.18** | to J3 + **SW14**, pull-up **R17** 10 kΩ |
 
 Signal count: 28 (13 keys + 2 analog + 13 control/sense/comms) — well within the
-module's ~48 exposed GPIO. **Confirm each assigned pin is broken out on the
-MDBT50Q-1MV2** (a few nRF pins are not, depending on module variant); reshuffle
-within the same constraint classes if any is absent.
+module's exposed GPIO budget. Every assigned GPIO and the physical module pad
+mapping were checked against Raytac MDBT50Q-1MV2 specification Ver. L.
 
-- U1 supply: VDD → +3V3 with 100 nF at pin + **C23** 4.7 µF bulk. VSS/pad → GND.
+- U1 supply: pad 28 VDD → +3V3 with 100 nF + **C23** 4.7 µF bulk.
+  Pads 1, 2, 15, 33, and 55 → GND; pad 32 → USB VBUS detect/input.
 - DEC/DCC pins (internal regulator decoupling) and the RF/antenna are handled
   inside the certified module — **module antenna keep-out** governs placement
   (blocker 3).
 
-### Pending BOM revision — direct scan confirms; drop the matrix
+### Applied BOM revision — direct scan, no matrix diodes
 The direct-scan pin budget fits (28 ≤ 48), so the matrix is not needed
-(`DECISIONS.md` set this as the trigger). **Pending BOM action:** remove
-**D1–D13** (1N4148W, 26-qty line) and the 4×4 matrix wiring; revalidate
-`bom.csv`/`finalize_bom.py` and the presentation deck as one reviewed change.
-Not done in this document to keep the BOM edit deliberate. Net effect: 13 fewer
-bottom-side parts, simpler wake.
+(`DECISIONS.md` set this as the trigger). **D1–D13 were removed** from `bom.csv`
+and the schematic. The 13 keys are direct GPIO inputs with internal pull-ups.
 
 ---
 
 ## 4. Sensing
 
 ### 4.1 U9 MAX17048 (fuel gauge) — U9, C2682616
-| Pin | Net |
+| Physical pin | Function / net |
 |---|---|
-| CELL / VDD | J2.1 (LiPo +) — measures cell directly; 100 nF bypass |
-| GND | GND |
-| SDA | FG_SDA (P0.26); pull-up **R18** 4.7 kΩ to +3V3 |
-| SCL | FG_SCL (P0.27); pull-up **R19** 4.7 kΩ to +3V3 |
-| /ALRT | FG_ALRT (P0.07); open-drain (uses SDA/SCL pull domain) |
+| 2 / 3 | CELL / VDD → J2.1 (+BAT); 100 nF bypass |
+| 1 / 4 / 6 / 9 | CTG / GND / QSTRT / exposed pad → GND for Rev A |
+| 8 | SDA → FG_SDA (P1.15); **R18** 4.7 kΩ pull-up |
+| 7 | SCL → FG_SCL (P0.30); **R19** 4.7 kΩ pull-up |
+| 5 | /ALRT → FG_ALRT (P0.24); **R25** 100 kΩ pull-up |
 
 ### 4.2 U8 AT42QT1010 (capacitive touch) — U8, C74512
-| Pin | Net |
+| Physical pin | Function / net |
 |---|---|
-| VDD | +3V3, 100 nF bypass |
-| VSS | GND |
-| SNS1/SNS2 | **C34** 10 nF (Cs sample cap) + electrode pad (through the shell — coupling provision in `case/DESIGN.md`) |
-| OUT | TOUCH_OUT (P0.15) |
-| (mode pins) | per datasheet defaults |
+| 1 | OUT → TOUCH_RAW / **R21** / TOUCH_OUT |
+| 2 | VSS → GND |
+| 3 / 4 | SNSK / SNS → **C34** 10 nF sample capacitor and electrode |
+| 5 | VDD → +3V3, 100 nF bypass |
+| 6 | SYNC/mode → GND for the captured free-running mode |
 
 ---
 
@@ -208,13 +212,28 @@ bottom-side parts, simpler wake.
   (P1.00–P1.12), other side → GND. Internal pull-ups; **no diodes** (direct scan).
 - **Encoder ENC1** (EC11): A/B → ENC_A/ENC_B (P0.17/P0.19) with pull-ups; common
   → GND; switch → ENC_SW (P0.20)/GND.
-- **Joystick JS1** (Alps RKJX21224001): X-wiper → JOY_X (P0.02), Y-wiper →
+- **Joystick JS1** (Alps RKJXV122400R prototype baseline): X-wiper → JOY_X
+  (P0.02), Y-wiper →
   JOY_Y (P0.03), pot ends → +3V3 / GND (ratiometric to SAADC VDD reference);
   push → JOY_SW (P0.16)/GND.
-  ⚠ **Open capture item:** the RKJX21224001 has an **FPC signal tail** — select
-  an FPC connector or hand-solder land pattern (fallback: THT RKJXV122400R).
-  Add **series + RC filtering on JOY_X/JOY_Y** to the SAADC (flagged gap — add
-  as new passives in the BOM revision, not invented here).
+  The project-local `Alps_RKJXV122400R` footprint captures the manufacturer
+  Drawing No. 1 mounting-hole pattern, including duplicate pot/switch contacts,
+  four soldered metal lugs, and two locating bosses. The enclosure carries a
+  parameterized Ø20 aperture for the 18.2 × 21.7 × 11.2 mm body assembly.
+  The future low-profile RKJX21224001 option has a seven-conductor **FPC signal
+  tail**. Alps' public outline identifies the conductors (two dummy, SW out,
+  VR2 out, GND, VDD, VR1 out) but does not dimension contact pitch, contact
+  side, insertion depth, or the metal mounting-lug land pattern. The local
+  `Alps_RKJX21224001` footprint therefore contains authoritative envelope/FPC
+  sweep geometry only and deliberately has no pads. Obtain Alps' formal
+  delivery drawing before choosing a connector; do not substitute a guessed
+  direct-solder pattern.
+  **R23–R24 (1 kΩ) and C35–C36 (10 nF)** provide per-axis SAADC filtering.
+
+The `Kailh_CPG151101S11_Hotswap` local footprint is captured from Kailh
+KHA-PG1511-094EN Rev B / KH-PS-1607-10 Rev B, including the 3.05 mm switch-pin
+openings, 2.55 x 2.50 mm contact lands, MX center/locating holes, and the
+manufacturer socket envelope. It is intended to be flipped to the PCB bottom.
 
 ---
 
@@ -242,8 +261,7 @@ each LED: 100nF local bypass (from C1–C22 set), VDD=+5V_LED, VSS=GND
   pins; nRESET → net RESET; +3V3; GND; (optional) SWO.
 - **SW14** (B3U-1000P) → RESET/GND (reset button); **RESET** pull-up **R17**
   10 kΩ to +3V3.
-- **SW15** (B3U-1000P) → a GPIO/GND for DFU/user (assign to a free pin, e.g.
-  P0.13, at capture) — currently the one input this spec leaves to eeschema.
+- **SW15** (B3U-1000P) → P0.13/GND for DFU/user.
 
 ---
 
@@ -263,33 +281,25 @@ each LED: 100nF local bypass (from C1–C22 set), VDD=+5V_LED, VSS=GND
 | C1–C22 | 100 nF ×22 | 13 LED + U1/U3/U4/U5/U6/U7/U8/U9 bypass (8) = 21; **1 spare** | ok |
 | C23 | 4.7 µF | U1 bulk | ok |
 | C24–C25 | 4.7 µF | BQ BAT/SYS | ok |
-| C26 | 1 µF | BQ (pin ⚠ unconfirmed) | verify |
+| C26 | 1 µF | BQ IN/VBUS bypass | captured |
 | C27–C29 | 10 µF ×3 | TPS63031 in/out | ok |
 | C30 | 10 µF | TPS61023 in | ok |
 | C31–C32 | 22 µF ×2 | TPS61023 out | ⚠ MPN obsolete — substitute |
 | C33 | 220 pF | TPS22918 CT | ok |
 | C34 | 10 nF | touch Cs | ok |
 
-### Passive gaps this capture surfaces (for the BOM revision)
-1. **Joystick SAADC filtering** (JOY_X/JOY_Y series R + cap) is not in the frozen
-   set — R20 could serve one axis but there is no second series R and no filter
-   caps. Add 2×series R + 2×filter C in the BOM revision.
-2. **C26 (BQ 1 µF)** net is the single unconfirmed placement — resolve against
-   SLUS810N.
-3. **C31–C32** (obsolete 22 µF) and **C27–C29** (NRND 10 µF) need LCSC-stocked
-   substitutes at the matcher pass (already flagged in `bom.csv`).
-4. SW15's GPIO (DFU/user) needs a pin + optional pull assigned in eeschema.
+### Remaining passive procurement checks
+Any alternate passive selected during JLC's live component review must match
+the voltage, dielectric, tolerance, package, and effective-capacitance
+requirements recorded in `BOM.md`/`bom.csv`.
 
 ---
 
 ## 9. Remaining steps to close blocker 1
 
-1. Resolve the four items in §8 and the ⚠ capture checks (BQ straps/C26, USB
-   R3/R4, joystick FPC + filtering).
-2. Apply the **pending BOM revision** (drop D1–D13; add joystick filters) as one
-   reviewed change; re-run `finalize_bom.py`.
-3. Draw this net list in eeschema (custom symbols needed: TPS61023, TPS22918,
-   MAX17048, the Alps joystick + FPC tail; the rest are in the official libs).
-4. Run KiCad **ERC** to zero errors; export netlist; sync to the PCB and route
-   (4-layer) → **DRC**.
-5. **Independent human review** of schematic + PCB (blocker 1's second half).
+1. Run native KiCad DRC to zero violations on
+   `focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pcb`.
+2. Regenerate and verify Gerbers, PTH/NPTH drill files, BOM, and component
+   placement from that exact PCB revision.
+3. Complete the JLC upload/rotation review and independent human schematic/PCB
+   review before manufacturing two prototypes.

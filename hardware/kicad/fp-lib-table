@@ -1,0 +1,3 @@
+(fp_lib_table
+  (lib (name "FocalPoint")(type "KiCad")(uri "${KIPRJMOD}/FocalPoint.pretty")(options "")(descr "FocalPoint Rev A project-local footprints"))
+)

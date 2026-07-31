@@ -1,5 +1,37 @@
 # Rev A schematic transcription notes
 
+## Datasheet-controlled repair — 2026-07-29
+
+The five findings from the first independent review have now been applied to
+`focalpoint.kicad_sch`:
+
+- U1 uses the real Raytac MDBT50Q-1MV2 module pad numbers for every connected
+  GPIO, USB, SWD, reset, VDD, and GND signal. All chosen GPIOs were confirmed
+  exposed in Raytac specification Ver. L. The assigned footprint is KiCad 10's
+  `RF_Module:Raytac_MDBT50Q`, which contains all 61 pads and the vendor antenna
+  geometry.
+- U2 is now the real three-pad TPD2EUSB30 DRT shunt topology: pad 1 D+, pad 2
+  D-, pad 3 GND. The fictional flow-through outputs and VBUS pin were removed.
+- U3 is now the BQ24074 RGT physical pin map, including both BAT pads, both OUT
+  pads, CE, and the exposed ground pad. CE and EN1 are grounded, EN2 is high,
+  and C26 is connected from IN/VBUS to GND.
+- D15, R23-R25, and C35-C36 were inserted and connected to the BOM-revision
+  nets. The exported netlist confirms D15 on CC1/CC2, joystick RC filtering,
+  and the dedicated FG_ALRT pull-up.
+- Every on-board schematic instance has a non-empty footprint assignment.
+  Off-board BT1 and ERC-only power flags are explicitly excluded from board
+  placement.
+
+KiCad 10.0.5 error-level ERC and netlist export both pass. Project-local
+footprint links for the Kailh sockets and Alps joystick remain named
+`FocalPoint:*`; the project library is registered in `fp-lib-table`. The exact
+Kailh CPG151101S11 and Rev A Alps RKJXV122400R footprints now exist. The
+RKJXV footprint is transcribed from official Drawing No. 1 (catalog update
+2510) and includes every electrical hole, solder lug and locating boss. The
+older RKJX21224001 entry remains mechanical-only and is not used for Rev A.
+update. This is no longer an empty-assignment problem, but remains a physical
+land-pattern release gate.
+
 Mechanical transcription of `SCHEMATIC.md` (net-level spec) into KiCad 10
 files. **Not a redesign** — every net/connection below is taken directly from
 `SCHEMATIC.md`; where the spec left a node ambiguous or open, that ambiguity
@@ -105,36 +137,28 @@ anyone hand-generating KiCad 10 s-expressions:
   exactly two independent electrical nodes in this design. **A human must
   reconcile the 2-pin symbol against the real 4-pin footprint's pin-pairing
   before layout** (which physical pins are internally bridged).
-- **U1 module: 36 sequential pins, GPIO net names as pin names, no real
-  Raytac pin numbers** — exactly as the task brief specified ("physical
-  module pin numbers deferred... connect by GPIO net name").
-- **U2 TPD2EUSB30 modeled with 6 pins** (GND, IO1/IO2 connector-side,
-  OUT1/OUT2 protected-side, VBUS) representing it as the "flow-through ESD
-  array" `SCHEMATIC.md` describes. I did not have exact datasheet pin
-  numbers on hand; numbering is sequential 1–6, not the real SOT-23-6
-  pinout. **A human must map this to the real TPD2EUSB30 pinout at
-  footprint assignment.**
+- **U1 module physical pins are no longer deferred.** Every connected GPIO,
+  all five GND pads, VDD, VBUS, USB, SWD, and reset are numbered from Raytac
+  MDBT50Q specification Ver. L. Routing-required remaps are recorded in
+  `SCHEMATIC.md` and `DECISIONS.md`.
+- **U2 TPD2EUSB30 corrected to the 3-pin DRT shunt array:** pin 1 USB D+,
+  pin 2 USB D−, pin 3 GND. The obsolete fictional flow-through/VBUS model
+  has been removed from the schematic and documentation.
 
 ## Carried-through open items (from `SCHEMATIC.md`, not resolved here)
 
-- **C26 (BQ24074 1 µF)**: placed on a pin I named `VDPM` (U3 pin 14), tied
-  to GND — matching the spec's *tentative* placement. `SCHEMATIC.md` itself
-  flags this net as the one unconfirmed node pending an SLUS810N pin check.
-  Still unconfirmed; not resolved by this transcription.
-- **Joystick (JS1) SAADC filtering**: not placed. `SCHEMATIC.md` §5 and §8
-  are explicit that series-R + filter-cap per axis is a gap not yet in
-  `bom.csv`; I did not invent passives for it. JS1's X/Y wipers go straight
-  to U1 P0.02/P0.03 (nets `JOY_X`/`JOY_Y`) with no series/filter component,
-  same as the spec.
-- **Joystick FPC tail / interconnect**: not modeled. JS1 is a single 5-pin
-  symbol (VCC, GND, X, Y, SW); the spec's open item about an FPC connector
+- **C26 (BQ24074 1 µF)** is resolved and captured from VBUS to GND as the IN
+  bypass required by SLUS810N.
+- **Joystick (JS1) SAADC filtering** is captured as R23/R24 (1 kΩ series)
+  and C35/C36 (10 nF shunt), one RC per axis.
+- **Retired joystick FPC option**: JS1 is a single 5-pin logical symbol
+  (VCC, GND, X, Y, SW). The RKJXV122400R footprint maps its duplicate physical
+  pot and switch terminals onto those five logical pads. The old FPC connector
   vs. hand-solder pad vs. THT fallback part is a footprint/BOM decision, out
   of scope for net-level capture.
-- **D1–D13 (matrix diodes): omitted, as directed.** `bom.csv` still lists
-  them (pending BOM revision — not edited here per instructions), but the
-  schematic reflects the confirmed direct-scan design: KEY1–KEY13 go
-  straight from each HS*n* socket to U1 P1.00–P1.12, no diodes, matching
-  `SCHEMATIC.md` §3's "Pending BOM revision" note.
+- **D1–D13 (matrix diodes): omitted, as directed.** They are also removed
+  from `bom.csv`; KEY1–KEY13 connect directly from each HS*n* socket to U1
+  P1.00–P1.12.
 - **SW15 (DFU/user button)**: assigned P0.13 (net `DFU`) as the spec
   suggested ("assign to a free pin, e.g. P0.13, at capture") — this was the
   one input `SCHEMATIC.md` explicitly left to schematic capture.
@@ -150,31 +174,15 @@ anyone hand-generating KiCad 10 s-expressions:
   instruction that DNP parts are "still placed." DNP is a BOM/assembly
   attribute, not a schematic-capture omission.
 
-## What a human reviewer must check before this goes further
+## Current human-review gates
 
-1. **Footprint assignment for all 104 placed symbols** — none have a
-   footprint yet (this task was net-level capture only); the `Footprint`
-   property is present but empty on every symbol.
-2. **U1 module physical pin numbers** — sequential 1–36 here; must be
-   remapped to the real Raytac MDBT50Q-1MV2 pin table, and every assigned
-   GPIO must be confirmed as actually broken out on that module variant
-   (`SCHEMATIC.md` §3 flags this directly).
-3. **U2 TPD2EUSB30 real pinout** vs. the placeholder 6-pin sequential
-   numbering here.
-4. **C26 net** (BQ24074 pin 14, "VDPM") against SLUS810N — still
-   unconfirmed, carried through as-is.
-5. **FG_ALRT pull** — confirm whether MAX17048 ALRT needs a discrete
-   external pull-up for Rev A; I modeled the pin `passive` (no driver
-   claimed) rather than inventing a resistor.
-6. **HS vs. SW1–13 decision above** — confirm the "HS carries the net,
-   SW is mechanically-only" reading of `bom.csv`/`SCHEMATIC.md` §5 is what
-   was intended; add SW1–13 as separate schematic symbols if not.
-7. **Joystick SAADC filtering and FPC interconnect** — both explicitly
-   unresolved gaps per `SCHEMATIC.md` §8, not addressed here.
-8. **Add `focalpoint.kicad_sym` to a symbol library table** (project- or
-   global-level) before opening this in the KiCad GUI, to clear the 104
-   cosmetic `lib_symbol_issues` ERC warnings — not required for ERC/netlist
-   correctness, but needed for normal symbol-editor workflows (edit pin,
-   re-annotate, etc.) going forward.
-9. **DRC / PCB sync** has not been attempted — this deliverable is schematic
-   + ERC only, per the task scope.
+The historical placeholder issues above have been resolved in the checked-in
+schematic and corrected PCB. Human review now focuses on:
+
+1. Native KiCad DRC on
+   `focalpoint_rev_a_release_final_pinoutfix_drcfix2.kicad_pcb`.
+2. JLC BOM/placement upload review, including every MPN, side, and rotation.
+3. Antenna keepout, USB-C edge alignment, LED/socket orientation, joystick and
+   encoder clearances, and the complete enclosure/PCB fit.
+4. Correct JST-SH battery polarity on the purchased pack before connection.
+5. Bring-up testing of both prototypes before any production quantity.

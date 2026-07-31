@@ -1,0 +1,708 @@
+** Drc report for focalpoint_rev_a_release_final_pinoutfix.kicad_pcb **
+** Created on 2026-07-30T21:22:48 **
+** Report includes: Errors, Warnings **
+
+** Found 183 DRC violations **
+[via_dangling]: Via is not connected or connected on only one layer
+    Local override; warning
+    @(210.1375 mm, 185.5500 mm): Via [+3V3] on F.Cu - B.Cu
+[track_dangling]: Track has unconnected end
+    Local override; warning
+    @(145.1260 mm, 209.3390 mm): Track [+3V3] on B.Cu, length 1.5620 mm
+[track_dangling]: Track has unconnected end
+    Local override; warning
+    @(146.8125 mm, 209.3000 mm): Track [+3V3] on B.Cu, length 1.8000 mm
+[via_dangling]: Via is not connected or connected on only one layer
+    Local override; warning
+    @(205.8625 mm, 152.5500 mm): Via [GND] on F.Cu - B.Cu
+[track_dangling]: Track has unconnected end
+    Local override; warning
+    @(169.2880 mm, 206.9380 mm): Track [GND] on B.Cu, length 3.0540 mm
+[track_dangling]: Track has unconnected end
+    Local override; warning
+    @(163.6970 mm, 111.3350 mm): Track [RESET] on B.Cu, length 0.4990 mm
+[via_dangling]: Via is not connected or connected on only one layer
+    Local override; warning
+    @(198.0000 mm, 197.5000 mm): Via [RGB_PWR_EN] on F.Cu - B.Cu
+[track_dangling]: Track has unconnected end
+    Local override; warning
+    @(163.6340 mm, 113.3470 mm): Track [CHG_STAT] on B.Cu, length 0.5176 mm
+[track_dangling]: Track has unconnected end
+    Local override; warning
+    @(164.2500 mm, 110.2150 mm): Track [KEY7] on F.Cu, length 1.4354 mm
+[via_dangling]: Via is not connected or connected on only one layer
+    Local override; warning
+    @(175.1250 mm, 204.8500 mm): Via [BOOST_FB] on F.Cu - B.Cu
+[track_dangling]: Track has unconnected end
+    Local override; warning
+    @(171.2580 mm, 107.6870 mm): Track [KEY5] on B.Cu, length 9.6916 mm
+[via_dangling]: Via is not connected or connected on only one layer
+    Local override; warning
+    @(102.2170 mm, 114.6150 mm): Via [PGOOD] on F.Cu - B.Cu
+[track_dangling]: Track has unconnected end
+    Local override; warning
+    @(108.8250 mm, 213.0000 mm): Track [PGOOD] on B.Cu, length 9.3451 mm
+[track_dangling]: Track has unconnected end
+    Local override; warning
+    @(121.0190 mm, 206.2680 mm): Track [BQ_ISET] on B.Cu, length 0.3811 mm
+[track_dangling]: Track has unconnected end
+    Local override; warning
+    @(122.5560 mm, 206.2680 mm): Track [BQ_ISET] on B.Cu, length 3.2081 mm
+[track_dangling]: Track has unconnected end
+    Local override; warning
+    @(159.9750 mm, 112.1850 mm): Track [TOUCH_OUT] on B.Cu, length 0.4589 mm
+[track_dangling]: Track has unconnected end
+    Local override; warning
+    @(167.8330 mm, 122.1930 mm): Track [RGB_DATA] on B.Cu, length 4.9787 mm
+[track_dangling]: Track has unconnected end
+    Local override; warning
+    @(171.5890 mm, 115.4500 mm): Track [KEY9] on B.Cu, length 1.0394 mm
+[track_dangling]: Track has unconnected end
+    Local override; warning
+    @(138.2870 mm, 111.6810 mm): Track [KEY8] on F.Cu, length 25.0650 mm
+[via_dangling]: Via is not connected or connected on only one layer
+    Local override; warning
+    @(178.8570 mm, 116.7290 mm): Via [KEY10] on F.Cu - B.Cu
+[connection_width]: Copper connection too narrow (board setup constraints minimum connection width 0.1500 mm; actual 0.0812 mm) (+3V3 plane)
+    Rule: board setup constraints; warning
+    @(146.1625 mm, 207.3500 mm): Via [GND] on F.Cu - B.Cu
+    @(145.8375 mm, 207.8500 mm): Via [GND] on F.Cu - B.Cu
+[connection_width]: Copper connection too narrow (board setup constraints minimum connection width 0.1500 mm; actual 0.0812 mm) (+3V3 plane)
+    Rule: board setup constraints; warning
+    @(145.6500 mm, 208.0000 mm): PTH pad 11 [GND] of U4
+    @(146.3500 mm, 208.0000 mm): PTH pad 11 [GND] of U4
+[connection_width]: Copper connection too narrow (board setup constraints minimum connection width 0.1500 mm; actual 0.0812 mm) (In2.Cu)
+    Rule: board setup constraints; warning
+    @(145.8375 mm, 207.8500 mm): Via [GND] on F.Cu - B.Cu
+    @(146.1625 mm, 207.3500 mm): Via [GND] on F.Cu - B.Cu
+[connection_width]: Copper connection too narrow (board setup constraints minimum connection width 0.1500 mm; actual 0.0812 mm) (In2.Cu)
+    Rule: board setup constraints; warning
+    @(145.8375 mm, 207.8500 mm): Via [GND] on F.Cu - B.Cu
+    @(145.6500 mm, 208.0000 mm): PTH pad 11 [GND] of U4
+[connection_width]: Copper connection too narrow (board setup constraints minimum connection width 0.1500 mm; actual 0.0995 mm) (B.Cu)
+    Rule: board setup constraints; warning
+    @(162.1500 mm, 204.0000 mm): Pad 2 [SYS] of L2 on B.Cu
+    @(162.1500 mm, 204.0000 mm): Track [SYS] on B.Cu, length 0.9000 mm
+[connection_width]: Copper connection too narrow (board setup constraints minimum connection width 0.1500 mm; actual 0.0812 mm) (In3.Cu)
+    Rule: board setup constraints; warning
+    @(145.8375 mm, 207.8500 mm): Via [GND] on F.Cu - B.Cu
+    @(146.1625 mm, 207.3500 mm): Via [GND] on F.Cu - B.Cu
+[connection_width]: Copper connection too narrow (board setup constraints minimum connection width 0.1500 mm; actual 0.0790 mm) (B.Cu)
+    Rule: board setup constraints; warning
+    @(108.9875 mm, 186.2500 mm): Track [GND] on B.Cu, length 0.9000 mm
+    @(107.9375 mm, 186.1000 mm): Via [GND] on F.Cu - B.Cu
+[connection_width]: Copper connection too narrow (board setup constraints minimum connection width 0.1500 mm; actual 0.0812 mm) (In3.Cu)
+    Rule: board setup constraints; warning
+    @(146.3500 mm, 208.0000 mm): PTH pad 11 [GND] of U4
+    @(146.1625 mm, 208.3500 mm): Via [GND] on F.Cu - B.Cu
+[connection_width]: Copper connection too narrow (board setup constraints minimum connection width 0.1500 mm; actual 0.1120 mm) (B.Cu)
+    Rule: board setup constraints; warning
+    @(206.8625 mm, 154.0000 mm): Track [+5V_LED] on B.Cu, length 0.9000 mm
+    @(205.9625 mm, 153.6500 mm): Via [+5V_LED] on F.Cu - B.Cu
+[hole_to_hole]: Drilled hole too close to other hole (board setup constraints min 0.2495 mm; actual 0.2222 mm)
+    Rule: board setup constraints; warning
+    @(146.1625 mm, 207.3500 mm): Via [GND] on F.Cu - B.Cu
+    @(145.6500 mm, 207.2500 mm): PTH pad 11 [GND] of U4
+[hole_to_hole]: Drilled hole too close to other hole (board setup constraints min 0.2495 mm; actual 0.0000 mm)
+    Rule: board setup constraints; warning
+    @(146.1625 mm, 207.3500 mm): Via [GND] on F.Cu - B.Cu
+    @(146.3500 mm, 207.2500 mm): PTH pad 11 [GND] of U4
+[hole_to_hole]: Drilled hole too close to other hole (board setup constraints min 0.2495 mm; actual 0.1963 mm)
+    Rule: board setup constraints; warning
+    @(146.1625 mm, 207.3500 mm): Via [GND] on F.Cu - B.Cu
+    @(145.8375 mm, 207.8500 mm): Via [GND] on F.Cu - B.Cu
+[hole_to_hole]: Drilled hole too close to other hole (board setup constraints min 0.2495 mm; actual 0.0000 mm)
+    Rule: board setup constraints; warning
+    @(145.6500 mm, 208.0000 mm): PTH pad 11 [GND] of U4
+    @(145.8375 mm, 207.8500 mm): Via [GND] on F.Cu - B.Cu
+[hole_to_hole]: Drilled hole too close to other hole (board setup constraints min 0.2495 mm; actual 0.1963 mm)
+    Rule: board setup constraints; warning
+    @(145.8375 mm, 207.8500 mm): Via [GND] on F.Cu - B.Cu
+    @(146.1625 mm, 208.3500 mm): Via [GND] on F.Cu - B.Cu
+[hole_to_hole]: Drilled hole too close to other hole (board setup constraints min 0.2495 mm; actual 0.2340 mm)
+    Rule: board setup constraints; warning
+    @(146.3500 mm, 208.0000 mm): PTH pad 11 [GND] of U4
+    @(145.8375 mm, 207.8500 mm): Via [GND] on F.Cu - B.Cu
+[hole_to_hole]: Drilled hole too close to other hole (board setup constraints min 0.2495 mm; actual 0.0971 mm)
+    Rule: board setup constraints; warning
+    @(146.3500 mm, 208.0000 mm): PTH pad 11 [GND] of U4
+    @(146.1625 mm, 208.3500 mm): Via [GND] on F.Cu - B.Cu
+[hole_to_hole]: Drilled hole too close to other hole (board setup constraints min 0.2495 mm; actual 0.1418 mm)
+    Rule: board setup constraints; warning
+    @(146.3500 mm, 208.7500 mm): PTH pad 11 [GND] of U4
+    @(146.1625 mm, 208.3500 mm): Via [GND] on F.Cu - B.Cu
+[hole_to_hole]: Drilled hole too close to other hole (board setup constraints min 0.2495 mm; actual 0.0000 mm)
+    Rule: board setup constraints; warning
+    @(122.5125 mm, 207.9000 mm): Via [+BAT] on F.Cu - B.Cu
+    @(122.5125 mm, 208.1000 mm): Via [+BAT] on F.Cu - B.Cu
+[hole_to_hole]: Drilled hole too close to other hole (board setup constraints min 0.2495 mm; actual 0.1000 mm)
+    Rule: board setup constraints; warning
+    @(110.0375 mm, 186.6000 mm): Via [+BAT] on F.Cu - B.Cu
+    @(110.0375 mm, 187.1000 mm): Via [+BAT] on F.Cu - B.Cu
+[hole_to_hole]: Drilled hole too close to other hole (board setup constraints min 0.2495 mm; actual 0.0000 mm)
+    Rule: board setup constraints; warning
+    @(205.9625 mm, 153.6500 mm): Via [+5V_LED] on F.Cu - B.Cu
+    @(205.8125 mm, 153.8500 mm): Via [+5V_LED] on F.Cu - B.Cu
+[hole_to_hole]: Drilled hole too close to other hole (board setup constraints min 0.2495 mm; actual 0.1000 mm)
+    Rule: board setup constraints; warning
+    @(117.4875 mm, 207.6000 mm): Via [SYS] on F.Cu - B.Cu
+    @(117.4875 mm, 208.1000 mm): Via [SYS] on F.Cu - B.Cu
+[hole_to_hole]: Drilled hole too close to other hole (board setup constraints min 0.2495 mm; actual 0.2222 mm)
+    Rule: board setup constraints; warning
+    @(146.1625 mm, 207.3500 mm): Via [GND] on F.Cu - B.Cu
+    @(145.6500 mm, 207.2500 mm): PTH pad 11 [GND] of U4
+[hole_to_hole]: Drilled hole too close to other hole (board setup constraints min 0.2495 mm; actual 0.0000 mm)
+    Rule: board setup constraints; warning
+    @(145.6500 mm, 208.0000 mm): PTH pad 11 [GND] of U4
+    @(145.8375 mm, 207.8500 mm): Via [GND] on F.Cu - B.Cu
+[hole_to_hole]: Drilled hole too close to other hole (board setup constraints min 0.2495 mm; actual 0.0000 mm)
+    Rule: board setup constraints; warning
+    @(146.1625 mm, 207.3500 mm): Via [GND] on F.Cu - B.Cu
+    @(146.3500 mm, 207.2500 mm): PTH pad 11 [GND] of U4
+[hole_to_hole]: Drilled hole too close to other hole (board setup constraints min 0.2495 mm; actual 0.2340 mm)
+    Rule: board setup constraints; warning
+    @(146.3500 mm, 208.0000 mm): PTH pad 11 [GND] of U4
+    @(145.8375 mm, 207.8500 mm): Via [GND] on F.Cu - B.Cu
+[hole_to_hole]: Drilled hole too close to other hole (board setup constraints min 0.2495 mm; actual 0.0971 mm)
+    Rule: board setup constraints; warning
+    @(146.3500 mm, 208.0000 mm): PTH pad 11 [GND] of U4
+    @(146.1625 mm, 208.3500 mm): Via [GND] on F.Cu - B.Cu
+[hole_to_hole]: Drilled hole too close to other hole (board setup constraints min 0.2495 mm; actual 0.1418 mm)
+    Rule: board setup constraints; warning
+    @(146.3500 mm, 208.7500 mm): PTH pad 11 [GND] of U4
+    @(146.1625 mm, 208.3500 mm): Via [GND] on F.Cu - B.Cu
+[lib_footprint_mismatch]: Footprint 'USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal' does not match copy in library 'Connector_USB'
+    Local override; warning
+    @(146.0000 mm, 102.2000 mm): Footprint J1
+[lib_footprint_mismatch]: Footprint 'Tag-Connect_TC2030-IDC-NL_2x03_P1.27mm_Vertical' does not match copy in library 'Connector'
+    Local override; warning
+    @(108.0000 mm, 139.0000 mm): Footprint J3
+[lib_footprint_mismatch]: Footprint 'SW_SPST_B3U-1000P' does not match copy in library 'Button_Switch_SMD'
+    Local override; warning
+    @(107.0000 mm, 162.0000 mm): Footprint SW15
+[lib_footprint_mismatch]: Footprint 'C_0603_1608Metric' does not match copy in library 'Capacitor_SMD'
+    Local override; warning
+    @(208.0000 mm, 141.0000 mm): Footprint C36
+[lib_footprint_mismatch]: Footprint 'C_0603_1608Metric' does not match copy in library 'Capacitor_SMD'
+    Local override; warning
+    @(212.0000 mm, 154.0000 mm): Footprint C18
+[lib_footprint_mismatch]: Footprint 'R_0603_1608Metric' does not match copy in library 'Resistor_SMD'
+    Local override; warning
+    @(204.0000 mm, 154.0000 mm): Footprint R12
+[lib_footprint_mismatch]: Footprint 'C_0603_1608Metric' does not match copy in library 'Capacitor_SMD'
+    Local override; warning
+    @(204.0000 mm, 141.0000 mm): Footprint C35
+[lib_footprint_mismatch]: Footprint 'SW_SPST_B3U-1000P' does not match copy in library 'Button_Switch_SMD'
+    Local override; warning
+    @(107.0000 mm, 154.0000 mm): Footprint SW14
+[lib_footprint_mismatch]: Footprint 'R_0603_1608Metric' does not match copy in library 'Resistor_SMD'
+    Local override; warning
+    @(204.0000 mm, 162.0000 mm): Footprint R13
+[lib_footprint_mismatch]: Footprint 'R_0603_1608Metric' does not match copy in library 'Resistor_SMD'
+    Local override; warning
+    @(212.0000 mm, 168.0000 mm): Footprint R22
+[lib_footprint_mismatch]: Footprint 'R_0603_1608Metric' does not match copy in library 'Resistor_SMD'
+    Local override; warning
+    @(208.0000 mm, 136.0000 mm): Footprint R24
+[lib_footprint_mismatch]: Footprint 'C_0603_1608Metric' does not match copy in library 'Capacitor_SMD'
+    Local override; warning
+    @(212.0000 mm, 164.0000 mm): Footprint C19
+[lib_footprint_mismatch]: Footprint 'R_0603_1608Metric' does not match copy in library 'Resistor_SMD'
+    Local override; warning
+    @(204.0000 mm, 136.0000 mm): Footprint R23
+[lib_footprint_mismatch]: Footprint 'R_0603_1608Metric' does not match copy in library 'Resistor_SMD'
+    Local override; warning
+    @(106.0000 mm, 182.0000 mm): Footprint R19
+[lib_footprint_mismatch]: Footprint 'R_0603_1608Metric' does not match copy in library 'Resistor_SMD'
+    Local override; warning
+    @(212.0000 mm, 184.0000 mm): Footprint R21
+[lib_footprint_mismatch]: Footprint 'R_0603_1608Metric' does not match copy in library 'Resistor_SMD'
+    Local override; warning
+    @(103.0000 mm, 182.0000 mm): Footprint R18
+[lib_footprint_mismatch]: Footprint 'R_0603_1608Metric' does not match copy in library 'Resistor_SMD'
+    Local override; warning
+    @(204.0000 mm, 166.0000 mm): Footprint R20
+[lib_footprint_mismatch]: Footprint 'R_0603_1608Metric' does not match copy in library 'Resistor_SMD'
+    Local override; warning
+    @(104.0000 mm, 154.0000 mm): Footprint R17
+[lib_footprint_mismatch]: Footprint 'Raytac_MDBT50Q' does not match copy in library 'RF_Module'
+    Local override; warning
+    @(206.5000 mm, 203.5000 mm): Footprint U1
+[lib_footprint_mismatch]: Footprint 'C_0603_1608Metric' does not match copy in library 'Capacitor_SMD'
+    Local override; warning
+    @(212.0000 mm, 158.0000 mm): Footprint C33
+[lib_footprint_mismatch]: Footprint 'R_0603_1608Metric' does not match copy in library 'Resistor_SMD'
+    Local override; warning
+    @(109.0000 mm, 182.0000 mm): Footprint R25
+[lib_footprint_mismatch]: Footprint 'C_0603_1608Metric' does not match copy in library 'Capacitor_SMD'
+    Local override; warning
+    @(212.0000 mm, 188.0000 mm): Footprint C34
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(197.1000 mm, 116.1500 mm): Segment of JS1 on F.Silkscreen
+    @(196.7300 mm, 124.5000 mm): PTH pad 1 [+3V3] of JS1
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(197.1000 mm, 116.1500 mm): Segment of JS1 on F.Silkscreen
+    @(196.7300 mm, 127.0000 mm): PTH pad 3 [JOY_X] of JS1
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(197.1000 mm, 116.1500 mm): Segment of JS1 on F.Silkscreen
+    @(196.7300 mm, 129.5000 mm): PTH pad 2 [GND] of JS1
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(197.1000 mm, 137.8500 mm): Segment of JS1 on F.Silkscreen
+    @(191.5000 mm, 137.3000 mm): PTH pad 5 [JOY_SW] of JS1
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(197.1000 mm, 137.8500 mm): Segment of JS1 on F.Silkscreen
+    @(184.5000 mm, 137.3000 mm): PTH pad 2 [GND] of JS1
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(212.5100 mm, 154.1406 mm): Segment of C18 on B.Silkscreen
+    @(213.4300 mm, 154.0000 mm): Reference field of C18
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(168.0000 mm, 195.5700 mm): Reference field of C13
+    @(168.0000 mm, 195.5000 mm): Reference field of HS13
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(168.0000 mm, 175.5000 mm): Reference field of HS9
+    @(168.0000 mm, 175.5700 mm): Reference field of C9
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(204.5225 mm, 154.2373 mm): Segment of R12 on B.Silkscreen
+    @(205.4300 mm, 154.0000 mm): Reference field of R12
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(205.4300 mm, 162.0000 mm): Reference field of R13
+    @(204.5225 mm, 162.2373 mm): Segment of R13 on B.Silkscreen
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(213.4300 mm, 158.0000 mm): Reference field of C33
+    @(212.5100 mm, 158.1406 mm): Segment of C33 on B.Silkscreen
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(188.0000 mm, 175.5000 mm): Reference field of HS10
+    @(188.0000 mm, 175.5700 mm): Reference field of C10
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(209.4300 mm, 141.0000 mm): Reference field of C36
+    @(208.5100 mm, 141.1406 mm): Segment of C36 on B.Silkscreen
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(205.4300 mm, 141.0000 mm): Reference field of C35
+    @(204.5100 mm, 141.1406 mm): Segment of C35 on B.Silkscreen
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(168.0000 mm, 135.5000 mm): Reference field of HS2
+    @(168.0000 mm, 135.5700 mm): Reference field of C2
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(209.4300 mm, 136.0000 mm): Reference field of R24
+    @(208.5225 mm, 136.2373 mm): Segment of R24 on B.Silkscreen
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(204.5225 mm, 136.2373 mm): Segment of R23 on B.Silkscreen
+    @(205.4300 mm, 136.0000 mm): Reference field of R23
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(213.4300 mm, 168.0000 mm): Reference field of R22
+    @(212.5225 mm, 168.2373 mm): Segment of R22 on B.Silkscreen
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(212.5100 mm, 164.1406 mm): Segment of C19 on B.Silkscreen
+    @(213.4300 mm, 164.0000 mm): Reference field of C19
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(212.5225 mm, 184.2373 mm): Segment of R21 on B.Silkscreen
+    @(213.4300 mm, 184.0000 mm): Reference field of R21
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(213.4300 mm, 188.0000 mm): Reference field of C34
+    @(212.5100 mm, 188.1406 mm): Segment of C34 on B.Silkscreen
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(170.7200 mm, 207.0600 mm): Polygon of U5 on B.Silkscreen
+    @(170.0000 mm, 206.3500 mm): Reference field of U5
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(148.0000 mm, 195.5000 mm): Reference field of HS12
+    @(148.0000 mm, 195.5700 mm): Reference field of C12
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(148.0000 mm, 175.5700 mm): Reference field of C8
+    @(148.0000 mm, 175.5000 mm): Reference field of HS8
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(128.0000 mm, 155.5700 mm): Reference field of C3
+    @(128.0000 mm, 155.5000 mm): Reference field of HS3
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(168.0000 mm, 155.5000 mm): Reference field of HS5
+    @(168.0000 mm, 155.5700 mm): Reference field of C5
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(105.4300 mm, 154.0000 mm): Reference field of R17
+    @(105.6000 mm, 155.6500 mm): Segment of SW14 on B.Silkscreen
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(105.4300 mm, 154.0000 mm): Reference field of R17
+    @(104.5225 mm, 154.2373 mm): Segment of R17 on B.Silkscreen
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(188.0000 mm, 155.5700 mm): Reference field of C6
+    @(188.0000 mm, 155.5000 mm): Reference field of HS6
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(148.0000 mm, 135.5000 mm): Reference field of HS1
+    @(148.0000 mm, 135.5700 mm): Reference field of C1
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(106.5225 mm, 182.2373 mm): Segment of R19 on B.Silkscreen
+    @(107.4300 mm, 182.0000 mm): Reference field of R19
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(104.4300 mm, 182.0000 mm): Reference field of R18
+    @(105.4775 mm, 182.2373 mm): Segment of R19 on B.Silkscreen
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(104.4300 mm, 182.0000 mm): Reference field of R18
+    @(103.5225 mm, 182.2373 mm): Segment of R18 on B.Silkscreen
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(148.0000 mm, 155.5000 mm): Reference field of HS4
+    @(148.0000 mm, 155.5700 mm): Reference field of C4
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(128.0000 mm, 175.5700 mm): Reference field of C7
+    @(128.0000 mm, 175.5000 mm): Reference field of HS7
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(108.4775 mm, 182.2373 mm): Segment of R25 on B.Silkscreen
+    @(107.4300 mm, 182.0000 mm): Reference field of R19
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(109.5225 mm, 182.2373 mm): Segment of R25 on B.Silkscreen
+    @(110.4300 mm, 182.0000 mm): Reference field of R25
+[silk_overlap]: Silkscreen clearance
+    Rule: board setup constraints silk; warning
+    @(128.0000 mm, 195.5000 mm): Reference field of HS11
+    @(128.0000 mm, 195.5700 mm): Reference field of C11
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(213.4300 mm, 154.0000 mm): Reference field of C18
+    @(212.0000 mm, 153.2250 mm): Pad 2 [GND] of C18 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(213.4300 mm, 154.0000 mm): Reference field of C18
+    @(212.0000 mm, 154.7750 mm): Pad 1 [+5V] of C18 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(175.2500 mm, 180.0700 mm): Segment of HS13 on B.Silkscreen
+    @(174.0900 mm, 181.9200 mm): Pad 2 [GND] of HS13 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(175.2500 mm, 160.0700 mm): Segment of HS9 on B.Silkscreen
+    @(174.0900 mm, 161.9200 mm): Pad 2 [GND] of HS9 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(180.7500 mm, 163.3500 mm): Segment of HS10 on B.Silkscreen
+    @(180.6400 mm, 164.4600 mm): Pad 1 [KEY10] of HS10 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(205.4300 mm, 166.0000 mm): Reference field of R20
+    @(204.0000 mm, 165.1750 mm): Pad 2 [RGB_DATA_BUF] of R20 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(205.4300 mm, 154.0000 mm): Reference field of R12
+    @(206.8625 mm, 154.0000 mm): Pad 5 [+5V_LED] of U6 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(205.4300 mm, 154.0000 mm): Reference field of R12
+    @(204.0000 mm, 153.1750 mm): Pad 2 [GND] of R12 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(205.4300 mm, 154.0000 mm): Reference field of R12
+    @(204.0000 mm, 154.8250 mm): Pad 1 [RGB_PWR_EN] of R12 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(205.4300 mm, 162.0000 mm): Reference field of R13
+    @(204.0000 mm, 161.1750 mm): Pad 2 [GND] of R13 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(205.4300 mm, 162.0000 mm): Reference field of R13
+    @(204.0000 mm, 162.8250 mm): Pad 1 [RGB_OE_N] of R13 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(213.4300 mm, 158.0000 mm): Reference field of C33
+    @(212.0000 mm, 157.2250 mm): Pad 2 [GND] of C33 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(213.4300 mm, 158.0000 mm): Reference field of C33
+    @(212.0000 mm, 158.7750 mm): Pad 1 [U6_CT] of C33 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(205.4300 mm, 166.0000 mm): Reference field of R20
+    @(204.0000 mm, 166.8250 mm): Pad 1 [RGB_DATA] of R20 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(188.0000 mm, 169.4000 mm): Reference field of LED10
+    @(188.0000 mm, 167.0000 mm): NPTH pad of HS10
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(195.2500 mm, 160.0700 mm): Segment of HS10 on B.Silkscreen
+    @(194.0900 mm, 161.9200 mm): Pad 2 [GND] of HS10 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(209.4300 mm, 141.0000 mm): Reference field of C36
+    @(208.0000 mm, 140.2250 mm): Pad 2 [GND] of C36 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(209.4300 mm, 141.0000 mm): Reference field of C36
+    @(208.0000 mm, 141.7750 mm): Pad 1 [JOY_Y_FILT] of C36 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(205.4300 mm, 141.0000 mm): Reference field of C35
+    @(204.0000 mm, 140.2250 mm): Pad 2 [GND] of C35 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(205.4300 mm, 141.0000 mm): Reference field of C35
+    @(204.0000 mm, 141.7750 mm): Pad 1 [JOY_X_FILT] of C35 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(209.4300 mm, 136.0000 mm): Reference field of R24
+    @(208.0000 mm, 136.8250 mm): Pad 1 [JOY_Y] of R24 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(205.4300 mm, 136.0000 mm): Reference field of R23
+    @(204.0000 mm, 135.1750 mm): Pad 2 [JOY_X_FILT] of R23 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(205.4300 mm, 136.0000 mm): Reference field of R23
+    @(204.0000 mm, 136.8250 mm): Pad 1 [JOY_X] of R23 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(213.4300 mm, 168.0000 mm): Reference field of R22
+    @(212.0000 mm, 167.1750 mm): Pad 2 [LED1_DIN] of R22 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(213.4300 mm, 168.0000 mm): Reference field of R22
+    @(212.0000 mm, 168.8250 mm): Pad 1 [RGB_OUT_BUF] of R22 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(213.4300 mm, 164.0000 mm): Reference field of C19
+    @(212.0000 mm, 164.7750 mm): Pad 1 [+5V] of C19 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(213.4300 mm, 164.0000 mm): Reference field of C19
+    @(212.0000 mm, 163.2250 mm): Pad 2 [GND] of C19 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(213.4300 mm, 184.0000 mm): Reference field of R21
+    @(212.0000 mm, 184.8250 mm): Pad 1 [TOUCH_RAW] of R21 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(213.4300 mm, 184.0000 mm): Reference field of R21
+    @(212.0000 mm, 183.1750 mm): Pad 2 [TOUCH_OUT] of R21 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(213.4300 mm, 188.0000 mm): Reference field of C34
+    @(212.0000 mm, 188.7750 mm): Pad 1 [TOUCH_SNS1] of C34 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(213.4300 mm, 188.0000 mm): Reference field of C34
+    @(212.0000 mm, 187.2250 mm): Pad 2 [TOUCH_SNS2] of C34 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(148.0000 mm, 189.4000 mm): Reference field of LED12
+    @(148.0000 mm, 187.0000 mm): NPTH pad of HS12
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(148.0000 mm, 169.4000 mm): Reference field of LED8
+    @(148.0000 mm, 167.0000 mm): NPTH pad of HS8
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(140.7500 mm, 163.3500 mm): Segment of HS8 on B.Silkscreen
+    @(140.6400 mm, 164.4600 mm): Pad 1 [KEY8] of HS8 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(155.2500 mm, 180.0700 mm): Segment of HS12 on B.Silkscreen
+    @(154.0900 mm, 181.9200 mm): Pad 2 [GND] of HS12 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(140.7500 mm, 183.3500 mm): Segment of HS12 on B.Silkscreen
+    @(140.6400 mm, 184.4600 mm): Pad 1 [KEY12] of HS12 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(168.0000 mm, 169.4000 mm): Reference field of LED9
+    @(168.0000 mm, 167.0000 mm): NPTH pad of HS9
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(160.7500 mm, 163.3500 mm): Segment of HS9 on B.Silkscreen
+    @(160.6400 mm, 164.4600 mm): Pad 1 [KEY9] of HS9 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(168.0000 mm, 189.4000 mm): Reference field of LED13
+    @(168.0000 mm, 187.0000 mm): NPTH pad of HS13
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(160.7500 mm, 183.3500 mm): Segment of HS13 on B.Silkscreen
+    @(160.6400 mm, 184.4600 mm): Pad 1 [KEY13] of HS13 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(148.0000 mm, 149.4000 mm): Reference field of LED4
+    @(148.0000 mm, 147.0000 mm): NPTH pad of HS4
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(135.2500 mm, 160.0700 mm): Segment of HS7 on B.Silkscreen
+    @(134.0900 mm, 161.9200 mm): Pad 2 [GND] of HS7 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(128.0000 mm, 149.4000 mm): Reference field of LED3
+    @(128.0000 mm, 147.0000 mm): NPTH pad of HS3
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(135.2500 mm, 140.0700 mm): Segment of HS3 on B.Silkscreen
+    @(134.0900 mm, 141.9200 mm): Pad 2 [GND] of HS3 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(155.2500 mm, 160.0700 mm): Segment of HS8 on B.Silkscreen
+    @(154.0900 mm, 161.9200 mm): Pad 2 [GND] of HS8 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(120.7500 mm, 143.3500 mm): Segment of HS3 on B.Silkscreen
+    @(120.6400 mm, 144.4600 mm): Pad 1 [KEY3] of HS3 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(105.4300 mm, 154.0000 mm): Reference field of R17
+    @(104.0000 mm, 153.1750 mm): Pad 2 [+3V3] of R17 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(188.0000 mm, 149.4000 mm): Reference field of LED6
+    @(188.0000 mm, 147.0000 mm): NPTH pad of HS6
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(195.2500 mm, 140.0700 mm): Segment of HS6 on B.Silkscreen
+    @(194.0900 mm, 141.9200 mm): Pad 2 [GND] of HS6 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(180.7500 mm, 143.3500 mm): Segment of HS6 on B.Silkscreen
+    @(180.6400 mm, 144.4600 mm): Pad 1 [KEY6] of HS6 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(148.0000 mm, 129.4000 mm): Reference field of LED1
+    @(148.0000 mm, 127.0000 mm): NPTH pad of HS1
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(140.7500 mm, 123.3500 mm): Segment of HS1 on B.Silkscreen
+    @(140.6400 mm, 124.4600 mm): Pad 1 [KEY1] of HS1 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(155.2500 mm, 120.0700 mm): Segment of HS1 on B.Silkscreen
+    @(154.0900 mm, 121.9200 mm): Pad 2 [GND] of HS1 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(168.0000 mm, 129.4000 mm): Reference field of LED2
+    @(168.0000 mm, 127.0000 mm): NPTH pad of HS2
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(175.2500 mm, 120.0700 mm): Segment of HS2 on B.Silkscreen
+    @(174.0900 mm, 121.9200 mm): Pad 2 [GND] of HS2 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(160.7500 mm, 123.3500 mm): Segment of HS2 on B.Silkscreen
+    @(160.6400 mm, 124.4600 mm): Pad 1 [KEY2] of HS2 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(107.4300 mm, 182.0000 mm): Reference field of R19
+    @(106.0000 mm, 181.1750 mm): Pad 2 [+3V3] of R19 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(107.4300 mm, 182.0000 mm): Reference field of R19
+    @(106.0000 mm, 182.8250 mm): Pad 1 [FG_SCL] of R19 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(104.4300 mm, 182.0000 mm): Reference field of R18
+    @(106.0000 mm, 181.1750 mm): Pad 2 [+3V3] of R19 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(104.4300 mm, 182.0000 mm): Reference field of R18
+    @(106.0000 mm, 182.8250 mm): Pad 1 [FG_SCL] of R19 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(104.4300 mm, 182.0000 mm): Reference field of R18
+    @(103.0000 mm, 181.1750 mm): Pad 2 [+3V3] of R18 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(104.4300 mm, 182.0000 mm): Reference field of R18
+    @(103.0000 mm, 182.8250 mm): Pad 1 [FG_SDA] of R18 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(175.2500 mm, 140.0700 mm): Segment of HS5 on B.Silkscreen
+    @(174.0900 mm, 141.9200 mm): Pad 2 [GND] of HS5 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(168.0000 mm, 149.4000 mm): Reference field of LED5
+    @(168.0000 mm, 147.0000 mm): NPTH pad of HS5
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(160.7500 mm, 143.3500 mm): Segment of HS5 on B.Silkscreen
+    @(160.6400 mm, 144.4600 mm): Pad 1 [KEY5] of HS5 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(155.2500 mm, 140.0700 mm): Segment of HS4 on B.Silkscreen
+    @(154.0900 mm, 141.9200 mm): Pad 2 [GND] of HS4 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(140.7500 mm, 143.3500 mm): Segment of HS4 on B.Silkscreen
+    @(140.6400 mm, 144.4600 mm): Pad 1 [KEY4] of HS4 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(120.7500 mm, 163.3500 mm): Segment of HS7 on B.Silkscreen
+    @(120.6400 mm, 164.4600 mm): Pad 1 [KEY7] of HS7 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(128.0000 mm, 169.4000 mm): Reference field of LED7
+    @(128.0000 mm, 167.0000 mm): NPTH pad of HS7
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(128.0000 mm, 189.4000 mm): Reference field of LED11
+    @(128.0000 mm, 187.0000 mm): NPTH pad of HS11
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(120.7500 mm, 183.3500 mm): Segment of HS11 on B.Silkscreen
+    @(120.6400 mm, 184.4600 mm): Pad 1 [KEY11] of HS11 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(135.2500 mm, 180.0700 mm): Segment of HS11 on B.Silkscreen
+    @(134.0900 mm, 181.9200 mm): Pad 2 [GND] of HS11 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(107.4300 mm, 182.0000 mm): Reference field of R19
+    @(109.0000 mm, 182.8250 mm): Pad 1 [+3V3] of R25 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(107.4300 mm, 182.0000 mm): Reference field of R19
+    @(109.0000 mm, 181.1750 mm): Pad 2 [FG_ALRT] of R25 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(110.4300 mm, 182.0000 mm): Reference field of R25
+    @(109.0000 mm, 181.1750 mm): Pad 2 [FG_ALRT] of R25 on B.Cu
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(110.4300 mm, 182.0000 mm): Reference field of R25
+    @(109.0000 mm, 182.8250 mm): Pad 1 [+3V3] of R25 on B.Cu
+
+** Found 0 unconnected pads **
+
+** Found 0 Footprint errors **
+
+** Ignored checks **
+    - Footprint has no courtyard defined
+    - Track endpoint not centered on via
+    - Tuning profile track geometries
+    - Footprint doesn't match symbol's footprint filters
+    - Footprint component type doesn't match footprint pads
+
+** End of Report **
