@@ -8,7 +8,11 @@
 #   SessionStart        → no state change; asks the CLI to (re)resolve and
 #                         cache this process instance's tty/pid identity
 #                         (daemon/src/identity.rs handles the walk+cache —
-#                         see --refresh-identity below)
+#                         see --refresh-identity below). Also detects
+#                         whether this process is already running inside a
+#                         FocalPoint-managed tmux pane and, if
+#                         so, registers managed=true + mux_pane meta — see
+#                         the block below the identity refresh.
 #   UserPromptSubmit    → thinking
 #   PreToolUse          → running
 #   PostToolUse         → thinking
@@ -72,8 +76,38 @@
 
 set -u
 
+# Detached half of the permission debounce. Re-entering this script keeps the
+# installed surface to one file while `nohup` lets the check survive the
+# short-lived hook process that scheduled it.
+if [ "${1:-}" = "--deferred-wait" ]; then
+  pending_file="$2" lock_dir="$3" expected_token="$4" grace_secs="$5" focalpoint_bin="$6"
+  shift 6
+  sleep "$grace_secs"
+  attempts=0
+  while ! mkdir "$lock_dir" 2>/dev/null; do
+    attempts=$((attempts + 1))
+    [ "$attempts" -ge 100 ] && exit 0
+    sleep 0.01
+  done
+  current_token=$(cat "$pending_file" 2>/dev/null || true)
+  if [ "$current_token" = "$expected_token" ]; then
+    "$focalpoint_bin" set-state "$@" >/dev/null 2>&1 || true
+    rm -f "$pending_file"
+  fi
+  rmdir "$lock_dir" 2>/dev/null || true
+  exit 0
+fi
+
 # Path to focalpoint CLI
 FOCALPOINT="${FOCALPOINT_PATH:-focalpoint}"
+
+# Pull is intentionally separate from the daemon's optional wake. The body is
+# returned only through this hook boundary; it is never typed into a pane.
+channel_pull() {
+  [ -n "${FOCALPOINT_CHANNEL_ID:-}" ] || return 0
+  command -v fpctl-agent >/dev/null 2>&1 || return 0
+  fpctl-agent channel read --channel "$FOCALPOINT_CHANNEL_ID" 2>/dev/null || true
+}
 
 # Read the full hook JSON from stdin; if anything fails, silently exit 0
 hook_json=$(cat 2>/dev/null) || exit 0
@@ -172,6 +206,70 @@ event=$(extract_field "hook_event_name")
 session_id=$(extract_field "session_id")
 cwd=$(extract_field "cwd")
 transcript_path=$(extract_field "transcript_path")
+notification_type=$(extract_field "notification_type")
+[ -n "$notification_type" ] || notification_type=$(extract_field "notificationType")
+
+# Permission notifications can be transient when Claude's auto-approval
+# accepts the tool immediately. Delay only that flavor of waiting state; an
+# idle/input prompt is a real human block and remains immediate.
+defer_permission_wait=0
+if [ "$event" = "Notification" ] && [ "$notification_type" = "permission_prompt" ] \
+   && [ -n "${session_id:-}" ]; then
+  defer_permission_wait=1
+fi
+
+approval_pending_file=""
+approval_lock_dir=""
+if [ -n "${session_id:-}" ]; then
+  safe_session_id=$(printf '%s' "$session_id" | tr -c 'A-Za-z0-9._-' '_')
+  approval_dir="${XDG_STATE_HOME:-$HOME/.local/state}/focalpoint/approval-pending"
+  approval_pending_file="$approval_dir/claude-$safe_session_id.token"
+  approval_lock_dir="$approval_dir/claude-$safe_session_id.lock"
+fi
+
+approval_lock() {
+  local attempts=0
+  while ! mkdir "$approval_lock_dir" 2>/dev/null; do
+    attempts=$((attempts + 1))
+    [ "$attempts" -ge 100 ] && return 1
+    sleep 0.01
+  done
+}
+
+approval_unlock() { rmdir "$approval_lock_dir" 2>/dev/null || true; }
+
+if [ "$defer_permission_wait" -eq 1 ]; then
+  mkdir -p "$approval_dir" 2>/dev/null
+  approval_token="$$-${RANDOM:-0}-$(date +%s)"
+  printf '%s' "$approval_token" > "$approval_pending_file" 2>/dev/null || exit 0
+fi
+
+# Any later lifecycle event proves the permission request resolved. Serialize
+# cancellation with the delayed writer so waiting can never land after the
+# newer running/thinking/done state.
+if [ "$defer_permission_wait" -eq 0 ] && [ -n "$approval_pending_file" ] \
+   && [ -f "$approval_pending_file" ]; then
+  if approval_lock; then
+    rm -f "$approval_pending_file"
+    approval_unlock
+  fi
+fi
+
+# Every registering state event explicitly carries managed-ness. `set-meta`
+# on SessionStart is allowed to no-op for a brand-new id, so relying on that
+# event alone would leave fresh managed sessions invisible to clients. The
+# explicit false/empty pair also clears stale mux data when the same session
+# id is later resumed outside tmux.
+managed_value="false"
+mux_pane=""
+mux_session=""
+mux_server=""
+if [ -n "${TMUX:-}" ] && [ -n "${FOCALPOINT_TMUX_SERVER:-}" ] && command -v tmux >/dev/null 2>&1; then
+  mux_pane=$(tmux -L "$FOCALPOINT_TMUX_SERVER" display-message -p '#{pane_id}' 2>/dev/null) || mux_pane=""
+  mux_session=$(tmux -L "$FOCALPOINT_TMUX_SERVER" display-message -p '#{session_name}' 2>/dev/null) || mux_session=""
+  mux_server="$FOCALPOINT_TMUX_SERVER"
+  [ -n "$mux_pane" ] && [ -n "$mux_session" ] && managed_value="true"
+fi
 
 # Map event to state
 case "$event" in
@@ -187,6 +285,27 @@ case "$event" in
     # starting/resuming isn't itself a state transition worth reporting.
     if [ -n "${session_id:-}" ]; then
       "$FOCALPOINT" set-meta --session "$session_id" --kind claude --refresh-identity >/dev/null 2>&1 || true
+
+      # Managed-session detection.
+      # This hook fires *after* the agent process already exists, so it can
+      # only detect mux, never create it — a session becomes managed by
+      # being launched under orchestrator/focalpoint-run.sh, which puts it
+      # inside tmux *before*
+      # `claude` starts. $TMUX being set here means exactly that happened.
+      # `tmux display-message` degrades to empty output (never hangs) if
+      # this process's controlling terminal isn't actually a tmux client;
+      # a missing `tmux` binary is handled by `command -v` below. When not
+      # in tmux, add nothing — the session is unmanaged, identical to
+      # today's behavior.
+      if [ -n "${FOCALPOINT_CHANNEL_ID:-}" ]; then
+        "$FOCALPOINT" set-meta --session "$session_id" --kind claude \
+          --meta "managed=$managed_value" --meta "mux_pane=$mux_pane" --meta "mux_session=$mux_session" --meta "mux_server=$mux_server" \
+          --meta "channel_id=$FOCALPOINT_CHANNEL_ID" >/dev/null 2>&1 || true
+      else
+        "$FOCALPOINT" set-meta --session "$session_id" --kind claude \
+          --meta "managed=$managed_value" --meta "mux_pane=$mux_pane" --meta "mux_session=$mux_session" --meta "mux_server=$mux_server" >/dev/null 2>&1 || true
+      fi
+      channel_pull
     fi
     exit 0
     ;;
@@ -245,7 +364,12 @@ case "$event" in
     # recoverable (not lost) tombstone by the daemon's own
     # compacting-timeout sweep, independent of session_ttl_minutes.
     if [ -n "${session_id:-}" ]; then
-      "$FOCALPOINT" set-state compacting --session "$session_id" --kind claude --cwd "$cwd" 2>/dev/null || true
+      precompact_args=(compacting --session "$session_id" --kind claude --cwd "$cwd")
+      [ -n "${FOCALPOINT_RELAUNCH_ID:-}" ] && \
+        precompact_args+=(--meta "relaunch_id=$FOCALPOINT_RELAUNCH_ID")
+      [ -n "${FOCALPOINT_RESUME_SESSION_ID:-}" ] && \
+        precompact_args+=(--meta "resume_session_id=$FOCALPOINT_RESUME_SESSION_ID")
+      "$FOCALPOINT" set-state "${precompact_args[@]}" 2>/dev/null || true
     fi
     exit 0
     ;;
@@ -263,6 +387,19 @@ if [ -n "${session_id:-}" ]; then
   label=$(extract_title "$transcript_path")
   [ -n "$label" ] || label="$(basename "${cwd:-.}")"
   args+=(--session "$session_id" --kind claude --cwd "$cwd" --label "$label")
+  args+=(--meta "managed=$managed_value" --meta "mux_pane=$mux_pane" --meta "mux_session=$mux_session" --meta "mux_server=$mux_server")
+  [ -n "${transcript_path:-}" ] && args+=(--meta "transcript_path=$transcript_path")
+  [ -n "${FOCALPOINT_RELAUNCH_ID:-}" ] && \
+    args+=(--meta "relaunch_id=$FOCALPOINT_RELAUNCH_ID")
+  [ -n "${FOCALPOINT_RESUME_SESSION_ID:-}" ] && \
+    args+=(--meta "resume_session_id=$FOCALPOINT_RESUME_SESSION_ID")
+  [ -n "${FOCALPOINT_ORCHESTRATOR_TASK_ID:-}" ] && \
+    args+=(--meta "orchestrator_task_id=$FOCALPOINT_ORCHESTRATOR_TASK_ID")
+  [ -n "${FOCALPOINT_ORCHESTRATION_ROLE:-}" ] && \
+    args+=(--meta "orchestration_role=$FOCALPOINT_ORCHESTRATION_ROLE")
+  [ -n "${FOCALPOINT_MANAGER_TASK_ID:-}" ] && \
+    args+=(--meta "manager_task_id=$FOCALPOINT_MANAGER_TASK_ID")
+  [ -n "${FOCALPOINT_CHANNEL_ID:-}" ] && args+=(--meta "channel_id=$FOCALPOINT_CHANNEL_ID")
 
   if [ "$event" = "Stop" ]; then
     stats=$(extract_stats "$transcript_path")
@@ -277,7 +414,19 @@ if [ -n "${session_id:-}" ]; then
   fi
 fi
 
+# A permission request only becomes visible if no newer lifecycle event
+# cancels this token during the grace period. This covers both Claude's
+# built-in auto-approval and external permission hooks without guessing how
+# either implementation made its decision.
+if [ "$defer_permission_wait" -eq 1 ]; then
+  nohup /bin/bash "$0" --deferred-wait "$approval_pending_file" "$approval_lock_dir" \
+    "$approval_token" "${FOCALPOINT_APPROVAL_GRACE_SECS:-2}" "$FOCALPOINT" \
+    "${args[@]}" </dev/null >/dev/null 2>&1 &
+  exit 0
+fi
+
 # Call focalpoint set-state, silently fail if daemon is not running
 "$FOCALPOINT" set-state "${args[@]}" 2>/dev/null || true
+if [ "$event" = "Stop" ]; then channel_pull; fi
 
 exit 0

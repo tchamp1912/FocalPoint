@@ -11,6 +11,11 @@ their FocalPoint state current.
 | `Stop` | `done` and refresh session stats |
 | `SessionEnd` | End the FocalPoint session |
 
+`PermissionRequest` uses a two-second cancelable grace period. If Codex
+auto-approves and reaches `PreToolUse`, `waiting` is never published; only a
+request that remains blocked lights the keyboard and widget.
+`FOCALPOINT_APPROVAL_GRACE_SECS` can override the grace period for testing.
+
 Every hook payload includes `session_id`, `cwd`, and a rollout transcript path.
 On `Stop`, the adapter derives completed turns, tool calls, subagent launches,
 input/output tokens, model, and current context usage from that local rollout.

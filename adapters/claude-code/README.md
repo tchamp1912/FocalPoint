@@ -85,6 +85,11 @@ LED. On `SessionEnd`, the adapter calls `focalpoint end-session "$session_id"`
 instead of `set-state idle`, so the slot frees immediately rather than
 waiting on the TTL.
 
+Permission notifications use a two-second cancelable grace period. If Claude
+auto-approves and proceeds to `PreToolUse`, `waiting` is never published;
+idle/input prompts remain immediate. `FOCALPOINT_APPROVAL_GRACE_SECS` can
+override the grace period for testing.
+
 If `session_id` can't be extracted for any reason, the adapter falls back to
 plain sessionless `set-state` calls — exactly the old behavior — so nothing
 breaks on older Claude Code versions or malformed hook payloads.

@@ -25,6 +25,8 @@ DAEMON_DIR="$SCRIPT_DIR/daemon"
 ADAPTERS_DIR="$SCRIPT_DIR/adapters"
 APP_DIR="$SCRIPT_DIR/app"
 PACKAGING_DIR="$SCRIPT_DIR/packaging"
+ORCHESTRATOR_DIR="$SCRIPT_DIR/orchestrator"
+ORCHESTRATOR_SKILL_SOURCE="$SCRIPT_DIR/skills/focalpoint-orchestrator"
 
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/focalpoint"
 ADAPTER_INSTALL_DIR="$CONFIG_DIR/adapters"
@@ -33,12 +35,19 @@ CLAUDE_SETTINGS="$CLAUDE_DIR/settings.json"
 CODEX_DIR="$HOME/.codex"
 CODEX_CONFIG="$CODEX_DIR/config.toml"
 CODEX_HOOKS="$CODEX_DIR/hooks.json"
+CODEX_SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/focalpoint-orchestrator"
+CLAUDE_SKILL_DIR="$CLAUDE_DIR/skills/focalpoint-orchestrator"
 CURSOR_DIR="$HOME/.cursor"
 CURSOR_HOOKS="$CURSOR_DIR/hooks.json"
 LOG_DIR="$HOME/Library/Logs/focalpoint"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 PLIST_LABEL="dev.focalpoint.daemon"
 PLIST_PATH="$LAUNCH_AGENTS_DIR/${PLIST_LABEL}.plist"
+LEGACY_ATTENTION_LABEL="dev.focalpoint.attention-watcher"
+LEGACY_ATTENTION_PLIST_PATH="$LAUNCH_AGENTS_DIR/${LEGACY_ATTENTION_LABEL}.plist"
+LEGACY_RANKER_LABEL="dev.focalpoint.attention-tier2"
+LEGACY_RANKER_PLIST_PATH="$LAUNCH_AGENTS_DIR/${LEGACY_RANKER_LABEL}.plist"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/focalpoint"
 HOOK_MARKER=".config/focalpoint/adapters/hooks.sh"
 # Distinct from HOOK_MARKER above: the "cursor-" prefix means neither marker
 # is a substring of the other's path, so the Claude and Cursor merge/removal
@@ -48,7 +57,6 @@ CODEX_HOOK_MARKER=".config/focalpoint/adapters/codex-hooks.sh"
 
 ASSUME_YES=0
 USE_MOCK=0
-
 for arg in "$@"; do
   case "$arg" in
     --yes|-y) ASSUME_YES=1 ;;
@@ -140,9 +148,13 @@ fi
 step "About to install FocalPoint"
 cat <<EOF
 This will, all idempotently:
-  - cargo build --release the focalpointd daemon + focalpoint CLI
-  - symlink both into /opt/homebrew/bin (or ~/.local/bin as a fallback)
+  - cargo build --release the daemon and native CLIs
+  - symlink focalpoint, focalpointd, and fpctl-agent into /opt/homebrew/bin
+    (or ~/.local/bin as a fallback)
   - install ~/.config/focalpoint/config.toml (only if one isn't already there)
+  - install the managed-session launcher and a default private tmux config
+    (the tmux config is only created if one isn't already there)
+  - install the FocalPoint orchestrator skill for Codex and Claude Code
   - refresh the Claude Code + Codex + Cursor adapter scripts under
     ~/.config/focalpoint/adapters/
   - merge FocalPoint's hooks into ~/.claude/settings.json and
@@ -168,13 +180,13 @@ fi
 step "Building the daemon (cargo build --release)"
 ( cd "$DAEMON_DIR" && cargo build --release --quiet )
 RELEASE_DIR="$DAEMON_DIR/target/release"
-ok "built $RELEASE_DIR/{focalpoint,focalpointd}"
+ok "built $RELEASE_DIR/{focalpoint,focalpointd,fpctl-agent}"
 
 # ---------------------------------------------------------------------------
-# 4. Symlink focalpoint + focalpointd
+# 4. Install the native FocalPoint binaries
 # ---------------------------------------------------------------------------
 
-step "Installing the focalpoint + focalpointd binaries"
+step "Installing native FocalPoint binaries"
 
 BIN_DIR="/opt/homebrew/bin"
 if [ ! -d "$BIN_DIR" ] || [ ! -w "$BIN_DIR" ]; then
@@ -187,10 +199,19 @@ if [ ! -d "$BIN_DIR" ] || [ ! -w "$BIN_DIR" ]; then
   esac
 fi
 
-for bin in focalpoint focalpointd; do
-  ln -sf "$RELEASE_DIR/$bin" "$BIN_DIR/$bin"
+for bin in focalpoint focalpointd fpctl-agent; do
+  # LaunchAgents on Apple Silicon can stall in dyld/Rosetta when their
+  # executable resolves through a symlink into a hidden worktree. Install an
+  # immutable local copy and atomically repoint the public name instead. The
+  # versioned temp path also avoids overwriting a currently mapped daemon.
+  installed="$BIN_DIR/.focalpoint-installed-$bin"
+  staged="$installed.tmp.$$"
+  cp -X "$RELEASE_DIR/$bin" "$staged"
+  chmod 755 "$staged"
+  mv -f "$staged" "$installed"
+  ln -sfn "$installed" "$BIN_DIR/$bin"
 done
-ok "linked $BIN_DIR/{focalpoint,focalpointd} -> $RELEASE_DIR/"
+ok "installed $BIN_DIR/{focalpoint,focalpointd,fpctl-agent}"
 
 FOCALPOINT_BIN="$BIN_DIR/focalpoint"
 FOCALPOINTD_BIN="$BIN_DIR/focalpointd"
@@ -210,6 +231,51 @@ else
   CONFIG_STATUS="installed from config.example.toml"
   ok "$CONFIG_DIR/config.toml $CONFIG_STATUS"
 fi
+
+# ---------------------------------------------------------------------------
+# 5b. Managed-session launcher
+# ---------------------------------------------------------------------------
+
+step "Managed-session launcher"
+
+MANAGED_RUNNER="$CONFIG_DIR/focalpoint-run.sh"
+cp "$ORCHESTRATOR_DIR/focalpoint-run.sh" "$MANAGED_RUNNER"
+chmod +x "$MANAGED_RUNNER"
+ok "refreshed $MANAGED_RUNNER"
+
+if [ -f "$CONFIG_DIR/tmux.conf" ]; then
+  TMUX_CONFIG_STATUS="already present — left untouched"
+  ok "$CONFIG_DIR/tmux.conf $TMUX_CONFIG_STATUS"
+else
+  cp "$ORCHESTRATOR_DIR/tmux.conf" "$CONFIG_DIR/tmux.conf"
+  TMUX_CONFIG_STATUS="installed default"
+  ok "$CONFIG_DIR/tmux.conf $TMUX_CONFIG_STATUS"
+fi
+
+if command -v tmux >/dev/null 2>&1; then
+  TMUX_STATUS="available"
+  ok "found tmux (managed sessions enabled)"
+else
+  TMUX_STATUS="not installed — launcher falls back to unmanaged sessions"
+  info "tmux is optional; install it with 'brew install tmux' to enable managed sessions"
+fi
+
+# ---------------------------------------------------------------------------
+# 5c. Agent-control skill
+# ---------------------------------------------------------------------------
+
+step "FocalPoint orchestrator skill"
+
+for skill_dest in "$CODEX_SKILL_DIR" "$CLAUDE_SKILL_DIR"; do
+  mkdir -p "$skill_dest"
+  # cp -R updates files but does not remove paths dropped from the source.
+  # Delete only known obsolete skill artifacts from earlier releases.
+  rm -f "$skill_dest/references/policy.md" \
+    "$skill_dest/scripts/focalpoint_control.py"
+  rmdir "$skill_dest/references" "$skill_dest/scripts" 2>/dev/null || true
+  cp -R "$ORCHESTRATOR_SKILL_SOURCE/." "$skill_dest/"
+  ok "refreshed $skill_dest"
+done
 
 # ---------------------------------------------------------------------------
 # 6. Adapter scripts (always refreshed — these are ours, not user config)
@@ -385,6 +451,9 @@ if [ -f "$APP_DIR/build.sh" ]; then
     APPS_DIR="/Applications"
     [ -w "$APPS_DIR" ] || APPS_DIR="$HOME/Applications"
     mkdir -p "$APPS_DIR"
+    # `open` will otherwise keep the already-running process from the old
+    # bundle alive, even after replacing the files on disk.
+    pkill -x FocalPoint >/dev/null 2>&1 || true
     rm -rf "$APPS_DIR/FocalPoint.app"
     cp -R "$APP_DIR/FocalPoint.app" "$APPS_DIR/FocalPoint.app"
     APP_STATUS="built + installed to $APPS_DIR/FocalPoint.app"
@@ -439,10 +508,11 @@ echo ""
 launchctl print "gui/$UID/$PLIST_LABEL" 2>/dev/null | head -n 10 || true
 
 printf '\nwaiting for the daemon to answer'
-PING_OK=0
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  if PING_OUT="$("$FOCALPOINT_BIN" ping 2>&1)"; then
-    PING_OK=1
+DAEMON_OK=0
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 \
+         21 22 23 24 25 26 27 28 29 30; do
+  if DAEMON_OUT="$("$FOCALPOINT_BIN" get-state 2>&1)"; then
+    DAEMON_OK=1
     break
   fi
   printf '.'
@@ -450,12 +520,48 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
 done
 echo ""
 
-if [ "$PING_OK" -eq 1 ]; then
-  ok "focalpoint ping: $PING_OUT"
+if [ "$DAEMON_OK" -eq 1 ]; then
+  ok "focalpoint daemon: $DAEMON_OUT"
 else
-  fail "focalpoint ping did not succeed after 10s (last: ${PING_OUT:-no output})"
+  fail "focalpoint daemon did not answer after 30s (last: ${DAEMON_OUT:-no output})"
   fail "check $LOG_DIR/focalpointd.err.log"
 fi
+
+# ---------------------------------------------------------------------------
+# 11b. Remove obsolete attention services from older installations
+# ---------------------------------------------------------------------------
+
+step "Removing obsolete attention services"
+
+for legacy_label in "$LEGACY_ATTENTION_LABEL" "$LEGACY_RANKER_LABEL"; do
+  if launchctl print "gui/$UID/$legacy_label" >/dev/null 2>&1; then
+    launchctl bootout "gui/$UID/$legacy_label" >/dev/null 2>&1 || true
+    ok "stopped + unloaded $legacy_label"
+  fi
+done
+
+rm -f "$LEGACY_ATTENTION_PLIST_PATH" "$LEGACY_RANKER_PLIST_PATH" \
+  "$CONFIG_DIR/attention-watcher.disabled" \
+  "$CONFIG_DIR/attention-watcher.py" "$CONFIG_DIR/attention-tier2.py" \
+  "$CONFIG_DIR/policy.schema.json" \
+  "$STATE_DIR/attention-policy.json" \
+  "$STATE_DIR/attention-policy.json.inputs.sha256" \
+  "$STATE_DIR/attention-policy.json.inputs.fingerprint" \
+  "$STATE_DIR/attention-policy.inputs.sha256" \
+  "$STATE_DIR/attention-policy.inputs.fingerprint"
+
+for legacy_dir in /opt/homebrew/bin "$HOME/.local/bin"; do
+  [ -d "$legacy_dir" ] || continue
+  for legacy_bin in focalpoint-attention focalpoint-tier2; do
+    legacy_path="$legacy_dir/$legacy_bin"
+    installed_path="$legacy_dir/.focalpoint-installed-$legacy_bin"
+    if [ -e "$legacy_path" ] || [ -L "$legacy_path" ] || [ -f "$installed_path" ]; then
+      rm -f "$legacy_path" "$installed_path"
+      ok "removed obsolete $legacy_path"
+    fi
+  done
+done
+ok "obsolete watcher/ranker files are absent"
 
 # ---------------------------------------------------------------------------
 # 12. Summary
@@ -463,8 +569,11 @@ fi
 
 step "Summary"
 cat <<EOF
-  daemon binaries    $BIN_DIR/{focalpoint,focalpointd}
+  native binaries    $BIN_DIR/{focalpoint,focalpointd,fpctl-agent}
   config.toml        $CONFIG_STATUS
+  managed launcher   $MANAGED_RUNNER
+  tmux config        $TMUX_CONFIG_STATUS
+  tmux dependency    $TMUX_STATUS
   adapter scripts    refreshed in $ADAPTER_INSTALL_DIR
   Claude Code hooks  $HOOKS_STATUS
   Cursor hooks       $CURSOR_STATUS
@@ -472,11 +581,14 @@ cat <<EOF
   backlight helper   $BACKLIGHT_STATUS
   menu bar app       $APP_STATUS
   launchd agent      $PLIST_LABEL @ $PLIST_PATH$( [ "$USE_MOCK" -eq 1 ] && echo " (mock device)" )
-  focalpoint ping       $( [ "$PING_OK" -eq 1 ] && echo "OK — $PING_OUT" || echo "FAILED — see $LOG_DIR/focalpointd.err.log" )
+  agent skill        $CODEX_SKILL_DIR + $CLAUDE_SKILL_DIR
+  daemon socket       $( [ "$DAEMON_OK" -eq 1 ] && echo "OK — $DAEMON_OUT" || echo "FAILED — see $LOG_DIR/focalpointd.err.log" )
 EOF
 
 echo ""
 echo "Next steps:"
+echo "  - Use 'fpctl-agent prioritize SESSION_ID ...' to set the daemon's attention order."
+echo "  - Optionally run '$MANAGED_RUNNER claude' (or codex) for precise managed-session focus."
 echo "  - Restart any running Claude Code sessions so they pick up the new hooks."
 echo "  - Cursor reloads hooks.json on save; restart Cursor if the Hooks tab doesn't list them."
 echo "  - Restart Codex, then review and trust the FocalPoint lifecycle hooks with /hooks."
@@ -484,6 +596,6 @@ echo "  - Run 'focalpoint watch' to see live events, or 'focalpoint ping' any ti
 echo "  - Re-run ./install.sh any time — it's safe, everything above is idempotent."
 echo ""
 
-if [ "$PING_OK" -ne 1 ]; then
+if [ "$DAEMON_OK" -ne 1 ]; then
   exit 1
 fi

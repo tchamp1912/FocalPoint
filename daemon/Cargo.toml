@@ -7,8 +7,7 @@ description = "Host daemon and CLI for the FocalPoint agent macropad (open clone
 repository = "https://github.com/focalpoint/focalpoint"
 readme = "README.md"
 
-# Two binaries plus a shared library. `focalpointd` is the daemon; `focalpoint` is the
-# thin CLI client (and can run the daemon via `focalpoint daemon`).
+# Native daemon, user CLI, guarded agent controller, and shared library.
 [lib]
 name = "focalpoint"
 path = "src/lib.rs"
@@ -20,6 +19,10 @@ path = "src/bin/focalpointd.rs"
 [[bin]]
 name = "focalpoint"
 path = "src/bin/focalpoint.rs"
+
+[[bin]]
+name = "fpctl-agent"
+path = "src/bin/fpctl-agent.rs"
 
 [dependencies]
 hidapi = "2"

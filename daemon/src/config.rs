@@ -59,6 +59,20 @@ pub struct SessionConfig {
     pub tombstone_ttl_minutes: Option<u64>,
 }
 
+/// `[channel]` delivery controls. Channel storage itself is always available;
+/// this only controls the optional managed tmux wake tier.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ChannelConfig {
+    /// Default-on for managed sessions. A disabled wake never affects pull
+    /// delivery or human-visible channel notifications.
+    #[serde(default)]
+    pub wake_managed: Option<bool>,
+}
+
+impl ChannelConfig {
+    pub fn wake_managed(&self) -> bool { self.wake_managed.unwrap_or(true) }
+}
+
 impl SessionConfig {
     /// Effective TTL: `None` means "never expire".
     pub fn ttl(&self) -> Option<std::time::Duration> {
@@ -100,6 +114,8 @@ pub struct Config {
     pub dial: DialConfig,
     #[serde(default)]
     pub session: SessionConfig,
+    #[serde(default)]
+    pub channel: ChannelConfig,
     /// Keyed by state name (`idle`..`error`). Overrides the default style.
     #[serde(default)]
     pub styles: HashMap<String, StyleConfig>,
@@ -162,7 +178,9 @@ impl Config {
                 );
                 continue;
             };
-            let period = sc.period_ms.unwrap_or_else(|| default_style(state).period_ms);
+            let period = sc
+                .period_ms
+                .unwrap_or_else(|| default_style(state).period_ms);
             table.set(state, Style::new(sc.rgb, pattern, period));
         }
         table
@@ -182,7 +200,8 @@ impl Config {
             std::fs::create_dir_all(parent)
                 .map_err(|e| format!("failed to create {}: {e}", parent.display()))?;
         }
-        std::fs::write(path, updated).map_err(|e| format!("failed to write {}: {e}", path.display()))
+        std::fs::write(path, updated)
+            .map_err(|e| format!("failed to write {}: {e}", path.display()))
     }
 }
 
@@ -300,7 +319,10 @@ ttl_minutes = 30
                 run: "focus.sh".into()
             })
         );
-        assert_eq!(cfg.session.ttl(), Some(std::time::Duration::from_secs(30 * 60)));
+        assert_eq!(
+            cfg.session.ttl(),
+            Some(std::time::Duration::from_secs(30 * 60))
+        );
     }
 
     #[test]
@@ -418,18 +440,23 @@ cw = "echo up"
 
     #[test]
     fn edit_style_toml_creates_from_empty() {
-        let updated =
-            edit_style_toml("", State::Error, Style::new([242, 64, 64], Pattern::Blink, 250))
-                .expect("edit");
+        let updated = edit_style_toml(
+            "",
+            State::Error,
+            Style::new([242, 64, 64], Pattern::Blink, 250),
+        )
+        .expect("edit");
         assert!(updated.contains("[styles.error]"));
         assert!(Config::from_toml(&updated).is_ok());
     }
 
     #[test]
     fn explicit_none_action_parses() {
-        let cfg = Config::from_toml(r#"[actions]
+        let cfg = Config::from_toml(
+            r#"[actions]
 accept = { type = "none" }
-"#)
+"#,
+        )
         .expect("parse");
         assert_eq!(cfg.action_for("accept"), Action::None);
     }

@@ -44,8 +44,14 @@ const COMPACT_GRACE: Duration = Duration::from_secs(300);
 /// same transcript), so its adapter-side full-transcript recompute is
 /// already correctly cumulative with no daemon involvement — see
 /// SESSION-IDENTITY-PERSISTENCE-PLAN.md Part 2.
-const CUMULATIVE_META_KEYS: &[&str] =
-    &["turns", "tool_calls", "subagents", "tokens_in", "tokens_out", "cost_usd"];
+const CUMULATIVE_META_KEYS: &[&str] = &[
+    "turns",
+    "tool_calls",
+    "subagents",
+    "tokens_in",
+    "tokens_out",
+    "cost_usd",
+];
 
 /// Add `incoming` to the carried-forward base for `key` in `meta`
 /// (`_carry_<key>`, 0 if absent — the common, never-compacted case).
@@ -176,7 +182,10 @@ impl Session {
     /// a session whose agent crashed but whose terminal is still open, which
     /// the tty sweep alone can't see.
     pub fn pid(&self) -> Option<i32> {
-        self.meta.get("pid").and_then(|v| v.as_i64()).map(|n| n as i32)
+        self.meta
+            .get("pid")
+            .and_then(|v| v.as_i64())
+            .map(|n| n as i32)
     }
 }
 
@@ -213,6 +222,14 @@ pub enum Effect {
     /// always a `session-rekeyed` event, emitted before the `SessionUpsert`
     /// that carries the continuation's actual state.
     SessionRekeyed { old_id: String, new_id: String },
+    ManagedRelaunchCompleted {
+        old_id: String,
+        new_id: String,
+        launch_id: String,
+    },
+    /// The daemon-owned attention order changed. This is independent of
+    /// numbered-key slots: subscribers use it to highlight the next session.
+    AttentionOrderChanged { sessions: Vec<String> },
     /// The aggregate state changed. `SET_STATE` + a `state` event.
     AggregateChanged { state: State },
 }
@@ -238,6 +255,13 @@ struct Tombstone {
 /// `None` (never expire) via `with_tombstone_ttl` — see `config.rs`.
 const DEFAULT_TOMBSTONE_TTL: Duration = Duration::from_secs(30 * 60);
 
+#[derive(Debug, Clone)]
+struct ManagedRelaunch {
+    launch_id: String,
+    original_state: State,
+    original_last_update: Instant,
+}
+
 pub struct Registry {
     sessions: HashMap<String, Session>,
     tombstones: HashMap<String, Tombstone>,
@@ -248,6 +272,13 @@ pub struct Registry {
     ttl: Option<Duration>,
     /// How long a tombstone stays recoverable; `None` = never expire.
     tombstone_ttl: Option<Duration>,
+    managed_relaunches: HashMap<String, ManagedRelaunch>,
+    relaunch_guards: HashMap<String, String>,
+    /// Explicit complete live-session order set by the orchestrator. `None`
+    /// means use the deterministic state/slot/id fallback.
+    attention_order: Option<Vec<String>>,
+    /// Last eligible session selected by next/previous attention cycling.
+    attention_cursor: Option<String>,
 }
 
 impl Registry {
@@ -259,7 +290,310 @@ impl Registry {
             last_aggregate: State::Idle,
             ttl,
             tombstone_ttl: Some(DEFAULT_TOMBSTONE_TTL),
+            managed_relaunches: HashMap::new(),
+            relaunch_guards: HashMap::new(),
+            attention_order: None,
+            attention_cursor: None,
         }
+    }
+
+    fn fallback_attention_order(&self) -> Vec<String> {
+        let mut sessions: Vec<&Session> = self.sessions.values().collect();
+        sessions.sort_by_key(|session| {
+            let state_rank = match session.state {
+                State::Error => 0,
+                State::Waiting => 1,
+                _ => 2,
+            };
+            (
+                state_rank,
+                session.slot.is_none(),
+                session.slot.unwrap_or(0),
+                session.id.clone(),
+            )
+        });
+        sessions
+            .into_iter()
+            .map(|session| session.id.clone())
+            .collect()
+    }
+
+    /// Complete current live-session order. An explicit orchestrator order is
+    /// followed first; sessions registered afterward are appended in the
+    /// deterministic fallback order until the orchestrator replaces it.
+    pub fn attention_order(&self) -> Vec<String> {
+        let fallback = self.fallback_attention_order();
+        let Some(explicit) = &self.attention_order else {
+            return fallback;
+        };
+        let mut order: Vec<String> = explicit
+            .iter()
+            .filter(|id| self.sessions.contains_key(id.as_str()))
+            .cloned()
+            .collect();
+        for id in fallback {
+            if !order.contains(&id) {
+                order.push(id);
+            }
+        }
+        order
+    }
+
+    /// Replace the complete order. The input must contain every live session
+    /// exactly once, so a stale orchestrator cannot silently hide work.
+    pub fn set_attention_order(&mut self, order: Vec<String>) -> Result<Vec<Effect>, String> {
+        let live: std::collections::HashSet<&str> =
+            self.sessions.keys().map(String::as_str).collect();
+        let supplied: std::collections::HashSet<&str> = order.iter().map(String::as_str).collect();
+        if supplied.len() != order.len() {
+            return Err("attention order contains duplicate session ids".into());
+        }
+        if supplied != live {
+            let mut missing: Vec<&str> = live.difference(&supplied).copied().collect();
+            let mut unknown: Vec<&str> = supplied.difference(&live).copied().collect();
+            missing.sort_unstable();
+            unknown.sort_unstable();
+            return Err(format!(
+                "attention order must contain every live session exactly once (missing: [{}]; unknown: [{}])",
+                missing.join(", "),
+                unknown.join(", ")
+            ));
+        }
+        if self.attention_order.as_ref() == Some(&order) {
+            return Ok(Vec::new());
+        }
+        self.attention_order = Some(order.clone());
+        if self
+            .attention_cursor
+            .as_ref()
+            .is_some_and(|id| !self.sessions.contains_key(id))
+        {
+            self.attention_cursor = None;
+        }
+        Ok(vec![Effect::AttentionOrderChanged { sessions: order }])
+    }
+
+    fn maintain_attention_order(&mut self, effects: &mut Vec<Effect>) {
+        let Some(mut order) = self.attention_order.take() else {
+            if self
+                .attention_cursor
+                .as_ref()
+                .is_some_and(|id| !self.sessions.contains_key(id))
+            {
+                self.attention_cursor = None;
+            }
+            return;
+        };
+        let old = order.clone();
+        for effect in effects.iter() {
+            if let Effect::SessionRekeyed { old_id, new_id } = effect {
+                if let Some(entry) = order.iter_mut().find(|id| *id == old_id) {
+                    *entry = new_id.clone();
+                }
+                if self.attention_cursor.as_deref() == Some(old_id) {
+                    self.attention_cursor = Some(new_id.clone());
+                }
+            }
+        }
+        let mut seen = std::collections::HashSet::new();
+        order.retain(|id| self.sessions.contains_key(id) && seen.insert(id.clone()));
+        for id in self.fallback_attention_order() {
+            if !order.contains(&id) {
+                order.push(id);
+            }
+        }
+        if self
+            .attention_cursor
+            .as_ref()
+            .is_some_and(|id| !self.sessions.contains_key(id))
+        {
+            self.attention_cursor = None;
+        }
+        self.attention_order = Some(order.clone());
+        if order != old {
+            effects.push(Effect::AttentionOrderChanged { sessions: order });
+        }
+    }
+
+    fn cycle_attention(&mut self, forward: bool) -> Option<Session> {
+        let eligible: Vec<String> = self
+            .attention_order()
+            .into_iter()
+            .filter(|id| {
+                self.sessions
+                    .get(id)
+                    .is_some_and(|session| matches!(session.state, State::Waiting | State::Error))
+            })
+            .collect();
+        if eligible.is_empty() {
+            self.attention_cursor = None;
+            return None;
+        }
+        let index = self
+            .attention_cursor
+            .as_ref()
+            .and_then(|cursor| eligible.iter().position(|id| id == cursor))
+            .map(|index| {
+                if forward {
+                    (index + 1) % eligible.len()
+                } else if index == 0 {
+                    eligible.len() - 1
+                } else {
+                    index - 1
+                }
+            })
+            .unwrap_or(if forward { 0 } else { eligible.len() - 1 });
+        let id = eligible[index].clone();
+        self.attention_cursor = Some(id.clone());
+        self.sessions.get(&id).cloned()
+    }
+
+    pub fn next_attention(&mut self) -> Option<Session> {
+        self.cycle_attention(true)
+    }
+
+    pub fn previous_attention(&mut self) -> Option<Session> {
+        self.cycle_attention(false)
+    }
+
+    pub fn is_managed_relaunch_pending(&self, id: &str, launch_id: &str) -> bool {
+        self.managed_relaunches
+            .get(id)
+            .map(|pending| pending.launch_id == launch_id)
+            .unwrap_or(false)
+    }
+
+    /// Atomically validate and reserve an unmanaged Claude/Codex session for
+    /// relaunch. The returned session is the original validated snapshot;
+    /// the registry copy has already transitioned to `Compacting`.
+    pub fn begin_managed_relaunch(
+        &mut self,
+        id: &str,
+        launch_id: &str,
+        now: Instant,
+    ) -> Result<(Session, Vec<Effect>), String> {
+        if launch_id.is_empty()
+            || launch_id.len() > 128
+            || !launch_id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+        {
+            return Err("invalid managed relaunch id".into());
+        }
+        if self.managed_relaunches.contains_key(id) {
+            return Err(format!("managed relaunch already pending: {id}"));
+        }
+        if self
+            .managed_relaunches
+            .values()
+            .any(|pending| pending.launch_id == launch_id)
+            || self
+                .relaunch_guards
+                .iter()
+                .any(|(guarded_id, guarded_launch)| guarded_id != id && guarded_launch == launch_id)
+        {
+            return Err(format!("managed relaunch id already in use: {launch_id}"));
+        }
+
+        let source = self
+            .sessions
+            .get(id)
+            .cloned()
+            .ok_or_else(|| format!("unknown live session: {id}"))?;
+        if !matches!(source.kind.as_deref(), Some("claude" | "codex")) {
+            return Err("managed relaunch requires a claude or codex session".into());
+        }
+        let already_managed = source
+            .meta
+            .get("managed")
+            .map(|v| {
+                v == &Value::Bool(true)
+                    || matches!(v.as_str(), Some("true" | "1"))
+                    || v.as_i64().map(|n| n != 0).unwrap_or(false)
+            })
+            .unwrap_or(false);
+        if already_managed {
+            return Err("session is already managed".into());
+        }
+        let valid_pid = source
+            .meta
+            .get("pid")
+            .and_then(Value::as_i64)
+            .map(|pid| pid > 0 && pid <= i32::MAX as i64)
+            .unwrap_or(false);
+        if !valid_pid {
+            return Err("managed relaunch requires a positive pid".into());
+        }
+        if !matches!(source.state, State::Idle | State::Waiting | State::Done) {
+            return Err("session is not in a safe relaunch state".into());
+        }
+
+        self.managed_relaunches.insert(
+            id.to_string(),
+            ManagedRelaunch {
+                launch_id: launch_id.to_string(),
+                original_state: source.state,
+                original_last_update: source.last_update,
+            },
+        );
+        self.relaunch_guards
+            .insert(id.to_string(), launch_id.to_string());
+        let sess = self.sessions.get_mut(id).expect("validated live session");
+        sess.state = State::Compacting;
+        sess.last_update = now;
+        let mut effects = vec![Effect::SessionUpsert {
+            id: sess.id.clone(),
+            kind: sess.kind.clone(),
+            label: sess.label.clone(),
+            name: sess.name.clone(),
+            meta: sess.meta.clone(),
+            slot: sess.slot,
+            state: State::Compacting,
+        }];
+        self.note_aggregate(&mut effects);
+        Ok((source, effects))
+    }
+
+    /// Restore a preflight-failed reservation without changing its apparent
+    /// age or any identity/display data.
+    pub fn cancel_managed_relaunch(&mut self, id: &str, launch_id: &str) -> Vec<Effect> {
+        if !self.is_managed_relaunch_pending(id, launch_id) {
+            return Vec::new();
+        }
+        let pending = self.managed_relaunches.remove(id).expect("checked above");
+        self.relaunch_guards.remove(id);
+        let Some(sess) = self.sessions.get_mut(id) else {
+            return Vec::new();
+        };
+        sess.state = pending.original_state;
+        sess.last_update = pending.original_last_update;
+        let mut effects = vec![Effect::SessionUpsert {
+            id: sess.id.clone(),
+            kind: sess.kind.clone(),
+            label: sess.label.clone(),
+            name: sess.name.clone(),
+            meta: sess.meta.clone(),
+            slot: sess.slot,
+            state: sess.state,
+        }];
+        self.note_aggregate(&mut effects);
+        effects
+    }
+
+    /// Convert a post-quit launch failure into a recoverable disconnected
+    /// tombstone, freeing the reserved slot.
+    pub fn fail_managed_relaunch(
+        &mut self,
+        id: &str,
+        launch_id: &str,
+        now: Instant,
+    ) -> Vec<Effect> {
+        if !self.is_managed_relaunch_pending(id, launch_id) {
+            return Vec::new();
+        }
+        self.managed_relaunches.remove(id);
+        self.relaunch_guards.remove(id);
+        self.reap_session(id, now)
     }
 
     /// Override the default tombstone lifetime (`daemon.rs` applies the
@@ -330,13 +664,21 @@ impl Registry {
     ) -> Option<String> {
         let mut best: Option<(String, u32, Instant)> = None;
         let mut consider = |id: &str, candidate: &Session, ts: Instant| {
-            let score = count_identity_matches(candidate, incoming_label, incoming_cwd, incoming_tty, incoming_pid);
+            let score = count_identity_matches(
+                candidate,
+                incoming_label,
+                incoming_cwd,
+                incoming_tty,
+                incoming_pid,
+            );
             if score < 2 {
                 return;
             }
             let better = match &best {
                 None => true,
-                Some((_, best_score, best_ts)) => score > *best_score || (score == *best_score && ts > *best_ts),
+                Some((_, best_score, best_ts)) => {
+                    score > *best_score || (score == *best_score && ts > *best_ts)
+                }
             };
             if better {
                 best = Some((id.to_string(), score, ts));
@@ -344,7 +686,10 @@ impl Registry {
         };
 
         for s in self.sessions.values() {
-            if s.state == State::Compacting && now.saturating_duration_since(s.last_update) <= COMPACT_GRACE {
+            if s.state == State::Compacting
+                && !self.managed_relaunches.contains_key(&s.id)
+                && now.saturating_duration_since(s.last_update) <= COMPACT_GRACE
+            {
                 consider(&s.id, s, s.last_update);
             }
         }
@@ -377,6 +722,68 @@ impl Registry {
                 self.default_state = Some(state);
             }
             Some(id) => {
+                let relaunch_token = meta
+                    .as_ref()
+                    .and_then(|m| m.get("relaunch_id"))
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string);
+                let source_id = relaunch_token.as_ref().and_then(|token| {
+                    self.managed_relaunches
+                        .iter()
+                        .find(|(_, pending)| pending.launch_id == *token)
+                        .map(|(source_id, _)| source_id.clone())
+                });
+                if let Some(source_id) = source_id {
+                    if source_id != id && self.sessions.contains_key(id) {
+                        return Vec::new();
+                    }
+                    let pending = self
+                        .managed_relaunches
+                        .remove(&source_id)
+                        .expect("matched relaunch exists");
+                    self.relaunch_guards.remove(&source_id);
+                    if let Some(mut sess) = self.sessions.remove(&source_id) {
+                        let incoming_meta = meta.unwrap_or_default();
+                        sess.id = id.to_string();
+                        sess.state = state;
+                        if kind.is_some() {
+                            sess.kind = kind;
+                        }
+                        if label.is_some() {
+                            sess.label = label;
+                        }
+                        apply_meta_update(&mut sess.meta, incoming_meta);
+                        sess.last_update = now;
+                        if source_id != id {
+                            effects.push(Effect::SessionRekeyed {
+                                old_id: source_id.clone(),
+                                new_id: id.to_string(),
+                            });
+                        }
+                        effects.push(Effect::SessionUpsert {
+                            id: id.to_string(),
+                            kind: sess.kind.clone(),
+                            label: sess.label.clone(),
+                            name: sess.name.clone(),
+                            meta: sess.meta.clone(),
+                            slot: sess.slot,
+                            state,
+                        });
+                        self.sessions.insert(id.to_string(), sess);
+                        effects.push(Effect::ManagedRelaunchCompleted {
+                            old_id: source_id,
+                            new_id: id.to_string(),
+                            launch_id: pending.launch_id,
+                        });
+                        self.maintain_attention_order(&mut effects);
+                        self.note_aggregate(&mut effects);
+                        return effects;
+                    }
+                }
+                if self.managed_relaunches.contains_key(id) {
+                    return Vec::new();
+                }
                 if let Some(sess) = self.sessions.get_mut(id) {
                     // Update + merge.
                     sess.state = state;
@@ -414,21 +821,66 @@ impl Registry {
                     // own doc comment for why pid/tty/cwd/label are each in
                     // the pool and why ≥2 must agree.
                     let incoming_meta = meta.unwrap_or_default();
-                    let incoming_cwd = incoming_meta.get("cwd").and_then(|v| v.as_str()).unwrap_or("");
-                    let incoming_tty = incoming_meta.get("tty").and_then(|v| v.as_str()).unwrap_or("");
-                    let incoming_pid = incoming_meta.get("pid").and_then(|v| v.as_i64()).map(|n| n as i32);
+                    let incoming_cwd = incoming_meta
+                        .get("cwd")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let incoming_tty = incoming_meta
+                        .get("tty")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let incoming_pid = incoming_meta
+                        .get("pid")
+                        .and_then(|v| v.as_i64())
+                        .map(|n| n as i32);
                     let incoming_label = label.as_deref().unwrap_or("");
+                    // History recovery has stronger identity than the pooled
+                    // matcher: focalpoint-run stamps the literal provider
+                    // resume id into every hook. If present, select only that
+                    // exact tombstone (or none). In particular, never let an
+                    // unrelated same-label/same-cwd session stand in for it.
+                    let explicit_resume_id = incoming_meta
+                        .get("resume_session_id")
+                        .and_then(Value::as_str)
+                        .filter(|resume_id| !resume_id.is_empty());
 
-                    let recovered = self
-                        .find_recovery_candidate(incoming_label, incoming_cwd, incoming_tty, incoming_pid, now)
-                        .and_then(|old_id| {
-                            self.sessions
+                    let recovery_id = match explicit_resume_id {
+                        Some(resume_id) if self.tombstones.contains_key(resume_id) => {
+                            Some(resume_id.to_string())
+                        }
+                        Some(_) => None,
+                        None => self.find_recovery_candidate(
+                            incoming_label,
+                            incoming_cwd,
+                            incoming_tty,
+                            incoming_pid,
+                            now,
+                        ),
+                    };
+                    let recovered = recovery_id.and_then(|old_id| {
+                        if let Some(sess) = self.sessions.remove(&old_id) {
+                            Some((old_id, sess, false))
+                        } else {
+                            self.tombstones
                                 .remove(&old_id)
-                                .or_else(|| self.tombstones.remove(&old_id).map(|t| t.session))
-                                .map(|sess| (old_id, sess))
-                        });
+                                .map(|t| (old_id, t.session, true))
+                        }
+                    });
 
-                    if let Some((old_id, mut sess)) = recovered {
+                    if let Some((old_id, mut sess, was_tombstoned)) = recovered {
+                        if was_tombstoned {
+                            // A sweep explicitly freed this slot for reuse.
+                            // Prefer the old slot only while it is still free;
+                            // otherwise allocate the next free key. Reusing a
+                            // tombstone's stale slot blindly creates two live
+                            // sessions on one physical key.
+                            let preferred_is_free = sess.slot.map_or(false, |slot| {
+                                !self.sessions.values().any(|live| live.slot == Some(slot))
+                            });
+                            if !preferred_is_free {
+                                sess.slot = self.lowest_free_slot();
+                            }
+                        }
                         // Snapshot the outgoing segment's cumulative totals
                         // as the new segment's carried-forward base, and
                         // bump the compaction counter — reading it off the
@@ -500,6 +952,7 @@ impl Registry {
                 }
             }
         }
+        self.maintain_attention_order(&mut effects);
         self.note_aggregate(&mut effects);
         effects
     }
@@ -521,6 +974,9 @@ impl Registry {
         meta: Map<String, Value>,
         now: Instant,
     ) -> Vec<Effect> {
+        if self.managed_relaunches.contains_key(id) {
+            return Vec::new();
+        }
         let Some(sess) = self.sessions.get_mut(id) else {
             return Vec::new();
         };
@@ -578,6 +1034,9 @@ impl Registry {
     /// until a future registration accidentally resurrects it. Contrast
     /// with `reap_session`, used by every sweep instead.
     pub fn end_session(&mut self, id: &str) -> Vec<Effect> {
+        if self.managed_relaunches.contains_key(id) {
+            return Vec::new();
+        }
         let mut effects = Vec::new();
         let tomb = self.tombstones.remove(id);
         if let Some(sess) = self.sessions.remove(id) {
@@ -598,6 +1057,7 @@ impl Registry {
                 slot: None,
             });
         }
+        self.maintain_attention_order(&mut effects);
         effects
     }
 
@@ -629,6 +1089,7 @@ impl Registry {
             );
             self.note_aggregate(&mut effects);
         }
+        self.maintain_attention_order(&mut effects);
         effects
     }
 
@@ -799,6 +1260,19 @@ impl Registry {
             .collect()
     }
 
+    /// Explicit order for persistence. `None` preserves fallback semantics.
+    pub fn attention_order_override(&self) -> Option<Vec<String>> {
+        self.attention_order.clone()
+    }
+
+    /// Restore a persisted order leniently: corrupt/stale ids are dropped and
+    /// current live ids missing from an older snapshot are appended.
+    pub fn restore_attention_order(&mut self, order: Option<Vec<String>>) {
+        self.attention_order = order;
+        let mut ignored = Vec::new();
+        self.maintain_attention_order(&mut ignored);
+    }
+
     /// Rebuild a registry from a previously-persisted snapshot (`daemon.rs`
     /// startup, `paths::daemon_state_path`). Slots are preserved as saved; a
     /// collision (shouldn't happen from a snapshot the daemon itself wrote)
@@ -822,7 +1296,8 @@ impl Registry {
             r.sessions.insert(s.id.clone(), s);
         }
         for (old_id, session, reaped_at) in tombstones {
-            r.tombstones.insert(old_id, Tombstone { session, reaped_at });
+            r.tombstones
+                .insert(old_id, Tombstone { session, reaped_at });
         }
         r.last_aggregate = r.aggregate();
         r
@@ -841,7 +1316,14 @@ mod tests {
     fn registers_and_assigns_lowest_free_slot() {
         let mut r = Registry::new(Some(Duration::from_secs(3600)));
         let now = t0();
-        let e = r.set_state(Some("a"), State::Thinking, Some("claude".into()), None, None, now);
+        let e = r.set_state(
+            Some("a"),
+            State::Thinking,
+            Some("claude".into()),
+            None,
+            None,
+            now,
+        );
         assert!(e.contains(&Effect::SessionUpsert {
             id: "a".into(),
             kind: Some("claude".into()),
@@ -851,7 +1333,14 @@ mod tests {
             slot: Some(1),
             state: State::Thinking,
         }));
-        r.set_state(Some("b"), State::Running, Some("codex".into()), None, None, now);
+        r.set_state(
+            Some("b"),
+            State::Running,
+            Some("codex".into()),
+            None,
+            None,
+            now,
+        );
         r.set_state(Some("c"), State::Idle, None, None, None, now);
         let slots: Vec<_> = r.list().iter().map(|s| (s.id.clone(), s.slot)).collect();
         assert_eq!(
@@ -862,6 +1351,79 @@ mod tests {
                 ("c".into(), Some(3))
             ]
         );
+    }
+
+    #[test]
+    fn attention_order_requires_the_complete_live_set() {
+        let mut r = Registry::new(None);
+        let now = t0();
+        r.set_state(Some("a"), State::Waiting, None, None, None, now);
+        r.set_state(Some("b"), State::Error, None, None, None, now);
+
+        assert!(r
+            .set_attention_order(vec!["a".into(), "a".into()])
+            .unwrap_err()
+            .contains("duplicate"));
+        assert!(r
+            .set_attention_order(vec!["a".into()])
+            .unwrap_err()
+            .contains("missing: [b]"));
+        assert!(r
+            .set_attention_order(vec!["a".into(), "ghost".into()])
+            .unwrap_err()
+            .contains("unknown: [ghost]"));
+
+        let effects = r.set_attention_order(vec!["a".into(), "b".into()]).unwrap();
+        assert_eq!(r.attention_order(), vec!["a", "b"]);
+        assert_eq!(
+            effects,
+            vec![Effect::AttentionOrderChanged {
+                sessions: vec!["a".into(), "b".into()]
+            }]
+        );
+    }
+
+    #[test]
+    fn attention_fallback_is_error_waiting_then_slot_and_cycles_eligible_only() {
+        let mut r = Registry::new(None);
+        let now = t0();
+        r.set_state(Some("idle"), State::Idle, None, None, None, now);
+        r.set_state(Some("wait"), State::Waiting, None, None, None, now);
+        r.set_state(Some("err"), State::Error, None, None, None, now);
+        r.set_state(Some("running"), State::Running, None, None, None, now);
+
+        assert_eq!(r.attention_order(), vec!["err", "wait", "idle", "running"]);
+        assert_eq!(r.next_attention().unwrap().id, "err");
+        assert_eq!(r.next_attention().unwrap().id, "wait");
+        assert_eq!(r.next_attention().unwrap().id, "err");
+        assert_eq!(r.previous_attention().unwrap().id, "wait");
+    }
+
+    #[test]
+    fn explicit_attention_order_survives_lifecycle_changes() {
+        let mut r = Registry::new(None);
+        let now = t0();
+        r.set_state(Some("a"), State::Waiting, None, None, None, now);
+        r.set_state(Some("b"), State::Error, None, None, None, now);
+        r.set_attention_order(vec!["a".into(), "b".into()]).unwrap();
+
+        let ended = r.end_session("a");
+        assert_eq!(r.attention_order(), vec!["b"]);
+        assert!(ended.contains(&Effect::AttentionOrderChanged {
+            sessions: vec!["b".into()]
+        }));
+
+        let registered = r.set_state(Some("c"), State::Waiting, None, None, None, now);
+        assert_eq!(r.attention_order(), vec!["b", "c"]);
+        assert!(registered.contains(&Effect::AttentionOrderChanged {
+            sessions: vec!["b".into(), "c".into()]
+        }));
+
+        let persisted = r.attention_order_override();
+        let sessions = r.list();
+        let mut restored = Registry::restore(None, None, sessions, Vec::new());
+        restored.restore_attention_order(persisted);
+        assert_eq!(restored.attention_order(), vec!["b", "c"]);
     }
 
     #[test]
@@ -959,12 +1521,17 @@ mod tests {
         let mut r = Registry::new(None);
         let now = t0();
         let e1 = r.set_state(Some("a"), State::Running, None, None, None, now);
-        assert!(e1
-            .iter()
-            .any(|e| matches!(e, Effect::AggregateChanged { state: State::Running })));
+        assert!(e1.iter().any(|e| matches!(
+            e,
+            Effect::AggregateChanged {
+                state: State::Running
+            }
+        )));
         // Second session also running: aggregate unchanged -> no AggregateChanged.
         let e2 = r.set_state(Some("b"), State::Running, None, None, None, now);
-        assert!(!e2.iter().any(|e| matches!(e, Effect::AggregateChanged { .. })));
+        assert!(!e2
+            .iter()
+            .any(|e| matches!(e, Effect::AggregateChanged { .. })));
     }
 
     #[test]
@@ -1032,7 +1599,14 @@ mod tests {
     fn set_meta_merges_without_changing_state() {
         let mut r = Registry::new(None);
         let now = t0();
-        r.set_state(Some("a"), State::Running, Some("claude".into()), None, None, now);
+        r.set_state(
+            Some("a"),
+            State::Running,
+            Some("claude".into()),
+            None,
+            None,
+            now,
+        );
         let mut m = Map::new();
         m.insert("cost_usd".into(), Value::from(0.42));
         let effects = r.merge_meta("a", None, None, m, now);
@@ -1069,7 +1643,14 @@ mod tests {
     fn rename_sets_name_and_emits_upsert() {
         let mut r = Registry::new(None);
         let now = t0();
-        r.set_state(Some("a"), State::Running, Some("claude".into()), Some("daemon".into()), None, now);
+        r.set_state(
+            Some("a"),
+            State::Running,
+            Some("claude".into()),
+            Some("daemon".into()),
+            None,
+            now,
+        );
         let effects = r.rename("a", Some("Backend")).expect("known session");
         assert!(effects.contains(&Effect::SessionUpsert {
             id: "a".into(),
@@ -1089,9 +1670,23 @@ mod tests {
         // --label on every hook event, which must not undo a user's rename.
         let mut r = Registry::new(None);
         let now = t0();
-        r.set_state(Some("a"), State::Idle, None, Some("focalpoint".into()), None, now);
+        r.set_state(
+            Some("a"),
+            State::Idle,
+            None,
+            Some("focalpoint".into()),
+            None,
+            now,
+        );
         r.rename("a", Some("Backend")).unwrap();
-        r.set_state(Some("a"), State::Running, None, Some("focalpoint".into()), None, now);
+        r.set_state(
+            Some("a"),
+            State::Running,
+            None,
+            Some("focalpoint".into()),
+            None,
+            now,
+        );
         let s = &r.list()[0];
         assert_eq!(s.name.as_deref(), Some("Backend"));
         assert_eq!(s.label.as_deref(), Some("focalpoint"));
@@ -1102,7 +1697,14 @@ mod tests {
     fn empty_rename_clears_and_falls_back_to_label() {
         let mut r = Registry::new(None);
         let now = t0();
-        r.set_state(Some("a"), State::Idle, Some("claude".into()), Some("focalpoint".into()), None, now);
+        r.set_state(
+            Some("a"),
+            State::Idle,
+            Some("claude".into()),
+            Some("focalpoint".into()),
+            None,
+            now,
+        );
         r.rename("a", Some("Backend")).unwrap();
         for clearing in [Some("   "), Some(""), None] {
             r.rename("a", clearing).unwrap();
@@ -1138,9 +1740,23 @@ mod tests {
     fn display_name_prefers_name_then_label_then_kind() {
         let mut r = Registry::new(None);
         let now = t0();
-        r.set_state(Some("a"), State::Idle, Some("claude".into()), None, None, now);
+        r.set_state(
+            Some("a"),
+            State::Idle,
+            Some("claude".into()),
+            None,
+            None,
+            now,
+        );
         assert_eq!(r.list()[0].display_name(), "claude");
-        r.set_state(Some("a"), State::Idle, None, Some("focalpoint".into()), None, now);
+        r.set_state(
+            Some("a"),
+            State::Idle,
+            None,
+            Some("focalpoint".into()),
+            None,
+            now,
+        );
         assert_eq!(r.list()[0].display_name(), "focalpoint");
         r.rename("a", Some("Backend")).unwrap();
         assert_eq!(r.list()[0].display_name(), "Backend");
@@ -1282,7 +1898,14 @@ mod tests {
         let mut m = meta("/repo", "/dev/ttys004");
         m.insert("pid".into(), Value::from(555));
         m.insert("turns".into(), Value::from(9));
-        r.set_state(Some("old"), State::Running, None, Some("My Chat".into()), Some(m), now);
+        r.set_state(
+            Some("old"),
+            State::Running,
+            None,
+            Some("My Chat".into()),
+            Some(m),
+            now,
+        );
 
         // A deliberate end-session — never a sweep's guess.
         r.end_session("old");
@@ -1300,7 +1923,9 @@ mod tests {
             Some(m2),
             later,
         );
-        assert!(!effects.iter().any(|e| matches!(e, Effect::SessionRekeyed { .. })));
+        assert!(!effects
+            .iter()
+            .any(|e| matches!(e, Effect::SessionRekeyed { .. })));
         let s = r.session_by_slot(1).expect("slot 1 occupied");
         assert_eq!(s.id, "new");
         assert_eq!(s.meta.get("turns"), None);
@@ -1349,7 +1974,14 @@ mod tests {
         let mut r = Registry::new(None);
         let now = t0();
         let m = meta("/repo", "/dev/ttys004");
-        r.set_state(Some("old"), State::Running, None, Some("Fix drag stutter".into()), Some(m), now);
+        r.set_state(
+            Some("old"),
+            State::Running,
+            None,
+            Some("Fix drag stutter".into()),
+            Some(m),
+            now,
+        );
         r.reap_session("old", now);
 
         let later = now.checked_add(Duration::from_secs(5)).unwrap();
@@ -1375,7 +2007,14 @@ mod tests {
         let mut r = Registry::new(None);
         let now = t0();
         let m = meta("/repo", "/dev/ttys004");
-        r.set_state(Some("old"), State::Running, None, Some("Old Chat".into()), Some(m), now);
+        r.set_state(
+            Some("old"),
+            State::Running,
+            None,
+            Some("Old Chat".into()),
+            Some(m),
+            now,
+        );
         r.reap_session("old", now);
 
         let later = now.checked_add(Duration::from_secs(5)).unwrap();
@@ -1388,7 +2027,9 @@ mod tests {
             Some(m2),
             later,
         );
-        assert!(!effects.iter().any(|e| matches!(e, Effect::SessionRekeyed { .. })));
+        assert!(!effects
+            .iter()
+            .any(|e| matches!(e, Effect::SessionRekeyed { .. })));
         assert_eq!(r.list().len(), 1);
         assert_eq!(r.list()[0].id, "new");
     }
@@ -1406,7 +2047,9 @@ mod tests {
         let mut m2 = meta("/repo", "/dev/ttys004");
         m2.insert("pid".into(), Value::from(555));
         let effects = r.set_state(Some("new"), State::Thinking, None, None, Some(m2), too_late);
-        assert!(!effects.iter().any(|e| matches!(e, Effect::SessionRekeyed { .. })));
+        assert!(!effects
+            .iter()
+            .any(|e| matches!(e, Effect::SessionRekeyed { .. })));
     }
 
     #[test]
@@ -1418,10 +2061,19 @@ mod tests {
         r.set_state(Some("old"), State::Running, None, None, Some(m), now);
         r.reap_session("old", now);
 
-        let way_later = now.checked_add(Duration::from_secs(60 * 60 * 24 * 30)).unwrap();
+        let way_later = now
+            .checked_add(Duration::from_secs(60 * 60 * 24 * 30))
+            .unwrap();
         let mut m2 = meta("/repo", "/dev/ttys004");
         m2.insert("pid".into(), Value::from(555));
-        let effects = r.set_state(Some("new"), State::Thinking, None, None, Some(m2), way_later);
+        let effects = r.set_state(
+            Some("new"),
+            State::Thinking,
+            None,
+            None,
+            Some(m2),
+            way_later,
+        );
         assert!(effects.contains(&Effect::SessionRekeyed {
             old_id: "old".into(),
             new_id: "new".into(),
@@ -1461,7 +2113,14 @@ mod tests {
         let now = t0();
         let mut m = meta("/repo", "/dev/ttys004");
         m.insert("pid".into(), Value::from(555));
-        r.set_state(Some("old"), State::Running, None, Some("Chat".into()), Some(m), now);
+        r.set_state(
+            Some("old"),
+            State::Running,
+            None,
+            Some("Chat".into()),
+            Some(m),
+            now,
+        );
         r.reap_session("old", now);
         assert_eq!(r.tombstones.len(), 1);
 
@@ -1476,7 +2135,14 @@ mod tests {
         let later = now.checked_add(Duration::from_secs(5)).unwrap();
         let mut m2 = meta("/repo", "/dev/ttys004");
         m2.insert("pid".into(), Value::from(555));
-        let e = r.set_state(Some("new"), State::Thinking, None, Some("Chat".into()), Some(m2), later);
+        let e = r.set_state(
+            Some("new"),
+            State::Thinking,
+            None,
+            Some("Chat".into()),
+            Some(m2),
+            later,
+        );
         assert!(!e.iter().any(|x| matches!(x, Effect::SessionRekeyed { .. })));
     }
 
@@ -1503,7 +2169,10 @@ mod tests {
             now,
         );
         assert_eq!(r.list().len(), 2);
-        assert!(r.list().iter().any(|s| s.id == "old" && s.state == State::Compacting));
+        assert!(r
+            .list()
+            .iter()
+            .any(|s| s.id == "old" && s.state == State::Compacting));
         assert!(r.list().iter().any(|s| s.id == "new" && s.slot == Some(2)));
     }
 
@@ -1538,7 +2207,10 @@ mod tests {
             .iter()
             .any(|e| matches!(e, Effect::SessionRekeyed { .. })));
         assert_eq!(r.list().len(), 2);
-        assert!(r.list().iter().any(|s| s.id == "old" && s.state == State::Compacting));
+        assert!(r
+            .list()
+            .iter()
+            .any(|s| s.id == "old" && s.state == State::Compacting));
         assert!(r.list().iter().any(|s| s.id == "new" && s.slot == Some(2)));
     }
 
@@ -1548,20 +2220,305 @@ mod tests {
         // grace timeout from still applying.
         let mut r = Registry::new(None);
         let t = Instant::now();
-        r.set_state(Some("a"), State::Compacting, None, None, Some(meta("/repo", "/dev/ttys004")), t);
+        r.set_state(
+            Some("a"),
+            State::Compacting,
+            None,
+            None,
+            Some(meta("/repo", "/dev/ttys004")),
+            t,
+        );
         r.set_state(Some("b"), State::Running, None, None, None, t);
 
         let too_soon = t.checked_add(Duration::from_secs(60)).unwrap();
-        assert!(r.expire_compacting(too_soon).is_empty(), "well within grace");
+        assert!(
+            r.expire_compacting(too_soon).is_empty(),
+            "well within grace"
+        );
 
-        let past_grace = t.checked_add(COMPACT_GRACE + Duration::from_secs(1)).unwrap();
+        let past_grace = t
+            .checked_add(COMPACT_GRACE + Duration::from_secs(1))
+            .unwrap();
         let effects = r.expire_compacting(past_grace);
         // A stuck-compacting reap disconnects (recoverable), never ends.
         assert!(effects.contains(&Effect::SessionDisconnected {
             id: "a".into(),
             slot: Some(1),
         }));
-        assert!(r.session_by_slot(2).is_some(), "unrelated session b untouched");
+        assert!(
+            r.session_by_slot(2).is_some(),
+            "unrelated session b untouched"
+        );
         assert_eq!(r.list().len(), 1);
+    }
+
+    fn resumable_session(registry: &mut Registry, id: &str, state: State, now: Instant) {
+        let mut m = meta("/tmp", "/dev/ttys004");
+        m.insert("pid".into(), Value::from(4242));
+        m.insert("managed".into(), Value::from(false));
+        m.insert("turns".into(), Value::from(7));
+        registry.set_state(
+            Some(id),
+            state,
+            Some("claude".into()),
+            Some("Work".into()),
+            Some(m),
+            now,
+        );
+    }
+
+    #[test]
+    fn managed_relaunch_blocks_old_events_and_preserves_same_id_session() {
+        let mut r = Registry::new(None);
+        let now = t0();
+        resumable_session(&mut r, "source", State::Idle, now);
+        r.rename("source", Some("Important"));
+        let (_, effects) = r.begin_managed_relaunch("source", "launch-1", now).unwrap();
+        assert!(effects.iter().any(|e| matches!(
+            e,
+            Effect::SessionUpsert {
+                state: State::Compacting,
+                ..
+            }
+        )));
+
+        assert!(r
+            .set_state(Some("source"), State::Running, None, None, None, now)
+            .is_empty());
+        assert!(r.end_session("source").is_empty());
+        assert_eq!(r.list()[0].state, State::Compacting);
+
+        let mut replacement = meta("/tmp", "/dev/ttys009");
+        replacement.insert("pid".into(), Value::from(5252));
+        replacement.insert("managed".into(), Value::from(true));
+        replacement.insert("relaunch_id".into(), Value::from("launch-1"));
+        let completed = r.set_state(
+            Some("source"),
+            State::Thinking,
+            Some("claude".into()),
+            None,
+            Some(replacement),
+            now,
+        );
+        assert!(completed.contains(&Effect::ManagedRelaunchCompleted {
+            old_id: "source".into(),
+            new_id: "source".into(),
+            launch_id: "launch-1".into(),
+        }));
+        let session = &r.list()[0];
+        assert_eq!(session.slot, Some(1));
+        assert_eq!(session.name.as_deref(), Some("Important"));
+        assert_eq!(session.meta.get("turns"), Some(&Value::from(7)));
+    }
+
+    #[test]
+    fn managed_relaunch_can_rekey_and_failure_is_recoverable() {
+        let mut r = Registry::new(None);
+        let now = t0();
+        resumable_session(&mut r, "old", State::Done, now);
+        r.begin_managed_relaunch("old", "launch-2", now).unwrap();
+        let mut replacement = meta("/tmp", "/dev/ttys010");
+        replacement.insert("pid".into(), Value::from(6262));
+        replacement.insert("managed".into(), Value::from(true));
+        replacement.insert("relaunch_id".into(), Value::from("launch-2"));
+        let effects = r.set_state(
+            Some("new"),
+            State::Thinking,
+            Some("claude".into()),
+            None,
+            Some(replacement),
+            now,
+        );
+        assert!(effects.contains(&Effect::SessionRekeyed {
+            old_id: "old".into(),
+            new_id: "new".into()
+        }));
+        assert!(effects.contains(&Effect::ManagedRelaunchCompleted {
+            old_id: "old".into(),
+            new_id: "new".into(),
+            launch_id: "launch-2".into(),
+        }));
+
+        resumable_session(&mut r, "failed", State::Waiting, now);
+        r.begin_managed_relaunch("failed", "launch-3", now).unwrap();
+        let failed = r.fail_managed_relaunch("failed", "launch-3", now);
+        assert!(failed.contains(&Effect::SessionDisconnected {
+            id: "failed".into(),
+            slot: Some(2)
+        }));
+        assert!(r
+            .tombstones_snapshot()
+            .iter()
+            .any(|(id, _, _)| id == "failed"));
+    }
+
+    #[test]
+    fn explicit_history_resume_uses_exact_tombstone_and_fresh_process_identity() {
+        let mut r = Registry::new(None);
+        let now = t0();
+
+        let mut intended = meta("/same/repo", "/dev/ttys003");
+        intended.insert("pid".into(), Value::from(300));
+        intended.insert("turns".into(), Value::from(33));
+        r.set_state(
+            Some("session-3"),
+            State::Done,
+            Some("claude".into()),
+            Some("Same label".into()),
+            Some(intended),
+            now,
+        );
+
+        // A more recent tombstone has the same two fuzzy recovery signals.
+        // Before the explicit resume marker, this one won the recency tie and
+        // was incorrectly rekeyed as session-3.
+        let later = now.checked_add(Duration::from_secs(1)).unwrap();
+        let mut wrong = meta("/same/repo", "/dev/ttys004");
+        wrong.insert("pid".into(), Value::from(100));
+        wrong.insert("turns".into(), Value::from(11));
+        r.set_state(
+            Some("session-1"),
+            State::Done,
+            Some("claude".into()),
+            Some("Same label".into()),
+            Some(wrong),
+            later,
+        );
+        // Create both as independent live sessions first, then sweep them.
+        // Otherwise registering session-1 after session-3 was already swept
+        // would itself exercise (and consume) the generic recovery matcher.
+        r.reap_session("session-3", now);
+        r.reap_session("session-1", later);
+
+        let resumed_at = later.checked_add(Duration::from_secs(1)).unwrap();
+        let mut resumed = meta("/same/repo", "/dev/ttys009");
+        resumed.insert("pid".into(), Value::from(9003));
+        resumed.insert("managed".into(), Value::from(true));
+        resumed.insert("mux_pane".into(), Value::from("%3"));
+        resumed.insert("resume_session_id".into(), Value::from("session-3"));
+        let effects = r.set_state(
+            Some("session-3"),
+            State::Thinking,
+            Some("claude".into()),
+            Some("Same label".into()),
+            Some(resumed),
+            resumed_at,
+        );
+
+        assert!(effects.contains(&Effect::SessionRekeyed {
+            old_id: "session-3".into(),
+            new_id: "session-3".into(),
+        }));
+        let live = r.list();
+        assert_eq!(live.len(), 1);
+        assert_eq!(live[0].id, "session-3");
+        assert_eq!(
+            live[0].pid(),
+            Some(9003),
+            "new process must replace old pid"
+        );
+        assert_eq!(live[0].meta.get("mux_pane"), Some(&Value::from("%3")));
+        assert_eq!(live[0].meta.get("turns"), Some(&Value::from(33)));
+        assert!(
+            r.tombstones_snapshot()
+                .iter()
+                .any(|(id, _, _)| id == "session-1"),
+            "the same-directory session must remain untouched"
+        );
+    }
+
+    #[test]
+    fn tombstone_recovery_never_reuses_a_slot_claimed_by_another_live_session() {
+        let mut r = Registry::new(None);
+        let now = t0();
+        let mut old = meta("/repo", "/dev/ttys003");
+        old.insert("pid".into(), Value::from(300));
+        r.set_state(
+            Some("old"),
+            State::Done,
+            Some("codex".into()),
+            Some("Work".into()),
+            Some(old),
+            now,
+        );
+        assert_eq!(r.list()[0].slot, Some(1));
+        r.reap_session("old", now);
+
+        let later = now.checked_add(Duration::from_secs(1)).unwrap();
+        r.set_state(
+            Some("current"),
+            State::Thinking,
+            Some("codex".into()),
+            Some("Other".into()),
+            Some(meta("/repo", "/dev/ttys004")),
+            later,
+        );
+        assert_eq!(
+            r.list()[0].slot,
+            Some(1),
+            "freed key was legitimately reused"
+        );
+
+        let mut resumed = meta("/repo", "/dev/ttys009");
+        resumed.insert("pid".into(), Value::from(999));
+        resumed.insert("resume_session_id".into(), Value::from("old"));
+        r.set_state(
+            Some("old"),
+            State::Thinking,
+            Some("codex".into()),
+            Some("Work".into()),
+            Some(resumed),
+            later,
+        );
+
+        let live = r.list();
+        assert_eq!(live.len(), 2);
+        assert_eq!(
+            live.iter().find(|s| s.id == "current").unwrap().slot,
+            Some(1)
+        );
+        let resumed = live.iter().find(|s| s.id == "old").unwrap();
+        assert_eq!(resumed.slot, Some(2));
+        assert_eq!(resumed.pid(), Some(999));
+    }
+
+    #[test]
+    fn explicit_history_resume_without_its_tombstone_skips_fuzzy_recovery() {
+        let mut r = Registry::new(None);
+        let now = t0();
+        r.set_state(
+            Some("unrelated"),
+            State::Done,
+            Some("codex".into()),
+            Some("Same label".into()),
+            Some(meta("/same/repo", "/dev/ttys003")),
+            now,
+        );
+        r.reap_session("unrelated", now);
+
+        let mut resumed = meta("/same/repo", "/dev/ttys009");
+        resumed.insert("pid".into(), Value::from(303));
+        resumed.insert("resume_session_id".into(), Value::from("history-id"));
+        let effects = r.set_state(
+            Some("history-id"),
+            State::Thinking,
+            Some("codex".into()),
+            Some("Same label".into()),
+            Some(resumed),
+            now,
+        );
+
+        assert!(!effects.iter().any(|effect| matches!(
+            effect,
+            Effect::SessionRekeyed { old_id, .. } if old_id == "unrelated"
+        )));
+        assert!(r
+            .list()
+            .iter()
+            .any(|s| s.id == "history-id" && s.pid() == Some(303)));
+        assert!(r
+            .tombstones_snapshot()
+            .iter()
+            .any(|(id, _, _)| id == "unrelated"));
     }
 }

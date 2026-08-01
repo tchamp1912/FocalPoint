@@ -22,6 +22,14 @@ struct MenuContentView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider()
+            if let status = model.managedRelaunchStatus {
+                ManagedRelaunchBanner(
+                    status: status,
+                    onDismiss: model.dismissManagedRelaunchStatus
+                )
+                .padding(8)
+                Divider()
+            }
             if model.sessions.isEmpty {
                 emptyState
             } else {
@@ -73,7 +81,7 @@ struct MenuContentView: View {
 
     private var sessionList: some View {
         VStack(spacing: 1) {
-            ForEach(model.sessions) { s in
+            ForEach(model.elevatedSessions) { s in
                 // The row being renamed is deliberately NOT wrapped in the
                 // Button: `.disabled()` propagates to every descendant, so
                 // disabling the row to stop a stray click from bouncing the
@@ -122,6 +130,10 @@ struct MenuContentView: View {
                         Button("Copy Working Directory") { model.copyToPasteboard(cwd) }
                     }
                     Divider()
+                    Button("Relaunch as Managed Session") {
+                        model.relaunchAsManaged(s)
+                    }
+                    .disabled(!model.canRelaunchAsManaged(s))
                     // "End Session" is destructive — it quits the actual agent
                     // process (SIGINT→SIGTERM, so its SessionEnd teardown
                     // runs). "Remove Session" is non-destructive — it just
@@ -130,7 +142,7 @@ struct MenuContentView: View {
                     Button("End Session", role: .destructive) { model.quitSession(s) }
                     Button("Remove Session") { model.removeSession(s) }
                 }
-                if s.id != model.sessions.last?.id {
+                if s.id != model.elevatedSessions.last?.id {
                     Divider().padding(.leading, 44)
                 }
             }
@@ -195,6 +207,20 @@ struct MenuContentView: View {
                         }
                         Spacer(minLength: 4)
                         HStack(spacing: 6) {
+                            orchestrationBadge(s)
+                            if s.isManaged {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "terminal.fill")
+                                    Text("Managed")
+                                }
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(Color.accentColor)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color.accentColor.opacity(0.12)))
+                                .fixedSize()
+                                .help("Managed session — FocalPoint can route attention and input to it precisely in the background")
+                            }
                             Text(s.kind).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                             if model.showModelBadge, let badge = s.modelBadge {
                                 Text(badge).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
@@ -231,6 +257,29 @@ struct MenuContentView: View {
         .padding(.vertical, 8)
         .contentShape(Rectangle())
         .opacity(dimmed ? 0.55 : 1)
+    }
+
+    @ViewBuilder
+    private func orchestrationBadge(_ session: SessionInfo) -> some View {
+        if let number = model.orchestratorNumber(for: session) {
+            let count = model.managedSessionCount(for: session)
+            Text("O\(number) · \(count)")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(Color.purple)
+                .padding(.horizontal, 5).padding(.vertical, 2)
+                .background(Capsule().fill(Color.purple.opacity(0.14)))
+                .fixedSize()
+                .help("Orchestrator O\(number) — manages \(count) session\(count == 1 ? "" : "s")")
+        } else if let number = model.managingOrchestratorNumber(for: session),
+                  let manager = model.managingOrchestrator(for: session) {
+            Text("O\(number)")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(Color.purple)
+                .padding(.horizontal, 5).padding(.vertical, 2)
+                .overlay(Capsule().stroke(Color.purple.opacity(0.45), lineWidth: 1))
+                .fixedSize()
+                .help("Managed by O\(number): \(manager.title)")
+        }
     }
 
     private func slotBadge(_ slot: Int?) -> some View {
