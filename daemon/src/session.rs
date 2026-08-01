@@ -29,23 +29,75 @@ use std::time::{Duration, Instant};
 /// a "compacting" indicator stuck on-screen indefinitely.
 const COMPACT_GRACE: Duration = Duration::from_secs(300);
 
-/// Meta keys Claude Code's adapter reports as "cumulative since this
-/// segment's transcript/process started," not "current instantaneous
-/// reading" (`adapters/claude-code/hooks.sh`'s `extract_stats`,
-/// `statusline-usage.sh`'s `cost_usd`). A compaction rekey (below) starts a
-/// new transcript/process, so these must be *added* to the carried-forward
-/// base from any prior segment(s), never overwritten outright, or a
-/// compaction would silently erase everything before it. Everything else
-/// (`tty`, `pid`, `cwd`, `model`, `context_tokens`, `context_window`, ...)
-/// is a plain overwrite as always — `context_tokens`/`context_window`
-/// resetting on compaction is correct, not a bug, since that's what
-/// compaction means. Codex needs none of this: verified against real
-/// rollout files that its compaction happens in place (same `thread_id`,
-/// same transcript), so its adapter-side full-transcript recompute is
-/// already correctly cumulative with no daemon involvement — see
-/// SESSION-IDENTITY-PERSISTENCE-PLAN.md Part 2.
-const CUMULATIVE_META_KEYS: &[&str] =
-    &["turns", "tool_calls", "subagents", "tokens_in", "tokens_out", "cost_usd"];
+/// How a `meta` key's value accumulates across updates. Declared once per
+/// key in `METRICS` and consumed by both `apply_meta_update` (every regular
+/// update) and the rekey/recovery carry logic in `set_state`, so there is
+/// exactly one place a metric's semantics are decided — see P1-B in
+/// `docs/reviews/CODE-REVIEW-2026-08-01.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Accumulation {
+    /// Latest reading wins: plain overwrite. Covers instantaneous readings
+    /// (`context_tokens`, `context_window`, `model`, `pid`, `tty`, `cwd`,
+    /// ...) and — deliberately — any key with no entry in `METRICS`, so a
+    /// stat nobody classified yet fails safe as "just show the latest
+    /// value" rather than silently compounding.
+    Gauge,
+    /// The adapter reports *this segment's* running total (Claude Code's
+    /// `extract_stats`/`statusline-usage.sh`'s `cost_usd`), not a
+    /// whole-lineage recompute. A genuine cross-process compaction fork
+    /// starts a fresh transcript/process reporting only its own segment, so
+    /// these must be *added* to the carried-forward base from any prior
+    /// segment(s) on a real fork (`old_id != id`) — never on a same-id
+    /// recovery, or a false reap would double them (P1-A).
+    CumulativeSegments,
+    /// The adapter recomputes and reports the WHOLE lineage's total every
+    /// time (Codex/Cursor re-scan the entire transcript on every `Stop`:
+    /// `adapters/codex-cli/hooks.sh:141-152`,
+    /// `adapters/cursor/hooks.sh:84-112`) — verified against real rollout
+    /// files that e.g. Codex's compaction happens in place (same
+    /// `thread_id`, same transcript; SESSION-IDENTITY-PERSISTENCE-PLAN.md
+    /// Part 2). The daemon always overwrites with whatever the adapter last
+    /// reported, even across a rekey — never carries, never sums. This
+    /// subsumes P1-A's guard by construction for these keys.
+    CumulativeLineage,
+}
+
+/// One row per classified `meta` key. Unclassified keys default to
+/// `Accumulation::Gauge` (see its doc comment) rather than requiring every
+/// key to be listed.
+pub struct MetricSpec {
+    pub key: &'static str,
+    pub accumulation: Accumulation,
+}
+
+/// `compactions` is `CumulativeLineage`: Codex/Cursor report a whole-lineage
+/// recount of it on every `Stop` (`codex-cli/hooks.sh:153`) just like their
+/// other stats, while Claude Code's adapter never reports it at all — the
+/// daemon synthesizes it by incrementing on a genuine fork (see the rekey
+/// branch in `set_state`). Declaring it `CumulativeLineage` means: if an
+/// adapter *does* report it, that report always wins (plain overwrite,
+/// consistent with Codex/Cursor); if nothing is reported, the daemon's own
+/// increment is the only writer. Either way there is one unified home for
+/// it instead of the previous daemon-only special case.
+pub const METRICS: &[MetricSpec] = &[
+    MetricSpec { key: "turns", accumulation: Accumulation::CumulativeSegments },
+    MetricSpec { key: "tool_calls", accumulation: Accumulation::CumulativeSegments },
+    MetricSpec { key: "subagents", accumulation: Accumulation::CumulativeSegments },
+    MetricSpec { key: "tokens_in", accumulation: Accumulation::CumulativeSegments },
+    MetricSpec { key: "tokens_out", accumulation: Accumulation::CumulativeSegments },
+    MetricSpec { key: "cost_usd", accumulation: Accumulation::CumulativeSegments },
+    MetricSpec { key: "compactions", accumulation: Accumulation::CumulativeLineage },
+];
+
+/// Look up `key`'s accumulation kind in `METRICS`, defaulting to `Gauge` for
+/// anything not (yet) classified — see `Accumulation::Gauge`.
+fn accumulation_of(key: &str) -> Accumulation {
+    METRICS
+        .iter()
+        .find(|m| m.key == key)
+        .map(|m| m.accumulation)
+        .unwrap_or(Accumulation::Gauge)
+}
 
 /// Add `incoming` to the carried-forward base for `key` in `meta`
 /// (`_carry_<key>`, 0 if absent — the common, never-compacted case).
@@ -67,14 +119,16 @@ fn add_carry(meta: &Map<String, Value>, key: &str, incoming: &Value) -> Value {
     Value::from(bf + vf)
 }
 
-/// Apply an incoming meta update to `meta`. Cumulative keys
-/// (`CUMULATIVE_META_KEYS`) are added to their carried-forward base rather
-/// than overwritten; everything else is a plain overwrite, same as always.
-/// Shared by `set_state`'s update and rekey branches and by `merge_meta`, so
+/// Apply an incoming meta update to `meta`, driven by each key's
+/// `Accumulation` (`METRICS`/`accumulation_of`). `CumulativeSegments` keys
+/// are added to their carried-forward base; `Gauge` and `CumulativeLineage`
+/// keys are both a plain overwrite (they differ only in how the *rekey*
+/// carry logic in `set_state` treats them, not in this merge step). Shared
+/// by `set_state`'s update and rekey branches and by `merge_meta`, so
 /// there's exactly one place this distinction is made.
 fn apply_meta_update(meta: &mut Map<String, Value>, incoming: Map<String, Value>) {
     for (k, v) in incoming {
-        if CUMULATIVE_META_KEYS.contains(&k.as_str()) && v.is_number() {
+        if accumulation_of(&k) == Accumulation::CumulativeSegments && v.is_number() {
             let added = add_carry(meta, &k, &v);
             meta.insert(k, added);
             continue;
@@ -429,12 +483,12 @@ impl Registry {
                         });
 
                     if let Some((old_id, mut sess)) = recovered {
-                        // Snapshot the outgoing segment's cumulative totals
-                        // as the new segment's carried-forward base, and
-                        // bump the compaction counter — reading it off the
-                        // *old* session so repeated compactions compound
-                        // correctly instead of resetting to 1 each time.
-                        // See CUMULATIVE_META_KEYS/apply_meta_update above.
+                        // Snapshot the outgoing segment's CumulativeSegments
+                        // totals as the new segment's carried-forward base,
+                        // and bump `compactions` — reading it off the *old*
+                        // session so repeated compactions compound correctly
+                        // instead of resetting to 1 each time. See
+                        // METRICS/apply_meta_update above.
                         //
                         // Only do this for a genuine cross-process fork
                         // (`old_id != id`): a fresh transcript/process that
@@ -447,21 +501,42 @@ impl Registry {
                         // not a new segment — carrying forward would double
                         // every cumulative counter. Treat that as a plain
                         // overwrite via apply_meta_update below, same as any
-                        // other update.
+                        // other update. This guard is what makes P1-A's fix
+                        // hold for `CumulativeSegments` keys; `compactions`
+                        // (`CumulativeLineage`) never needs it — it's either
+                        // overwritten by an adapter's own report or
+                        // daemon-incremented below, both of which are safe
+                        // to run unconditionally on same-id recovery too
+                        // (see the `old_id != id` check on the increment).
                         if old_id != id {
-                            for key in CUMULATIVE_META_KEYS {
-                                if let Some(v) = sess.meta.get(*key).cloned() {
-                                    sess.meta.insert(format!("_carry_{key}"), v);
+                            for spec in METRICS {
+                                if spec.accumulation == Accumulation::CumulativeSegments {
+                                    if let Some(v) = sess.meta.get(spec.key).cloned() {
+                                        sess.meta.insert(format!("_carry_{}", spec.key), v);
+                                    }
                                 }
                             }
-                            let compactions = sess
-                                .meta
-                                .get("compactions")
-                                .and_then(Value::as_u64)
-                                .unwrap_or(0)
-                                + 1;
-                            sess.meta
-                                .insert("compactions".to_string(), Value::from(compactions));
+                            // `compactions` (CumulativeLineage): Claude's
+                            // adapter never reports this key, so the daemon
+                            // is its only writer — synthesize the increment
+                            // here, on a genuine fork only. If the incoming
+                            // update *does* report `compactions` (Codex/
+                            // Cursor's whole-transcript recount), skip the
+                            // daemon's own increment and let
+                            // apply_meta_update's plain overwrite below take
+                            // the adapter's value as-is — never stack a
+                            // daemon increment on top of an adapter's own
+                            // recount.
+                            if !incoming_meta.contains_key("compactions") {
+                                let compactions = sess
+                                    .meta
+                                    .get("compactions")
+                                    .and_then(Value::as_u64)
+                                    .unwrap_or(0)
+                                    + 1;
+                                sess.meta
+                                    .insert("compactions".to_string(), Value::from(compactions));
+                            }
                         }
 
                         sess.id = id.to_string();
@@ -1326,6 +1401,79 @@ mod tests {
         let s = r.session_by_slot(1).expect("slot 1 occupied");
         assert_eq!(s.id, "new");
         assert_eq!(s.meta.get("turns"), Some(&Value::from(33)), "carried forward: 30 + 3");
+        assert_eq!(s.meta.get("compactions"), Some(&Value::from(1u64)));
+    }
+
+    #[test]
+    fn gauge_metric_never_carries_even_across_a_genuine_fork() {
+        // context_tokens has no METRICS entry -> defaults to Accumulation::
+        // Gauge -> must be a plain overwrite on both a regular update and a
+        // genuine rekey fork, never summed via _carry_.
+        let mut r = Registry::new(None);
+        let now = t0();
+        let mut m1 = meta("/repo", "/dev/ttys004");
+        m1.insert("context_tokens".into(), Value::from(50_000));
+        r.set_state(Some("old"), State::Running, None, None, Some(m1), now);
+        r.set_state(Some("old"), State::Compacting, None, None, None, now);
+
+        let later = now.checked_add(Duration::from_secs(1)).unwrap();
+        let mut m2 = meta("/repo", "/dev/ttys004");
+        m2.insert("context_tokens".into(), Value::from(1_200));
+        r.set_state(Some("new"), State::Thinking, None, None, Some(m2), later);
+
+        let s = r.session_by_slot(1).expect("slot 1 occupied");
+        assert_eq!(s.meta.get("context_tokens"), Some(&Value::from(1_200)));
+        assert!(s.meta.get("_carry_context_tokens").is_none());
+    }
+
+    #[test]
+    fn cumulative_lineage_compactions_from_adapter_overwrites_instead_of_stacking() {
+        // Codex/Cursor style: the adapter itself reports `compactions` as a
+        // whole-lineage recount on a genuine fork. The daemon must respect
+        // that value as-is (CumulativeLineage overwrite) rather than adding
+        // its own +1 synthesized increment on top of it.
+        let mut r = Registry::new(None);
+        let now = t0();
+        let mut m1 = meta("/repo", "/dev/ttys004");
+        m1.insert("pid".into(), Value::from(555));
+        m1.insert("compactions".into(), Value::from(4u64));
+        r.set_state(Some("old"), State::Running, None, None, Some(m1), now);
+        r.reap_session("old", now);
+
+        let later = now.checked_add(Duration::from_secs(1)).unwrap();
+        let mut m2 = meta("/repo", "/dev/ttys004");
+        m2.insert("pid".into(), Value::from(555));
+        m2.insert("compactions".into(), Value::from(7u64));
+        let effects = r.set_state(Some("new"), State::Thinking, None, None, Some(m2), later);
+
+        assert!(effects.contains(&Effect::SessionRekeyed {
+            old_id: "old".into(),
+            new_id: "new".into(),
+        }));
+        let s = r.session_by_slot(1).expect("slot 1 occupied");
+        assert_eq!(
+            s.meta.get("compactions"),
+            Some(&Value::from(7u64)),
+            "adapter-reported whole-lineage value wins, not old(4)+daemon-increment(1)"
+        );
+    }
+
+    #[test]
+    fn cumulative_lineage_compactions_synthesized_by_daemon_when_adapter_silent() {
+        // Claude Code style: the adapter never reports `compactions` at
+        // all, so the daemon is the sole writer and must still increment on
+        // a genuine fork, compounding across repeated forks like before.
+        let mut r = Registry::new(None);
+        let now = t0();
+        let m1 = meta("/repo", "/dev/ttys004");
+        r.set_state(Some("old"), State::Running, None, None, Some(m1), now);
+        r.set_state(Some("old"), State::Compacting, None, None, None, now);
+
+        let later = now.checked_add(Duration::from_secs(1)).unwrap();
+        let m2 = meta("/repo", "/dev/ttys004");
+        r.set_state(Some("new"), State::Thinking, None, None, Some(m2), later);
+
+        let s = r.session_by_slot(1).expect("slot 1 occupied");
         assert_eq!(s.meta.get("compactions"), Some(&Value::from(1u64)));
     }
 
