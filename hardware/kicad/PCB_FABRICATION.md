@@ -50,8 +50,9 @@ manufactured impedance or USB behavior; prototype measurement remains a gate.
 - Route audit: `focalpoint_rev_b_4layer_route_audit.txt` records 1,033 track
   segments and 227 vias. It checks tracks and via annular rings separately.
   No track or via is within the enforced 1.00 mm external-edge target. The
-  closest bottom via is KEY12 at
-  1.100 mm; the closest bottom track is KEY12 at 1.300 mm. The criticized
+  closest bottom via is KEY12 at 2.200 mm, and the KEY12 bottom track is
+  2.400 mm from the edge. The closest bottom track overall is +3V3 at
+  1.690 mm. The criticized
   left-edge track clearance is 2.850 mm.
 
 ## Release generation
