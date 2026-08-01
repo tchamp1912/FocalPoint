@@ -1,0 +1,4 @@
+interface:
+  display_name: "PCB Design"
+  short_description: "Design and validate release-ready KiCad PCBs"
+  default_prompt: "Use $pcb-design to design, audit, and package a KiCad PCB for prototype fabrication."
