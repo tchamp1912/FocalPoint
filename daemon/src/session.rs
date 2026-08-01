@@ -435,19 +435,34 @@ impl Registry {
                         // *old* session so repeated compactions compound
                         // correctly instead of resetting to 1 each time.
                         // See CUMULATIVE_META_KEYS/apply_meta_update above.
-                        for key in CUMULATIVE_META_KEYS {
-                            if let Some(v) = sess.meta.get(*key).cloned() {
-                                sess.meta.insert(format!("_carry_{key}"), v);
+                        //
+                        // Only do this for a genuine cross-process fork
+                        // (`old_id != id`): a fresh transcript/process that
+                        // reports just its own segment's totals, which must
+                        // be added to what came before. When `old_id == id`
+                        // (a tombstone resurfacing under the *same* id after
+                        // a false-reap — e.g. Codex/Cursor's whole-transcript
+                        // recompute racing a transient dead-pid sweep false
+                        // positive), it's the same lineage/same transcript,
+                        // not a new segment — carrying forward would double
+                        // every cumulative counter. Treat that as a plain
+                        // overwrite via apply_meta_update below, same as any
+                        // other update.
+                        if old_id != id {
+                            for key in CUMULATIVE_META_KEYS {
+                                if let Some(v) = sess.meta.get(*key).cloned() {
+                                    sess.meta.insert(format!("_carry_{key}"), v);
+                                }
                             }
+                            let compactions = sess
+                                .meta
+                                .get("compactions")
+                                .and_then(Value::as_u64)
+                                .unwrap_or(0)
+                                + 1;
+                            sess.meta
+                                .insert("compactions".to_string(), Value::from(compactions));
                         }
-                        let compactions = sess
-                            .meta
-                            .get("compactions")
-                            .and_then(Value::as_u64)
-                            .unwrap_or(0)
-                            + 1;
-                        sess.meta
-                            .insert("compactions".to_string(), Value::from(compactions));
 
                         sess.id = id.to_string();
                         sess.state = state;
@@ -1246,6 +1261,71 @@ mod tests {
         // Instantaneous key: plain overwrite, NOT carried — resetting on
         // compaction is correct, not a bug.
         assert_eq!(s.meta.get("context_tokens"), Some(&Value::from(4_000)));
+        assert_eq!(s.meta.get("compactions"), Some(&Value::from(1u64)));
+    }
+
+    #[test]
+    fn same_id_recovery_after_false_reap_does_not_double_count() {
+        // Codex/Cursor-style false reap: the dead-pid sweep transiently
+        // mis-fires, tombstoning "T" even though the process is alive. The
+        // adapter's very next event reports under the SAME id "T" with a
+        // whole-transcript recompute (turns=105, not a fresh segment's own
+        // small delta). Because old_id == new_id here, this must be treated
+        // as a plain overwrite — no carry, no compactions bump — or the
+        // cumulative counters silently double (P1-A).
+        let mut r = Registry::new(None);
+        let now = t0();
+        let mut m = meta("/repo", "/dev/ttys004");
+        m.insert("pid".into(), Value::from(555));
+        m.insert("turns".into(), Value::from(100));
+        m.insert("tool_calls".into(), Value::from(400));
+        r.set_state(Some("T"), State::Running, None, None, Some(m), now);
+
+        // False reap: process never actually died.
+        r.reap_session("T", now);
+
+        // Adapter's next Stop, same id, whole-transcript recompute.
+        let later = now.checked_add(Duration::from_secs(1)).unwrap();
+        let mut m2 = meta("/repo", "/dev/ttys004");
+        m2.insert("pid".into(), Value::from(555));
+        m2.insert("turns".into(), Value::from(105));
+        m2.insert("tool_calls".into(), Value::from(420));
+        r.set_state(Some("T"), State::Thinking, None, None, Some(m2), later);
+
+        let s = r.session_by_slot(1).expect("slot 1 occupied");
+        assert_eq!(s.id, "T");
+        assert_eq!(s.meta.get("turns"), Some(&Value::from(105)), "overwritten, not doubled to 205");
+        assert_eq!(s.meta.get("tool_calls"), Some(&Value::from(420)));
+        assert_eq!(s.meta.get("compactions"), None, "no compaction actually happened");
+    }
+
+    #[test]
+    fn differing_id_fork_still_carries_forward_after_reap_recovery() {
+        // Contrast with the same-id case above: a genuinely different id
+        // recovering from a tombstone (real cross-process fork, just routed
+        // through the reap/tombstone path rather than State::Compacting)
+        // must still carry+add and bump compactions.
+        let mut r = Registry::new(None);
+        let now = t0();
+        let mut m = meta("/repo", "/dev/ttys004");
+        m.insert("pid".into(), Value::from(555));
+        m.insert("turns".into(), Value::from(30));
+        r.set_state(Some("old"), State::Running, None, None, Some(m), now);
+        r.reap_session("old", now);
+
+        let later = now.checked_add(Duration::from_secs(1)).unwrap();
+        let mut m2 = meta("/repo", "/dev/ttys004");
+        m2.insert("pid".into(), Value::from(555));
+        m2.insert("turns".into(), Value::from(3));
+        let effects = r.set_state(Some("new"), State::Thinking, None, None, Some(m2), later);
+
+        assert!(effects.contains(&Effect::SessionRekeyed {
+            old_id: "old".into(),
+            new_id: "new".into(),
+        }));
+        let s = r.session_by_slot(1).expect("slot 1 occupied");
+        assert_eq!(s.id, "new");
+        assert_eq!(s.meta.get("turns"), Some(&Value::from(33)), "carried forward: 30 + 3");
         assert_eq!(s.meta.get("compactions"), Some(&Value::from(1u64)));
     }
 
