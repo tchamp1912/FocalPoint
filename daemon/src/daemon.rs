@@ -21,9 +21,102 @@ use crate::protocol::{
 };
 use crate::session::{Effect, Registry, Session};
 use crate::styles::{Style, StyleTable};
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
+
+/// Socket requests defined by PROTOCOL.md §3 and the daemon-side CLI
+/// extensions in §4.  Keep this as the single Rust representation of the
+/// wire contract; dispatch only operates on this decoded form.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "cmd", rename_all = "kebab-case")]
+pub enum Request {
+    SetState { state: String, session: Option<String>, kind: Option<String>, label: Option<String>, meta: Option<Map<String, Value>> },
+    SetMeta { session: String, kind: Option<String>, label: Option<String>, #[serde(default)] meta: Map<String, Value> },
+    GetState,
+    ListSessions,
+    RenameSession { session: String, name: Option<String> },
+    SwapSlots { session1: String, session2: String },
+    EndSession { session: String },
+    QuitSession { session: String },
+    FocusSession { session: String },
+    SetLed { index: u64, rgb: Vec<u64> },
+    GetStyles,
+    SetStyle { state: String, rgb: Vec<u64>, pattern: String, period_ms: Option<u64> },
+    SetUsage { provider: String, usage: Map<String, Value> },
+    GetUsage,
+    Subscribe,
+    Inject { kind: String, control: Option<String>, action: Option<String>, delta: Option<i64>, gesture: Option<String> },
+    Ping,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SessionDto {
+    session: String,
+    kind: Option<String>,
+    label: Option<String>,
+    name: Option<String>,
+    slot: Option<u8>,
+    state: String,
+    meta: Map<String, Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    connected: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct StyleDto {
+    rgb: [u8; 3],
+    pattern: String,
+    period_ms: u16,
+}
+
+#[derive(Debug)]
+pub struct StyleMap(Vec<(String, StyleDto)>);
+
+impl Serialize for StyleMap {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: serde::Serializer {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(self.0.len()))?;
+        for (name, style) in &self.0 { map.serialize_entry(name, style)?; }
+        map.end()
+    }
+}
+
+/// All subscriber event shapes (PROTOCOL.md §3).
+#[derive(Debug, Serialize)]
+#[serde(tag = "event", rename_all = "kebab-case")]
+pub enum Event {
+    State { state: String },
+    Session { #[serde(flatten)] session: SessionDto },
+    SessionEnded { session: String, slot: Option<u8> },
+    SessionDisconnected { session: String, slot: Option<u8> },
+    SessionRekeyed { old_session: String, new_session: String },
+    Key { control: String, pressed: bool },
+    Dial { delta: i8 },
+    Joy { gesture: String },
+    Usage { provider: String, usage: Map<String, Value> },
+    Style { state: String, rgb: [u8; 3], pattern: String, period_ms: u16 },
+}
+
+/// All one-line non-stream responses.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum Response {
+    Ok { ok: bool },
+    State { ok: bool, state: String },
+    Sessions { ok: bool, sessions: Vec<SessionDto> },
+    Usage { ok: bool, usage: HashMap<String, Map<String, Value>> },
+    Styles { ok: bool, styles: StyleMap },
+    Ping { ok: bool, device: bool },
+    Error { ok: bool, error: String },
+}
+
+fn event_line(event: Event) -> String {
+    serde_json::to_string(&event).expect("event DTO must serialize")
+}
 
 /// True if a process with this pid exists, via `kill(pid, 0)` — sends no
 /// signal, just checks. `ESRCH` means it doesn't; any other errno (e.g.
@@ -88,6 +181,64 @@ fn parse_rgb(v: Option<&serde_json::Value>) -> Result<[u8; 3], String> {
         }
     }
     Ok(out)
+}
+
+fn parse_rgb_values(values: &[u64]) -> Result<[u8; 3], String> {
+    if values.len() != 3 {
+        return Err("'rgb' must be an array of 3 integers".to_string());
+    }
+    let mut rgb = [0; 3];
+    for (out, value) in rgb.iter_mut().zip(values) {
+        if *value > 255 {
+            return Err("rgb values must be integers 0..=255".to_string());
+        }
+        *out = *value as u8;
+    }
+    Ok(rgb)
+}
+
+fn parse_set_style_fields(
+    state_name: &str, rgb: &[u64], pattern_name: &str, period_ms: Option<u64>,
+) -> Result<(State, Style), String> {
+    let state = State::from_name(state_name)
+        .ok_or_else(|| format!("unknown state: {state_name:?}"))?;
+    let pattern = Pattern::from_name(pattern_name).ok_or_else(|| {
+        format!("unknown pattern {pattern_name:?}; expected solid|breathe|blink|strobe|off")
+    })?;
+    let period_ms = match period_ms {
+        None => crate::styles::default_style(state).period_ms,
+        Some(n) if n <= u16::MAX as u64 => n as u16,
+        Some(_) => return Err("period_ms must be an integer 0..=65535".to_string()),
+    };
+    Ok((state, Style::new(parse_rgb_values(rgb)?, pattern, period_ms)))
+}
+
+fn parse_inject_fields(
+    kind: &str, control: Option<&str>, action: Option<&str>, delta: Option<i64>, gesture: Option<&str>,
+) -> Result<Vec<DeviceEvent>, String> {
+    match kind {
+        "key" => {
+            let control = control.ok_or_else(|| "inject key requires 'control'".to_string())?;
+            let id = control_id(control).ok_or_else(|| format!("unknown control: {control:?}"))?;
+            match action.unwrap_or("tap") {
+                "press" => Ok(vec![DeviceEvent::Key { control: id, pressed: true }]),
+                "release" => Ok(vec![DeviceEvent::Key { control: id, pressed: false }]),
+                "tap" => Ok(vec![DeviceEvent::Key { control: id, pressed: true }, DeviceEvent::Key { control: id, pressed: false }]),
+                other => Err(format!("unknown key action {other:?}; expected press|release|tap")),
+            }
+        }
+        "dial" => {
+            let delta = delta.ok_or_else(|| "inject dial requires integer 'delta'".to_string())?;
+            if !(-128..=127).contains(&delta) { return Err(format!("delta {delta} out of range (-128..=127)")); }
+            Ok(vec![DeviceEvent::Dial { delta: delta as i8 }])
+        }
+        "joy" => {
+            let gesture = gesture.ok_or_else(|| "inject joy requires 'gesture'".to_string())?;
+            let id = joy_id(gesture).ok_or_else(|| format!("unknown gesture: {gesture:?}"))?;
+            Ok(vec![DeviceEvent::Joy { gesture: id }])
+        }
+        other => Err(format!("unknown inject kind {other:?}; expected key|dial|joy")),
+    }
 }
 
 /// Merge a numeric provider usage update into its last-known snapshot.
@@ -244,7 +395,7 @@ impl EventCtx {
 /// JSON line for a `state` event (PROTOCOL.md §3): the aggregate state.
 #[cfg(unix)]
 fn state_event_line(state: State) -> String {
-    serde_json::json!({ "event": "state", "state": state.name() }).to_string()
+    event_line(Event::State { state: state.name().to_string() })
 }
 
 /// JSON line for a `session` event (registration or update). Carries
@@ -262,23 +413,18 @@ fn session_event_line(
     slot: Option<u8>,
     state: State,
 ) -> String {
-    serde_json::json!({
-        "event": "session",
-        "session": id,
-        "kind": kind,
-        "label": label,
-        "name": name,
-        "slot": slot,
-        "state": state.name(),
-        "meta": meta,
+    event_line(Event::Session {
+        session: SessionDto {
+            session: id.to_string(), kind: kind.clone(), label: label.clone(), name: name.clone(),
+            slot, state: state.name().to_string(), meta: public_meta(meta), connected: None,
+        },
     })
-    .to_string()
 }
 
 /// JSON line for a `session-ended` event.
 #[cfg(unix)]
 fn session_ended_line(id: &str, slot: Option<u8>) -> String {
-    serde_json::json!({ "event": "session-ended", "session": id, "slot": slot }).to_string()
+    event_line(Event::SessionEnded { session: id.to_string(), slot })
 }
 
 /// JSON line for a `session-disconnected` event (PROTOCOL.md §3): a session
@@ -288,8 +434,7 @@ fn session_ended_line(id: &str, slot: Option<u8>) -> String {
 /// explicitly ended, dismissed, recovered, or its tombstone TTL expires.
 #[cfg(unix)]
 fn session_disconnected_line(id: &str, slot: Option<u8>) -> String {
-    serde_json::json!({ "event": "session-disconnected", "session": id, "slot": slot })
-        .to_string()
+    event_line(Event::SessionDisconnected { session: id.to_string(), slot })
 }
 
 /// JSON line for a `session-rekeyed` event (PROTOCOL.md §3): a `Compacting`
@@ -299,8 +444,7 @@ fn session_disconnected_line(id: &str, slot: Option<u8>) -> String {
 /// followed by a new registration.
 #[cfg(unix)]
 fn session_rekeyed_line(old_id: &str, new_id: &str) -> String {
-    serde_json::json!({ "event": "session-rekeyed", "old_session": old_id, "new_session": new_id })
-        .to_string()
+    event_line(Event::SessionRekeyed { old_session: old_id.to_string(), new_session: new_id.to_string() })
 }
 
 /// JSON line for a provider-wide quota snapshot.
@@ -309,38 +453,27 @@ fn usage_event_line(
     provider: &str,
     usage: &serde_json::Map<String, serde_json::Value>,
 ) -> String {
-    serde_json::json!({ "event": "usage", "provider": provider, "usage": usage }).to_string()
+    event_line(Event::Usage { provider: provider.to_string(), usage: usage.clone() })
 }
 
 /// JSON line for a `style` event (PROTOCOL.md §3).
 #[cfg(unix)]
 fn style_event_line(state: State, style: &Style) -> String {
-    serde_json::json!({
-        "event": "style",
-        "state": state.name(),
-        "rgb": style.rgb,
-        "pattern": style.pattern.name(),
-        "period_ms": style.period_ms,
-    })
-    .to_string()
+    event_line(Event::Style { state: state.name().to_string(), rgb: style.rgb, pattern: style.pattern.name().to_string(), period_ms: style.period_ms })
 }
 
 /// JSON object of all six styles, keyed by state name in id order (for the
 /// `get-styles` response).
 #[cfg(unix)]
-fn styles_json(table: &StyleTable) -> serde_json::Value {
-    let mut map = serde_json::Map::new();
+fn styles_json(table: &StyleTable) -> StyleMap {
+    let mut styles = Vec::new();
     for (state, style) in table.iter() {
-        map.insert(
+        styles.push((
             state.name().to_string(),
-            serde_json::json!({
-                "rgb": style.rgb,
-                "pattern": style.pattern.name(),
-                "period_ms": style.period_ms,
-            }),
-        );
+            StyleDto { rgb: style.rgb, pattern: style.pattern.name().to_string(), period_ms: style.period_ms },
+        ));
     }
-    serde_json::Value::Object(map)
+    StyleMap(styles)
 }
 
 /// The full set of device commands to (re)send on connect: all six styles,
@@ -435,16 +568,24 @@ fn apply_effects(
 /// `Session` -> the JSON shape both `"list-sessions"` and the persisted
 /// snapshot use (PROTOCOL.md §3) — one place so they can't drift apart.
 #[cfg(unix)]
-fn session_to_json(s: &Session) -> serde_json::Value {
-    serde_json::json!({
-        "session": s.id,
-        "kind": s.kind,
-        "label": s.label,
-        "name": s.name,
-        "slot": s.slot,
-        "state": s.state.name(),
-        "meta": serde_json::Value::Object(s.meta.clone()),
-    })
+fn session_to_dto(s: &Session, connected: Option<bool>) -> SessionDto {
+    let meta = public_meta(&s.meta);
+    SessionDto {
+        session: s.id.clone(), kind: s.kind.clone(), label: s.label.clone(), name: s.name.clone(),
+        slot: s.slot, state: s.state.name().to_string(), meta, connected,
+    }
+}
+
+fn public_meta(meta: &Map<String, Value>) -> Map<String, Value> {
+    meta.iter()
+        .filter(|(key, _)| !key.starts_with("_carry_"))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
+}
+
+#[cfg(unix)]
+fn session_to_json(s: &Session) -> Value {
+    serde_json::to_value(session_to_dto(s, None)).expect("session DTO must serialize")
 }
 
 /// The inverse of `session_to_json`, given the `Instant` to use for
@@ -454,16 +595,22 @@ fn session_to_json(s: &Session) -> serde_json::Value {
 fn session_from_json(v: &serde_json::Value, last_update: Instant) -> Option<Session> {
     let id = v.get("session")?.as_str()?.to_string();
     let state = crate::protocol::State::from_name(v.get("state")?.as_str()?)?;
+    let mut meta = v.get("meta").and_then(|m| m.as_object()).cloned().unwrap_or_default();
+    // Read snapshots written before carry-forward data was made internal, but
+    // never expose those legacy keys again.
+    let mut carry = v.get("carry").and_then(|c| c.as_object()).cloned().unwrap_or_default();
+    for key in ["turns", "tool_calls", "subagents", "tokens_in", "tokens_out", "cost_usd"] {
+        if let Some(value) = meta.remove(&format!("_carry_{key}")) {
+            carry.entry(key.to_string()).or_insert(value);
+        }
+    }
     Some(Session {
         id,
         kind: v.get("kind").and_then(|x| x.as_str()).map(str::to_string),
         label: v.get("label").and_then(|x| x.as_str()).map(str::to_string),
         name: v.get("name").and_then(|x| x.as_str()).map(str::to_string),
-        meta: v
-            .get("meta")
-            .and_then(|m| m.as_object())
-            .cloned()
-            .unwrap_or_default(),
+        meta,
+        carry,
         slot: v.get("slot").and_then(|x| x.as_u64()).map(|n| n as u8),
         state,
         last_update,
@@ -509,6 +656,7 @@ fn save_snapshot(shared: &Mutex<Shared>) {
             .iter()
             .map(|sess| {
                 let mut v = session_to_json(sess);
+                v["carry"] = serde_json::json!(sess.carry);
                 v["elapsed_ms_since_update"] = serde_json::json!(
                     now.saturating_duration_since(sess.last_update).as_millis() as u64
                 );
@@ -521,6 +669,7 @@ fn save_snapshot(shared: &Mutex<Shared>) {
             .iter()
             .map(|(_, sess, reaped_at)| {
                 let mut v = session_to_json(sess);
+                v["carry"] = serde_json::json!(sess.carry);
                 v["elapsed_ms_since_reaped"] = serde_json::json!(
                     now.saturating_duration_since(*reaped_at).as_millis() as u64
                 );
@@ -685,12 +834,7 @@ fn handle_device_event(ev: DeviceEvent, ctx: &EventCtx) {
         }
         DeviceEvent::Key { control, pressed } => {
             let name = control_name(control);
-            let line = serde_json::json!({
-                "event": "key",
-                "control": name,
-                "pressed": pressed,
-            })
-            .to_string();
+            let line = event_line(Event::Key { control: name.clone(), pressed });
             ctx.broadcast(&line);
             // Fire the bound action on press (release is reported but not acted
             // on, to avoid double-firing).
@@ -717,7 +861,7 @@ fn handle_device_event(ev: DeviceEvent, ctx: &EventCtx) {
             }
         }
         DeviceEvent::Dial { delta } => {
-            let line = serde_json::json!({ "event": "dial", "delta": delta }).to_string();
+            let line = event_line(Event::Dial { delta });
             ctx.broadcast(&line);
             if ctx.config.dial.mode.as_deref() == Some("shell") {
                 let cmd = if delta > 0 {
@@ -734,7 +878,7 @@ fn handle_device_event(ev: DeviceEvent, ctx: &EventCtx) {
         }
         DeviceEvent::Joy { gesture } => {
             let name = joy_name(gesture);
-            let line = serde_json::json!({ "event": "joy", "gesture": name }).to_string();
+            let line = event_line(Event::Joy { gesture: name.to_string() });
             ctx.broadcast(&line);
             crate::actions::run(&ctx.config.joystick_for(name));
         }
@@ -1217,7 +1361,7 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
 /// Outcome of dispatching one request line.
 #[cfg(unix)]
 enum Dispatch {
-    Reply(serde_json::Value),
+    Reply(Response),
     Subscribe,
 }
 
@@ -1243,7 +1387,7 @@ async fn handle_client(
         }
         match dispatch(&line, &shared, &ctx, &host_tx) {
             Dispatch::Reply(value) => {
-                let mut out = value.to_string();
+                let mut out = serde_json::to_string(&value).expect("response DTO must serialize");
                 out.push('\n');
                 if writer.write_all(out.as_bytes()).await.is_err() {
                     return;
@@ -1313,33 +1457,18 @@ fn dispatch(
     ctx: &EventCtx,
     host_tx: &tokio::sync::mpsc::UnboundedSender<HostCmd>,
 ) -> Dispatch {
-    let value: serde_json::Value = match serde_json::from_str(line) {
-        Ok(v) => v,
-        Err(e) => return err(&format!("invalid JSON: {e}")),
+    let request: Request = match serde_json::from_str(line) {
+        Ok(request) => request,
+        Err(e) => return err(&format!("invalid request: {e}")),
     };
-    let cmd = value.get("cmd").and_then(|c| c.as_str()).unwrap_or("");
-    match cmd {
-        "set-state" => {
-            let name = value.get("state").and_then(|s| s.as_str()).unwrap_or("");
-            let state = match State::from_name(name) {
+    match request {
+        Request::SetState { state: name, session, kind, label, meta } => {
+            let state = match State::from_name(&name) {
                 Some(s) => s,
                 None => return err(&format!("unknown state: {name:?}")),
             };
-            let session = value.get("session").and_then(|s| s.as_str());
-            let kind = value
-                .get("kind")
-                .and_then(|s| s.as_str())
-                .map(str::to_string);
-            let label = value
-                .get("label")
-                .and_then(|s| s.as_str())
-                .map(str::to_string);
-            let meta = value
-                .get("meta")
-                .and_then(|m| m.as_object())
-                .cloned();
             let effects = shared.lock().unwrap().registry.set_state(
-                session,
+                session.as_deref(),
                 state,
                 kind,
                 label,
@@ -1347,36 +1476,20 @@ fn dispatch(
                 Instant::now(),
             );
             apply_effects(effects, ctx, host_tx);
-            Dispatch::Reply(serde_json::json!({ "ok": true }))
+            ok()
         }
-        "set-meta" => {
-            let Some(session) = value.get("session").and_then(|s| s.as_str()) else {
-                return err("set-meta requires 'session'");
-            };
-            let kind = value
-                .get("kind")
-                .and_then(|s| s.as_str())
-                .map(str::to_string);
-            let label = value
-                .get("label")
-                .and_then(|s| s.as_str())
-                .map(str::to_string);
-            let meta = value
-                .get("meta")
-                .and_then(|m| m.as_object())
-                .cloned()
-                .unwrap_or_default();
+        Request::SetMeta { session, kind, label, meta } => {
             // Unknown sessions are a silent no-op (never registers one) —
             // see `Registry::merge_meta`.
             let effects = shared
                 .lock()
                 .unwrap()
                 .registry
-                .merge_meta(session, kind, label, meta, Instant::now());
+                .merge_meta(&session, kind, label, meta, Instant::now());
             apply_effects(effects, ctx, host_tx);
-            Dispatch::Reply(serde_json::json!({ "ok": true }))
+            ok()
         }
-        "list-sessions" => {
+        Request::ListSessions => {
             // Live sessions first (marked `connected: true`), then any
             // tombstoned ones as `connected: false` (PROTOCOL.md §3) — a
             // sweep-reaped session stays visible/disconnected here until it's
@@ -1388,82 +1501,54 @@ fn dispatch(
                 let s = shared.lock().unwrap();
                 (s.registry.list(), s.registry.tombstones_snapshot())
             };
-            let mut arr: Vec<serde_json::Value> = sessions
-                .iter()
-                .map(|s| {
-                    let mut v = session_to_json(s);
-                    v["connected"] = serde_json::json!(true);
-                    v
-                })
-                .collect();
+            let mut arr: Vec<SessionDto> = sessions.iter().map(|s| session_to_dto(s, Some(true))).collect();
             for (_id, sess, _reaped_at) in &tombstones {
-                let mut v = session_to_json(sess);
-                v["connected"] = serde_json::json!(false);
-                arr.push(v);
+                arr.push(session_to_dto(sess, Some(false)));
             }
-            Dispatch::Reply(serde_json::json!({ "ok": true, "sessions": arr }))
+            Dispatch::Reply(Response::Sessions { ok: true, sessions: arr })
         }
-        "set-usage" => {
-            let Some(provider) = value.get("provider").and_then(|p| p.as_str()) else {
-                return err("set-usage requires 'provider'");
-            };
-            let Some(update) = value.get("usage").and_then(|u| u.as_object()) else {
-                return err("set-usage requires object 'usage'");
-            };
+        Request::SetUsage { provider, usage } => {
             let snapshot = {
                 let mut s = shared.lock().unwrap();
-                match merge_usage(&mut s.usage, provider, update) {
+                match merge_usage(&mut s.usage, &provider, &usage) {
                     Ok(snapshot) => snapshot,
                     Err(message) => return err(&message),
                 }
             };
-            ctx.broadcast(&usage_event_line(provider, &snapshot));
+            ctx.broadcast(&usage_event_line(&provider, &snapshot));
             save_snapshot(shared);
-            Dispatch::Reply(serde_json::json!({ "ok": true }))
+            ok()
         }
-        "get-usage" => {
+        Request::GetUsage => {
             let usage = shared.lock().unwrap().usage.clone();
-            Dispatch::Reply(serde_json::json!({ "ok": true, "usage": usage }))
+            Dispatch::Reply(Response::Usage { ok: true, usage })
         }
-        "rename-session" => {
-            let Some(id) = value.get("session").and_then(|s| s.as_str()) else {
-                return err("rename-session requires 'session'");
-            };
+        Request::RenameSession { session: id, name } => {
             // A missing/null `name`, or an empty one, clears the rename so
             // the session falls back to the adapter's label.
-            let name = value.get("name").and_then(|n| n.as_str());
-            let effects = shared.lock().unwrap().registry.rename(id, name);
+            let effects = shared.lock().unwrap().registry.rename(&id, name.as_deref());
             let Some(effects) = effects else {
                 return err(&format!("unknown session: {id}"));
             };
             apply_effects(effects, ctx, host_tx);
-            Dispatch::Reply(serde_json::json!({ "ok": true }))
+            ok()
         }
-        "swap-slots" => {
-            let Some(id1) = value.get("session1").and_then(|s| s.as_str()) else {
-                return err("swap-slots requires 'session1'");
-            };
-            let Some(id2) = value.get("session2").and_then(|s| s.as_str()) else {
-                return err("swap-slots requires 'session2'");
-            };
-            let result = shared.lock().unwrap().registry.swap_slots(id1, id2);
+        Request::SwapSlots { session1: id1, session2: id2 } => {
+            let result = shared.lock().unwrap().registry.swap_slots(&id1, &id2);
             match result {
                 Ok(effects) => {
                     apply_effects(effects, ctx, host_tx);
-                    Dispatch::Reply(serde_json::json!({ "ok": true }))
+                    ok()
                 }
                 Err(message) => err(&message),
             }
         }
-        "end-session" => {
-            let Some(id) = value.get("session").and_then(|s| s.as_str()) else {
-                return err("end-session requires 'session'");
-            };
-            let effects = shared.lock().unwrap().registry.end_session(id);
+        Request::EndSession { session: id } => {
+            let effects = shared.lock().unwrap().registry.end_session(&id);
             apply_effects(effects, ctx, host_tx);
-            Dispatch::Reply(serde_json::json!({ "ok": true }))
+            ok()
         }
-        "quit-session" => {
+        Request::QuitSession { session: id } => {
             // Destructively end a session: ask the actual agent process to
             // exit gracefully (SIGINT→SIGTERM, so its own SessionEnd teardown
             // runs), then guarantee the session is removed even if that hook
@@ -1473,20 +1558,17 @@ fn dispatch(
             // running. When we can signal, the removal rides the agent's real
             // SessionEnd hook; the thread's own end_session is the idempotent
             // safety net after the process is gone (or the grace elapses).
-            let Some(id) = value.get("session").and_then(|s| s.as_str()) else {
-                return err("quit-session requires 'session'");
-            };
             let pid = shared
                 .lock()
                 .unwrap()
                 .registry
-                .session_or_tombstone(id)
+                .session_or_tombstone(&id)
                 .and_then(|s| s.pid());
             match pid {
                 Some(pid) => {
                     let ctx = ctx.clone();
                     let host_tx = host_tx.clone();
-                    let id = id.to_string();
+                    let id = id.clone();
                     std::thread::spawn(move || {
                         quit_agent_process(pid);
                         let effects = ctx.shared.lock().unwrap().registry.end_session(&id);
@@ -1496,13 +1578,13 @@ fn dispatch(
                 None => {
                     // Nothing to signal (no resolved pid) — just remove it,
                     // same as end-session.
-                    let effects = shared.lock().unwrap().registry.end_session(id);
+                    let effects = shared.lock().unwrap().registry.end_session(&id);
                     apply_effects(effects, ctx, host_tx);
                 }
             }
-            Dispatch::Reply(serde_json::json!({ "ok": true }))
+            ok()
         }
-        "focus-session" => {
+        Request::FocusSession { session: id } => {
             // Run the [session] focus action for a session looked up by id —
             // including a disconnected (tombstoned) one, whose terminal is
             // usually still open (idle past the TTL, or an agent crash that
@@ -1512,66 +1594,54 @@ fn dispatch(
             // slot may have been reclaimed. Runs on a detached thread so the
             // focus script's osascript (with its own hard timeouts) never
             // blocks the socket dispatch.
-            let Some(id) = value.get("session").and_then(|s| s.as_str()) else {
-                return err("focus-session requires 'session'");
-            };
-            let session = shared.lock().unwrap().registry.session_or_tombstone(id);
+            let session = shared.lock().unwrap().registry.session_or_tombstone(&id);
             match session {
                 Some(sess) => {
                     let ctx = ctx.clone();
                     let slot = sess.slot.unwrap_or(0);
                     std::thread::spawn(move || run_focus(&ctx, &sess, slot));
-                    Dispatch::Reply(serde_json::json!({ "ok": true }))
+                    ok()
                 }
                 None => err(&format!("unknown session: {id}")),
             }
         }
-        "inject" => match parse_inject(&value) {
+        Request::Inject { kind, control, action, delta, gesture } => match parse_inject_fields(
+            &kind, control.as_deref(), action.as_deref(), delta, gesture.as_deref(),
+        ) {
             Ok(events) => {
                 // Feed through the exact same dispatch path as real hardware
                 // input: actions fire and subscribers see the event.
                 for ev in events {
                     handle_device_event(ev, ctx);
                 }
-                Dispatch::Reply(serde_json::json!({ "ok": true }))
+                ok()
             }
             Err(e) => err(&e),
         },
-        "get-state" => {
+        Request::GetState => {
             let state = shared.lock().unwrap().registry.aggregate();
-            Dispatch::Reply(serde_json::json!({ "ok": true, "state": state.name() }))
+            Dispatch::Reply(Response::State { ok: true, state: state.name().to_string() })
         }
-        "set-led" => {
-            let index = match value.get("index").and_then(|i| i.as_u64()) {
-                Some(i) if i <= 255 => i as u8,
-                _ => return err("set-led requires integer 'index' in 0..=255 (255 = all)"),
+        Request::SetLed { index, rgb } => {
+            let index = match u8::try_from(index) {
+                Ok(index) => index,
+                Err(_) => return err("set-led requires integer 'index' in 0..=255 (255 = all)"),
             };
-            let rgb = value.get("rgb").and_then(|v| v.as_array());
-            let rgb = match rgb {
-                Some(a) if a.len() == 3 => a,
-                _ => return err("set-led requires 'rgb' array of 3 integers"),
-            };
-            let mut c = [0u8; 3];
-            for (slot, v) in c.iter_mut().zip(rgb) {
-                match v.as_u64() {
-                    Some(n) if n <= 255 => *slot = n as u8,
-                    _ => return err("rgb values must be integers 0..=255"),
-                }
-            }
+            let c = match parse_rgb_values(&rgb) { Ok(rgb) => rgb, Err(message) => return err(&message) };
             let _ = host_tx.send(HostCmd::SetLed {
                 index,
                 r: c[0],
                 g: c[1],
                 b: c[2],
             });
-            Dispatch::Reply(serde_json::json!({ "ok": true }))
+            ok()
         }
-        "get-styles" => {
+        Request::GetStyles => {
             let styles = shared.lock().unwrap().styles;
-            Dispatch::Reply(serde_json::json!({ "ok": true, "styles": styles_json(&styles) }))
+            Dispatch::Reply(Response::Styles { ok: true, styles: styles_json(&styles) })
         }
-        "set-style" => {
-            let (state, style) = match parse_set_style(&value) {
+        Request::SetStyle { state: state_name, rgb, pattern, period_ms } => {
+            let (state, style) = match parse_set_style_fields(&state_name, &rgb, &pattern, period_ms) {
                 Ok(pair) => pair,
                 Err(e) => return err(&e),
             };
@@ -1587,20 +1657,24 @@ fn dispatch(
             shared.lock().unwrap().styles.set(state, style);
             let _ = host_tx.send(style.to_host_cmd(state));
             ctx.broadcast(&style_event_line(state, &style));
-            Dispatch::Reply(serde_json::json!({ "ok": true }))
+            ok()
         }
-        "subscribe" => Dispatch::Subscribe,
-        "ping" => {
+        Request::Subscribe => Dispatch::Subscribe,
+        Request::Ping => {
             let present = shared.lock().unwrap().device_present;
-            Dispatch::Reply(serde_json::json!({ "ok": true, "device": present }))
+            Dispatch::Reply(Response::Ping { ok: true, device: present })
         }
-        other => err(&format!("unknown cmd: {other:?}")),
     }
 }
 
 #[cfg(unix)]
 fn err(msg: &str) -> Dispatch {
-    Dispatch::Reply(serde_json::json!({ "ok": false, "error": msg }))
+    Dispatch::Reply(Response::Error { ok: false, error: msg.to_string() })
+}
+
+#[cfg(unix)]
+fn ok() -> Dispatch {
+    Dispatch::Reply(Response::Ok { ok: true })
 }
 
 // ---------------------------------------------------------------------------
@@ -1638,6 +1712,7 @@ mod tests {
             label: Some("My Chat".into()),
             name: Some("Renamed".into()),
             meta,
+            carry: serde_json::Map::new(),
             slot: Some(3),
             state: State::Thinking,
             last_update: Instant::now(),
@@ -1651,6 +1726,37 @@ mod tests {
         assert_eq!(restored.slot, original.slot);
         assert_eq!(restored.state, original.state);
         assert_eq!(restored.meta, original.meta);
+    }
+
+    #[test]
+    fn request_dto_decodes_protocol_commands() {
+        let request: Request = serde_json::from_value(json!({
+            "cmd": "set-state", "state": "running", "session": "s1",
+            "kind": "claude", "meta": {"cwd": "/repo"}
+        })).expect("typed request decodes");
+        assert!(matches!(request, Request::SetState { state, session: Some(session), .. }
+            if state == "running" && session == "s1"));
+
+        let request: Request = serde_json::from_value(json!({
+            "cmd": "inject", "kind": "dial", "delta": -1
+        })).expect("typed inject decodes");
+        assert!(matches!(request, Request::Inject { kind, delta: Some(-1), .. } if kind == "dial"));
+    }
+
+    #[test]
+    fn dto_session_payload_never_exposes_carry_bookkeeping() {
+        let session = Session {
+            id: "s1".into(), kind: Some("claude".into()), label: None, name: None,
+            meta: Map::from_iter([("turns".into(), json!(8)), ("_carry_turns".into(), json!(5))]),
+            carry: Map::from_iter([("turns".into(), json!(5))]),
+            slot: Some(1), state: State::Running, last_update: Instant::now(),
+        };
+        let payload = session_to_json(&session);
+        assert!(payload["meta"].get("_carry_turns").is_none());
+        assert!(payload.get("carry").is_none());
+        let event = session_event_line(&session.id, &session.kind, &session.label, &session.name,
+            &session.meta, session.slot, session.state);
+        assert!(!event.contains("_carry_"));
     }
 
     #[test]

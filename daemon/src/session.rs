@@ -47,14 +47,14 @@ const COMPACT_GRACE: Duration = Duration::from_secs(300);
 const CUMULATIVE_META_KEYS: &[&str] =
     &["turns", "tool_calls", "subagents", "tokens_in", "tokens_out", "cost_usd"];
 
-/// Add `incoming` to the carried-forward base for `key` in `meta`
-/// (`_carry_<key>`, 0 if absent — the common, never-compacted case).
+/// Add `incoming` to the carried-forward base for `key` (`carry`, 0 if
+/// absent — the common, never-compacted case).
 /// Prefers integer arithmetic when both sides are whole numbers so a
 /// never-compacted session's counters keep displaying as plain integers
 /// (`7`, not `7.0`) — what makes this mechanism a true no-op for the common
 /// case, not just numerically equivalent.
-fn add_carry(meta: &Map<String, Value>, key: &str, incoming: &Value) -> Value {
-    let base = meta.get(&format!("_carry_{key}"));
+fn add_carry(carry: &Map<String, Value>, key: &str, incoming: &Value) -> Value {
+    let base = carry.get(key);
     let base_is_int = base.map_or(true, |b| b.is_i64() || b.is_u64());
     if base_is_int {
         if let Some(vi) = incoming.as_i64() {
@@ -72,10 +72,14 @@ fn add_carry(meta: &Map<String, Value>, key: &str, incoming: &Value) -> Value {
 /// than overwritten; everything else is a plain overwrite, same as always.
 /// Shared by `set_state`'s update and rekey branches and by `merge_meta`, so
 /// there's exactly one place this distinction is made.
-fn apply_meta_update(meta: &mut Map<String, Value>, incoming: Map<String, Value>) {
+fn apply_meta_update(
+    meta: &mut Map<String, Value>,
+    carry: &Map<String, Value>,
+    incoming: Map<String, Value>,
+) {
     for (k, v) in incoming {
         if CUMULATIVE_META_KEYS.contains(&k.as_str()) && v.is_number() {
-            let added = add_carry(meta, &k, &v);
+            let added = add_carry(carry, &k, &v);
             meta.insert(k, added);
             continue;
         }
@@ -130,6 +134,9 @@ pub struct Session {
     /// `rename-session` ever writes this.
     pub name: Option<String>,
     pub meta: Map<String, Value>,
+    /// Carried-forward bases for cumulative meta counters across a rekey.
+    /// This is daemon bookkeeping, deliberately separate from public `meta`.
+    pub carry: Map<String, Value>,
     /// Numbered key 1..=12, or `None` if this session overflowed (>12 live).
     pub slot: Option<u8>,
     pub state: State,
@@ -387,7 +394,7 @@ impl Registry {
                         sess.label = label;
                     }
                     if let Some(m) = meta {
-                        apply_meta_update(&mut sess.meta, m);
+                        apply_meta_update(&mut sess.meta, &sess.carry, m);
                     }
                     sess.last_update = now;
                     effects.push(Effect::SessionUpsert {
@@ -437,7 +444,7 @@ impl Registry {
                         // See CUMULATIVE_META_KEYS/apply_meta_update above.
                         for key in CUMULATIVE_META_KEYS {
                             if let Some(v) = sess.meta.get(*key).cloned() {
-                                sess.meta.insert(format!("_carry_{key}"), v);
+                                sess.carry.insert((*key).to_string(), v);
                             }
                         }
                         let compactions = sess
@@ -457,7 +464,7 @@ impl Registry {
                         if label.is_some() {
                             sess.label = label;
                         }
-                        apply_meta_update(&mut sess.meta, incoming_meta);
+                        apply_meta_update(&mut sess.meta, &sess.carry, incoming_meta);
                         sess.last_update = now;
                         effects.push(Effect::SessionRekeyed {
                             old_id,
@@ -482,6 +489,7 @@ impl Registry {
                             label,
                             name: None,
                             meta: incoming_meta,
+                            carry: Map::new(),
                             slot,
                             state,
                             last_update: now,
@@ -530,7 +538,7 @@ impl Registry {
         if label.is_some() {
             sess.label = label;
         }
-        apply_meta_update(&mut sess.meta, meta);
+        apply_meta_update(&mut sess.meta, &sess.carry, meta);
         sess.last_update = now;
         vec![Effect::SessionUpsert {
             id: sess.id.clone(),
