@@ -1,0 +1,44 @@
+board_bounds_mm=100.000,100.000..216.000,216.000
+track_segments=1033
+vias=227
+segments_under_1mm=419
+segments_under_2mm=612
+corner_counts=45_degree:533,90_degree:48,>95_degree:9,other:20,straight_redundant:21
+layer_usage:
+  B.Cu: segments=687 length_mm=2167.2
+  F.Cu: segments=127 length_mm=1413.6
+  GND + slow routing: segments=191 length_mm=1903.4
+  GND plane: segments=28 length_mm=460.6
+copper_segments_under_0.50mm_from_edge=0
+minimum_track_edge_clearance_by_side:
+  left: clearance=2.850 net=+3V3 layer=B.Cu width=0.300 from=(103.000,181.175) to=(106.000,181.175)
+  right: clearance=1.883 net=USB_DN_ESD layer=F.Cu width=0.233 from=(213.133,184.383) to=(214.000,186.000)
+  top: clearance=4.564 net=USB_DP_CONN layer=F.Cu width=0.142 from=(145.319,104.635) to=(145.250,104.705)
+  bottom: clearance=0.941 net=KEY12 layer=B.Cu width=0.200 from=(200.493,214.959) to=(141.242,214.959)
+closest_edge_segments:
+largest_two_pad_detour_ratios:
+  ratio=3.22 net=U6_CT routed_mm=20.6 direct_mm=6.4
+  ratio=2.21 net=LED3_DIN routed_mm=111.3 direct_mm=50.3
+  ratio=1.94 net=LED7_DIN routed_mm=133.9 direct_mm=68.9
+  ratio=1.73 net=TOUCH_SNS2 routed_mm=9.0 direct_mm=5.2
+  ratio=1.58 net=BQ_TMR routed_mm=15.4 direct_mm=9.7
+  ratio=1.47 net=KEY12 routed_mm=102.9 direct_mm=70.2
+  ratio=1.46 net=BB_L1 routed_mm=7.4 direct_mm=5.0
+  ratio=1.44 net=KEY4 routed_mm=126.0 direct_mm=87.2
+  ratio=1.44 net=BB_L2 routed_mm=10.7 direct_mm=7.5
+  ratio=1.43 net=KEY1 routed_mm=143.0 direct_mm=99.9
+  ratio=1.43 net=BQ_ILIM routed_mm=13.4 direct_mm=9.4
+  ratio=1.40 net=KEY3 routed_mm=144.3 direct_mm=103.3
+  ratio=1.39 net=KEY9 routed_mm=77.1 direct_mm=55.3
+  ratio=1.39 net=SWDIO routed_mm=162.1 direct_mm=116.7
+  ratio=1.37 net=KEY5 routed_mm=104.4 direct_mm=76.0
+  ratio=1.37 net=ENC_B routed_mm=142.1 direct_mm=104.0
+  ratio=1.36 net=KEY10 routed_mm=57.9 direct_mm=42.6
+  ratio=1.36 net=KEY2 routed_mm=121.6 direct_mm=89.4
+  ratio=1.36 net=ENC_SW routed_mm=127.1 direct_mm=93.7
+  ratio=1.35 net=SWDCLK routed_mm=158.2 direct_mm=117.0
+  ratio=1.35 net=ENC_A routed_mm=143.4 direct_mm=106.5
+  ratio=1.33 net=KEY7 routed_mm=125.8 direct_mm=94.3
+  ratio=1.33 net=KEY8 routed_mm=101.5 direct_mm=76.3
+  ratio=1.33 net=KEY13 routed_mm=67.9 direct_mm=51.1
+  ratio=1.33 net=KEY6 routed_mm=84.7 direct_mm=63.9

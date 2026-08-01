@@ -1,0 +1,10 @@
+source=focalpoint_rev_b_4layer_final_candidate.kicad_pcb
+output=focalpoint_rev_b_4layer_release_candidate.kicad_pcb
+old_usb_items_removed=12
+unconnected_before=2
+unconnected_after=0
+stackup=JLC04161H-7628 1.6mm 1oz/0.5oz
+usb_pair_width_mm=0.2332
+usb_pair_gap_mm=0.15
+target_differential_impedance_ohm=90
+usb_inner_fanout_segments=3

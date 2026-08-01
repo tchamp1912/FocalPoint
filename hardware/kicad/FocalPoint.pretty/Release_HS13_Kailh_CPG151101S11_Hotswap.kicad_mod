@@ -9,7 +9,7 @@
 		(at 0 8.5 0)
 		(layer "F.SilkS")
 		(hide yes)
-		(uuid "27f11b7c-f0fb-4783-bdb4-8828d940924f")
+		(uuid "afb1f84e-934a-44c6-ab8d-8ea65486815a")
 		(effects
 			(font
 				(size 1 1)
@@ -20,7 +20,7 @@
 	(property "Value" "CPG151101S11"
 		(at 0 -8.5 0)
 		(layer "F.Fab")
-		(uuid "b25a0a86-f84f-4387-a5ea-6ed65aff9328")
+		(uuid "08340452-93b1-4a6b-80d8-22a74f004f4e")
 		(effects
 			(font
 				(size 1 1)
@@ -32,7 +32,7 @@
 		(at 0 0 0)
 		(layer "F.Fab")
 		(hide yes)
-		(uuid "18fd6b53-3a4b-4aaf-97be-fa08cdf93866")
+		(uuid "4b5baed9-61b3-4c25-a203-3e7854803377")
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -43,7 +43,7 @@
 		(at 0 0 0)
 		(layer "F.Fab")
 		(hide yes)
-		(uuid "319a5d8c-948c-4038-8326-f9581e8a24eb")
+		(uuid "d8f1ea2a-d282-4742-9ac3-c86fa9a1c1d5")
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -129,35 +129,35 @@
 		(at -5.08 0)
 		(size 1.7 1.7)
 		(drill 1.7)
-		(layers "*.Mask" "F.Cu" "B.Cu" "In1.Cu" "In2.Cu" "In3.Cu" "In4.Cu")
+		(layers "*.Mask" "F.Cu" "B.Cu" "In1.Cu" "In2.Cu")
 		(uuid "ed1543c7-3d08-44e3-837e-5535b9979439")
 	)
 	(pad "" np_thru_hole circle
 		(at -2.54 -5.08)
 		(size 3.05 3.05)
 		(drill 3.05)
-		(layers "*.Mask" "F.Cu" "B.Cu" "In1.Cu" "In2.Cu" "In3.Cu" "In4.Cu")
+		(layers "*.Mask" "F.Cu" "B.Cu" "In1.Cu" "In2.Cu")
 		(uuid "4b63a30d-9631-493c-b68c-a61326f74bfd")
 	)
 	(pad "" np_thru_hole circle
 		(at 0 0)
 		(size 4 4)
 		(drill 4)
-		(layers "*.Mask" "F.Cu" "B.Cu" "In1.Cu" "In2.Cu" "In3.Cu" "In4.Cu")
+		(layers "*.Mask" "F.Cu" "B.Cu" "In1.Cu" "In2.Cu")
 		(uuid "75aae7c0-2928-464e-ac06-d5373d92d5d7")
 	)
 	(pad "" np_thru_hole circle
 		(at 3.81 -2.54)
 		(size 3.05 3.05)
 		(drill 3.05)
-		(layers "*.Mask" "F.Cu" "B.Cu" "In1.Cu" "In2.Cu" "In3.Cu" "In4.Cu")
+		(layers "*.Mask" "F.Cu" "B.Cu" "In1.Cu" "In2.Cu")
 		(uuid "aa56e9ce-f914-4d0f-833e-863d948c2f10")
 	)
 	(pad "" np_thru_hole circle
 		(at 5.08 0)
 		(size 1.7 1.7)
 		(drill 1.7)
-		(layers "*.Mask" "F.Cu" "B.Cu" "In1.Cu" "In2.Cu" "In3.Cu" "In4.Cu")
+		(layers "*.Mask" "F.Cu" "B.Cu" "In1.Cu" "In2.Cu")
 		(uuid "3f8aa845-71fd-4f6e-8a8a-11516c70defd")
 	)
 	(pad "1" smd roundrect

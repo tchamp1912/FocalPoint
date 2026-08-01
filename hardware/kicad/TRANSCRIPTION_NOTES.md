@@ -179,8 +179,8 @@ anyone hand-generating KiCad 10 s-expressions:
 The historical placeholder issues above have been resolved in the checked-in
 schematic and corrected PCB. Human review now focuses on:
 
-1. Native KiCad DRC on
-   `focalpoint_rev_a_release_candidate.kicad_pcb`.
+1. Preserve the zero-violation native KiCad DRC result on
+   `focalpoint_rev_b_4layer_release_candidate.kicad_pcb` after any edit.
 2. JLC BOM/placement upload review, including every MPN, side, and rotation.
 3. Antenna keepout, USB-C edge alignment, LED/socket orientation, joystick and
    encoder clearances, and the complete enclosure/PCB fit.

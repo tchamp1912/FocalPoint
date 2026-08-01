@@ -190,3 +190,22 @@ explicitly confirmed by the owner.
   reports zero geometry mismatches while ignoring only regenerated property
   UUID metadata. KiCad's library-mismatch category is ignored for this locked
   release library because J3 and U1 otherwise remain false positives.
+
+## Rev B four-layer superseding decision — 2026-07-31
+
+The six-layer Rev A routing decisions above are retained as design history but
+are superseded for fabrication by
+`focalpoint_rev_b_4layer_release_candidate.kicad_pcb`:
+
+- Use JLCPCB `JLC04161H-7628`, nominal 1.6 mm, with 1 oz outer and 0.5 oz inner
+  copper. F.Cu is signal/USB, In1 is continuous GND, In2 is GND plus slow
+  signals, and B.Cu is signal/local power. There are no separate 3.3 V or 5 V
+  planes.
+- The USB 2.0 pair is F.Cu edge-coupled microstrip over In1 GND using
+  0.2332 mm traces and a 0.15 mm edge gap for the recorded 90-ohm target.
+- The Rev B native DRC result is zero violations, zero unconnected pads, and
+  zero footprint errors. Independent net parity, copper/fabrication, and
+  vendored-footprint audits also report zero mismatches or violations.
+- Order and physical-validation gates remain: JLC live DFM/BOM/placement
+  review, independent electrical review, enclosure/part fit, and bring-up of
+  both prototype units.

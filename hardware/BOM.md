@@ -1,9 +1,9 @@
-# Rev A engineering BOM
+# Rev B prototype engineering BOM
 
 Status: **prototype candidate, not order-ready.** The schematic is captured and
-passes ERC; the fully routed six-layer PCB has zero unconnected pads. The
-remaining electrical release gates are disposition of the saved DRC warnings,
-independent review, and JLCPCB's live component/rotation check. Design basis:
+passes ERC; the fully routed four-layer PCB has zero DRC violations and zero
+unconnected pads. The remaining release gates are independent review,
+JLCPCB's live component/rotation check, and physical bring-up. Design basis:
 116 x 116 mm PCB, 122 x 122 mm enclosure, thirteen RGB MX keys plus encoder,
 analog joystick, and capacitive touch = sixteen logical inputs.
 
@@ -164,9 +164,8 @@ pad. Quote USB-C as hybrid assembly.
    warnings); netlist exports clean; no dangling nets (verified). **Independent
    human review still owed** — see `kicad/TRANSCRIPTION_NOTES.md` for the
    reviewer checklist and `CAPTURE_GAP_RESOLUTIONS.md` for resolved/new gaps.*
-2. Use exact manufacturer footprints, complete the six-layer route, and pass
-   native KiCad DRC on
-   `kicad/focalpoint_rev_a_release_candidate.kicad_pcb`.
+2. Use exact manufacturer footprints and pass native KiCad DRC on
+   `kicad/focalpoint_rev_b_4layer_release_candidate.kicad_pcb`.
 3. Check antenna exclusion on every copper layer and against battery/base/screws.
 4. Import populated STEP models and pass enclosure interference review.
 5. Redesign the battery pocket to at least 42 x 39 x 8 mm plus cable relief.
@@ -210,8 +209,8 @@ PCBA/enclosure order is not justified.
 
 ## Fabricated items and reusable tooling
 
-- JLCPCB: five 116 x 116 mm, six-layer, 1.6 mm order-class FR-4, ENIG bare
-  boards using JLC06161H-3313; populate exactly two. Select impedance control
+- JLCPCB: five 116 x 116 mm, four-layer, 1.6 mm order-class FR-4, ENIG bare
+  boards using JLC04161H-7628; populate exactly two. Select impedance control
   and epoxy-filled/capped via-in-pad. Five is treated as an unavoidable
   fabrication minimum, not a third device.
 - JLC3DP: two each of the top, bottom, and circular-base STEP files in black MJF

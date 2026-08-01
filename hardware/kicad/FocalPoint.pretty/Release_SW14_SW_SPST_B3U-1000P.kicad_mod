@@ -8,7 +8,7 @@
 	(property "Reference" "SW14"
 		(at 0 -2.5 -90)
 		(layer "F.SilkS")
-		(uuid "404dd132-c18d-4748-8576-a38e3325aab2")
+		(uuid "92a8bb74-d105-4773-a7a2-1dd80f81d285")
 		(effects
 			(font
 				(size 1 1)
@@ -19,7 +19,7 @@
 	(property "Value" "B3U-1000P"
 		(at 0 2.5 -90)
 		(layer "F.Fab")
-		(uuid "f046e495-48d8-44c4-aede-a1ee97898236")
+		(uuid "e4351b8b-75c6-4f5e-a635-ca39943a6d94")
 		(effects
 			(font
 				(size 1 1)
@@ -32,7 +32,7 @@
 		(unlocked yes)
 		(layer "F.Fab")
 		(hide yes)
-		(uuid "fa211918-3161-4ae7-9f8c-87b36b9c4676")
+		(uuid "8a12dcaf-64be-4766-a793-dbc60a7648bd")
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -45,7 +45,7 @@
 		(unlocked yes)
 		(layer "F.Fab")
 		(hide yes)
-		(uuid "19a240dd-c521-4c19-b5c1-d8c137eea11e")
+		(uuid "c14dce9e-3597-472b-81ee-fe41bdbe07f4")
 		(effects
 			(font
 				(size 1.27 1.27)

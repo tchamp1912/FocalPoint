@@ -7,6 +7,7 @@ archive/
 tools/*.jar
 release_candidate_pinoutfix/
 release_candidate/
+release_candidate_rev_b_4layer/
 focalpoint_rev_a_pinoutfix_gerbers_candidate.zip
 focalpoint_rev_a_pinoutfix_release_candidate.zip
 focalpoint_rev_a_release_candidate.zip

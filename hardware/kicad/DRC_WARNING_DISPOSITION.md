@@ -1,4 +1,9 @@
-# Rev A DRC warning disposition
+# Historical Rev A DRC warning disposition
+
+This document records the superseded six-layer cleanup. The authoritative Rev
+B evidence is `focalpoint_rev_b_4layer_release_DRC.rpt` for
+`focalpoint_rev_b_4layer_release_candidate.kicad_pcb`; it reports zero
+violations, zero unconnected pads, and zero footprint errors.
 
 Authoritative report: `DRC_release_candidate_native.rpt`
 

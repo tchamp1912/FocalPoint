@@ -8,9 +8,9 @@ Authoritative electrical sources:
 - Schematic children: `kicad/focalpoint_power.kicad_sch`,
   `kicad/focalpoint_signals.kicad_sch`, and
   `kicad/focalpoint_peripherals.kicad_sch`
-- PCB: `kicad/focalpoint_rev_a_release_candidate.kicad_pcb`
-- Project: `kicad/focalpoint_rev_a_release_candidate.kicad_pro`
-- Native DRC evidence: `kicad/DRC_release_candidate_native.rpt`
+- PCB: `kicad/focalpoint_rev_b_4layer_release_candidate.kicad_pcb`
+- Project: `kicad/focalpoint_rev_b_4layer_release_candidate.kicad_pro`
+- Native DRC evidence: `kicad/focalpoint_rev_b_4layer_release_DRC.rpt`
 
 The board is a routed prototype candidate, not yet an orderable production
 release. Keep this file current as checks are completed or reopened.
@@ -26,22 +26,24 @@ release. Keep this file current as checks are completed or reopened.
   - Layout evidence: `kicad/hierarchical_schematic_layout_validation.txt`
     reports zero overlapping pairs, full printable-area containment, and
     preserved connection-grid alignment.
-- [x] Route the six-layer PCB with no ratsnest.
+- [x] Reroute the PCB as four layers with no ratsnest.
   - Evidence: native DRC reports 0 unconnected pads.
+  - Stack: JLC04161H-7628; F.Cu signal/USB, In1 continuous GND, In2 GND plus
+    slow signals, B.Cu signal/power. There are no separate 3.3 V/5 V planes.
 - [x] Compare numbered schematic pins with PCB pad nets.
-  - Evidence: `kicad/release_candidate_schematic_pcb_net_compare.txt` reports 0
+  - Evidence: `kicad/focalpoint_rev_b_4layer_schematic_pcb_net_compare.txt` reports 0
     mismatches.
 - [x] Run the independent copper/fabrication-minimum audit.
-  - Evidence: `kicad/release_candidate_static_audit.txt` reports 0
+  - Evidence: `kicad/focalpoint_rev_b_4layer_static_audit.txt` reports 0
     violations.
 - [x] Dispose of every native DRC warning.
   - Final checkpoint: 0 violations, 0 unconnected pads, and 0 footprint
-    errors in `kicad/DRC_release_candidate_native.rpt`.
+    errors in `kicad/focalpoint_rev_b_4layer_release_DRC.rpt`.
   - Resolved locally: all 18 hole-to-hole, all 9 connection-width, all 6
     dangling-via, all 14 original dangling-track, and all 114 silkscreen
     warnings.
   - Thirty-seven intentionally modified footprints are locked in
-    `kicad/FocalPoint.pretty`; `kicad/release_candidate_footprint_audit.txt`
+    `kicad/FocalPoint.pretty`; `kicad/focalpoint_rev_b_4layer_footprint_audit.txt`
     reports 0 geometry mismatches. KiCad's global library-mismatch category is
     ignored only because J3/U1 regenerate property UUID metadata when exported.
 - [ ] Obtain an independent schematic/PCB review.
@@ -65,11 +67,11 @@ release. Keep this file current as checks are completed or reopened.
 - [x] Build a fresh manufacturing package from the accepted PCB.
   - Required: Gerbers, PTH/NPTH drills, BOM, centroid/positions, source files,
     validation reports, and hashes.
-  - Output: `kicad/release_candidate/`,
-    `kicad/focalpoint_rev_a_release_candidate.zip`, and
-    `kicad/focalpoint_rev_a_release_candidate_gerbers.zip`.
+  - Output: `kicad/release_candidate_rev_b_4layer/`,
+    `kicad/focalpoint_rev_b_4layer_release_candidate.zip`, and
+    `kicad/focalpoint_rev_b_4layer_release_candidate_gerbers.zip`.
 - [ ] Complete JLCPCB live upload review.
-  - Confirm JLC06161H-3313, 1.6 mm order class, ENIG, impedance control, and
+  - Confirm JLC04161H-7628, 1.6 mm order class, ENIG, impedance control, and
     epoxy-filled/capped via-in-pad.
   - Confirm every exact MPN, stock/substitution choice, side, and rotation.
   - Populate exactly two boards; five bare boards may be the fabrication

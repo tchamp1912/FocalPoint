@@ -9,6 +9,7 @@ geometry, layers, properties, pads, models, and attributes remain compared.
 from __future__ import annotations
 
 import re
+import sys
 import tempfile
 from pathlib import Path
 
@@ -16,9 +17,13 @@ import pcbnew
 
 
 ROOT = Path(__file__).resolve().parent
-BOARD = ROOT / "focalpoint_rev_a_release_candidate.kicad_pcb"
+BOARD = (
+    Path(sys.argv[1]).resolve()
+    if len(sys.argv) > 1
+    else ROOT / "focalpoint_rev_b_4layer_release_candidate.kicad_pcb"
+)
 LIBRARY = ROOT / "FocalPoint.pretty"
-REPORT = ROOT / "release_candidate_footprint_audit.txt"
+REPORT = Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else ROOT / "release_candidate_footprint_audit.txt"
 EXPECTED_RELEASE_FOOTPRINTS = 37
 
 

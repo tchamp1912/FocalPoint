@@ -9,7 +9,7 @@
 		(at 0 -1.65 0)
 		(layer "F.SilkS")
 		(hide yes)
-		(uuid "ddd85adc-0a81-4f7c-887e-b9a75f67f52a")
+		(uuid "53c121a0-ca3b-4779-8178-63bf3158bc55")
 		(effects
 			(font
 				(size 1 1)
@@ -20,7 +20,7 @@
 	(property "Value" "TPS61023DRLR"
 		(at 0 1.65 0)
 		(layer "F.Fab")
-		(uuid "7a33cd2e-1289-4ca9-9638-1bc17362c385")
+		(uuid "4adb8857-8352-44ba-93fe-56ccbcb551bf")
 		(effects
 			(font
 				(size 1 1)
@@ -32,7 +32,7 @@
 		(at 0 0 0)
 		(layer "F.Fab")
 		(hide yes)
-		(uuid "d6550633-20c2-4318-983d-2b4e6776839b")
+		(uuid "22513960-2d7c-4a47-aeb9-8ac6f7ce1459")
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -43,7 +43,7 @@
 		(at 0 0 0)
 		(layer "F.Fab")
 		(hide yes)
-		(uuid "a5c26434-6472-45d7-9710-3edf2f328184")
+		(uuid "54e3663a-81f7-45f7-95db-e5284d74e938")
 		(effects
 			(font
 				(size 1.27 1.27)

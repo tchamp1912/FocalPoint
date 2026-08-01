@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a self-consistent Rev A manufacturing release candidate.
+"""Build a self-consistent Rev B four-layer manufacturing release candidate.
 
 All generated files come from the corrected pinout-fix PCB. The package stays
 explicitly non-orderable until a zero-violation native KiCad DRC report is
@@ -20,8 +20,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 KICAD = ROOT / "hardware" / "kicad"
-BOARD = KICAD / "focalpoint_rev_a_release_candidate.kicad_pcb"
-PROJECT = KICAD / "focalpoint_rev_a_release_candidate.kicad_pro"
+BOARD = KICAD / "focalpoint_rev_b_4layer_release_candidate.kicad_pcb"
+PROJECT = KICAD / "focalpoint_rev_b_4layer_release_candidate.kicad_pro"
 SCHEMATIC = KICAD / "focalpoint.kicad_sch"
 SCHEMATIC_SHEETS = [
     SCHEMATIC,
@@ -30,17 +30,15 @@ SCHEMATIC_SHEETS = [
     KICAD / "focalpoint_peripherals.kicad_sch",
 ]
 PROCUREMENT_BOM = ROOT / "hardware" / "bom.csv"
-OUT = KICAD / "release_candidate"
-ARCHIVE = KICAD / "focalpoint_rev_a_release_candidate.zip"
-GERBER_ARCHIVE = KICAD / "focalpoint_rev_a_release_candidate_gerbers.zip"
+OUT = KICAD / "release_candidate_rev_b_4layer"
+ARCHIVE = KICAD / "focalpoint_rev_b_4layer_release_candidate.zip"
+GERBER_ARCHIVE = KICAD / "focalpoint_rev_b_4layer_release_candidate_gerbers.zip"
 
 GERBER_LAYERS = ",".join(
     [
         "F.Cu",
         "In1.Cu",
         "In2.Cu",
-        "In3.Cu",
-        "In4.Cu",
         "B.Cu",
         "F.Paste",
         "B.Paste",
@@ -91,11 +89,16 @@ def is_jlc_assembly(value: str) -> bool:
 
 def report_is_clean(path: Path) -> bool:
     text = path.read_text(errors="replace")
-    explicit_zero = (
-        re.search(r"\*\*\s*Found 0 DRC violations", text, re.IGNORECASE)
-        or re.search(r"\b0\s+violations?\b", text, re.IGNORECASE)
+    zero_violations = re.search(
+        r"\*\*\s*Found 0 DRC violations", text, re.IGNORECASE
     )
-    return bool(explicit_zero)
+    zero_unconnected = re.search(
+        r"\*\*\s*Found 0 unconnected (?:pads|items)", text, re.IGNORECASE
+    )
+    zero_footprints = re.search(
+        r"\*\*\s*Found 0 Footprint errors", text, re.IGNORECASE
+    )
+    return bool(zero_violations and zero_unconnected and zero_footprints)
 
 
 def sha256(path: Path) -> str:
@@ -121,7 +124,7 @@ def build(args: argparse.Namespace) -> None:
         gerbers.mkdir()
         reports.mkdir()
 
-        positions = assembly / "focalpoint_rev_a_positions.csv"
+        positions = assembly / "focalpoint_rev_b_4layer_positions.csv"
         command(
             cli,
             "pcb",
@@ -262,9 +265,11 @@ def build(args: argparse.Namespace) -> None:
             KICAD / "erc_release_candidate.rpt",
             KICAD / "hierarchical_schematic_equivalence.txt",
             KICAD / "hierarchical_schematic_layout_validation.txt",
-            KICAD / "release_candidate_static_audit.txt",
-            KICAD / "release_candidate_schematic_pcb_net_compare.txt",
-            KICAD / "release_candidate_footprint_audit.txt",
+            KICAD / "focalpoint_rev_b_4layer_static_audit.txt",
+            KICAD / "focalpoint_rev_b_4layer_schematic_pcb_net_compare.txt",
+            KICAD / "focalpoint_rev_b_4layer_footprint_audit.txt",
+            KICAD / "focalpoint_rev_b_4layer_route_audit.txt",
+            KICAD / "focalpoint_rev_b_4layer_usb_report.txt",
         ]
         documentation = [
             PROCUREMENT_BOM,
@@ -313,7 +318,7 @@ def build(args: argparse.Namespace) -> None:
         ]
         status = stage / "RELEASE_STATUS.txt"
         status.write_text(
-            "FocalPoint Rev A RELEASE CANDIDATE — NOT YET ORDERABLE\n"
+            "FocalPoint Rev B FOUR-LAYER PROTOTYPE RELEASE CANDIDATE\n"
             "=====================================================\n\n"
             "Exact PCB source:\n"
             f"- {BOARD.name}\n\n"
@@ -330,8 +335,9 @@ def build(args: argparse.Namespace) -> None:
             f"- native KiCad DRC report supplied and clean: {'YES' if drc_clean else 'NO'}\n\n"
             "MANDATORY BEFORE ORDERING:\n"
             "1. Upload BOM/positions to JLC and confirm every MPN, side, and rotation.\n"
-            "2. Select JLC06161H-3313, 1.6 mm, ENIG, impedance control, and\n"
-            "   epoxy-filled/capped via-in-pad. Populate exactly two boards.\n"
+            "2. Select JLC04161H-7628, 1.6 mm, 1 oz outer / 0.5 oz inner,\n"
+            "   ENIG, impedance control, and epoxy-filled/capped via-in-pad.\n"
+            "   Populate exactly two boards.\n"
             "3. Complete printed/purchased-part fit review for the enclosure,\n"
             "   antenna keepout, USB-C, LEDs/sockets, encoder, and joystick.\n"
             "4. Complete an independent schematic/PCB review.\n"

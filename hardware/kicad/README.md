@@ -1,8 +1,8 @@
-# FocalPoint KiCad Rev A
+# FocalPoint KiCad Rev B
 
 This directory is the persistent KiCad 10 workspace. The verified schematic is
 the hierarchical root `focalpoint.kicad_sch` and its three child sheets; the current PCB is
-`focalpoint_rev_a_release_candidate.kicad_pcb`. It is a fully routed six-layer
+`focalpoint_rev_b_4layer_release_candidate.kicad_pcb`. It is a fully routed four-layer
 prototype candidate. Native KiCad DRC reports zero errors and zero unconnected
 pads and zero violations. Thirty-seven intentionally modified embedded
 footprints are locked to `FocalPoint.pretty` and independently audited. It is
@@ -42,14 +42,14 @@ The refresh script refuses to overwrite a board that has already gained
 KiCad-owned electrical work. Once schematic capture or manual placement starts,
 move Ergogen changes across deliberately instead of replacing the board.
 
-Open `focalpoint_rev_a_release_candidate.kicad_pro` and
-`focalpoint_rev_a_release_candidate.kicad_pcb` in KiCad 10. The
+Open `focalpoint_rev_b_4layer_release_candidate.kicad_pro` and
+`focalpoint_rev_b_4layer_release_candidate.kicad_pcb` in KiCad 10. The
 active 116 mm square design presents 16 input positions in a 4×4 layout: 13
 direct-scan MX hot-swap keys plus the top-left EC11 encoder, top-right analog
 joystick, and bottom-right capacitive touch input. Every mechanical key has an
 independently addressable RGB LED.
 
-## Rev A functional blocks
+## Functional blocks
 
 1. `keys`: 13 direct GPIO key inputs, hot-swap sockets, and no matrix diodes.
 2. `controls`: EC11 A/B/push and the selected joystick X/Y/push.
@@ -70,11 +70,9 @@ After refilling zones, running native DRC, and saving its zero-violation report:
 
 ```sh
 python3 hardware/kicad/build_release_candidate.py \
-  --drc-report hardware/kicad/DRC_release_candidate_native.rpt
+  --drc-report hardware/kicad/focalpoint_rev_b_4layer_release_DRC.rpt
 ```
 
-The output is `release_candidate/` plus candidate ZIP archives. Read
-`RELEASE_STATUS.txt`; do not order if it says `NOT YET ORDERABLE`. The
-checked-in DRC report is evidence of routing connectivity, not a zero-warning
-release report, so the build command intentionally rejects it until the
-warnings have been reviewed or corrected.
+The output is `release_candidate_rev_b_4layer/` plus Rev B candidate ZIP
+archives. Read `RELEASE_STATUS.txt`; the builder requires a report containing
+zero DRC violations, zero unconnected pads, and zero footprint errors.

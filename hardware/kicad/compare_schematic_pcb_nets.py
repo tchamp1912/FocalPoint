@@ -60,9 +60,9 @@ def main():
         f"schematic_numbered_pins={len(expected)}\n"
         f"pcb_numbered_pads={len(actual)}\n"
         f"mismatches={len(mismatches)}\n"
-        + "\n".join(mismatches)
-        + "\n"
     )
+    if mismatches:
+        report += "\n".join(mismatches) + "\n"
     Path(sys.argv[3]).write_text(report)
     print(report, end="")
     if mismatches:

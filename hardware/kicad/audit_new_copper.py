@@ -99,12 +99,12 @@ def main():
         f"new_track_or_via_items={len(new_items)}\n"
         f"different-net_shape_pairs_checked={checked}\n"
         f"clearance_violations={len(violations)}\n"
-        + "\n".join(violations)
-        + "\n\n"
-        f"fabrication_minimum_violations={len(fabrication)}\n"
-        + "\n".join(fabrication)
-        + "\n"
     )
+    if violations:
+        text += "\n".join(violations) + "\n"
+    text += f"fabrication_minimum_violations={len(fabrication)}\n"
+    if fabrication:
+        text += "\n".join(fabrication) + "\n"
     REPORT.write_text(text)
     print(text)
     if violations or fabrication:

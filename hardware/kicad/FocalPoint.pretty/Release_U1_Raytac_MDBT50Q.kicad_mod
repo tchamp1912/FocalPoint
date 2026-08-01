@@ -8,7 +8,7 @@
 	(property "Reference" "U1"
 		(at -6 0 -90)
 		(layer "F.SilkS")
-		(uuid "efd8d851-e2ba-4950-89c2-9dde93aa488a")
+		(uuid "b2419458-6367-433a-a648-d50a3f0395dc")
 		(effects
 			(font
 				(size 1 1)
@@ -19,7 +19,7 @@
 	(property "Value" "MDBT50Q-1MV2"
 		(at 0.2 8.95 0)
 		(layer "F.Fab")
-		(uuid "5a52653d-18e3-47f1-b2f6-d490b141579a")
+		(uuid "91987ec0-18e7-4f6a-a72e-5254793fc411")
 		(effects
 			(font
 				(size 1 1)
@@ -32,7 +32,7 @@
 		(unlocked yes)
 		(layer "F.Fab")
 		(hide yes)
-		(uuid "ca8cf040-721a-46b8-8101-3ff1f9657a24")
+		(uuid "c7977615-c221-4fb7-8cc0-a6491d35b663")
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -45,7 +45,7 @@
 		(unlocked yes)
 		(layer "F.Fab")
 		(hide yes)
-		(uuid "238a2540-25df-489f-9aa6-a45ca0e0536e")
+		(uuid "c67ef5a0-4db2-4b53-9364-18adc862cb77")
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -688,7 +688,7 @@
 		)
 	)
 	(zone
-		(layers "F.Cu" "B.Cu" "In3.Cu" "In4.Cu")
+		(layers "F.Cu" "B.Cu" "In1.Cu" "In2.Cu")
 		(uuid "9ad7bcc2-89ca-4df5-80be-3aeec29d52fd")
 		(hatch full 0.508)
 		(connect_pads

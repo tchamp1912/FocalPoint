@@ -53,7 +53,7 @@ Mechanical,Insert,McMaster-Carr,94180A321,4,8,User,,V1,Supplier pack minimum may
 Mechanical,Screw,TR Fastenings,TR00004792-000,4,8,User,,V1,M2.5x8 ISO 7380-1 A2 stainless; fit validation required,SCR1-SCR4
 Mechanical,Silicone sheet,McMaster-Carr,8525T575,1 disc,1 sheet,User,,V1-V2,Cut two 72mm discs; 60A 1/16in sheet,FOOT1
 Mechanical,Transfer adhesive,3M,467MP,1 disc,1 sheet or roll,User,,V1-V2,Cut two 72mm adhesive discs,ADH1
-Fabrication,Bare PCB,JLCPCB,116x116mm 6-layer JLC06161H-3313 FR-4 ENIG 1.6mm order class,1,5 bare / 2 assembled,JLCPCB,,SPEC,Fabrication minimum may be five; populate exactly two; select epoxy-filled and capped via-in-pad plus impedance control; final Gerber archive controls,PCB1
+Fabrication,Bare PCB,JLCPCB,116x116mm 4-layer JLC04161H-7628 FR-4 ENIG 1.6mm order class,1,5 bare / 2 assembled,JLCPCB,,SPEC,Fabrication minimum may be five; populate exactly two; select epoxy-filled and capped via-in-pad plus impedance control; final Rev B Gerber archive controls,PCB1
 Fabrication,Top enclosure,JLC3DP,MJF PA12 black from focalpoint-top.step,1,2,JLC3DP,,SPEC,RF-transparent polymer; final STEP controls geometry,TOP1
 Fabrication,Bottom enclosure,JLC3DP,MJF PA12 black from focalpoint-bottom.step,1,2,JLC3DP,,SPEC,Final STEP controls geometry,BOTTOM1
 Fabrication,Circular base,JLC3DP,MJF PA12 black from focalpoint-grommet.step,1,2,JLC3DP,,SPEC,Circular puck; silicone disc bonds underneath,BASE1

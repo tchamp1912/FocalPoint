@@ -8,7 +8,7 @@
 	(property "Reference" "J3"
 		(at 0 2.7 270)
 		(layer "F.SilkS")
-		(uuid "91378bd1-b9fd-4ea4-8c85-47c2b29fa29b")
+		(uuid "6e962229-5cbc-4422-9e41-6dfacf6b7a07")
 		(effects
 			(font
 				(size 1 1)
@@ -19,7 +19,7 @@
 	(property "Value" "TC2030-IDC-NL"
 		(at 0 -2.3 270)
 		(layer "F.Fab")
-		(uuid "47f19b49-e912-45b6-9928-5fb16e7bf6d7")
+		(uuid "bde2e000-1749-431b-90e3-2ca64a14cf8a")
 		(effects
 			(font
 				(size 1 1)
@@ -32,7 +32,7 @@
 		(unlocked yes)
 		(layer "F.Fab")
 		(hide yes)
-		(uuid "34708807-2dee-498f-a002-85f2c722a824")
+		(uuid "cce796a6-c33b-4f94-85e8-8d932b3cec7d")
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -45,7 +45,7 @@
 		(unlocked yes)
 		(layer "F.Fab")
 		(hide yes)
-		(uuid "6426baef-3e1a-4e9f-9e64-8832dd200bc3")
+		(uuid "2bb9931e-ca28-49e8-9cb6-f7f6f7bfd790")
 		(effects
 			(font
 				(size 1.27 1.27)
