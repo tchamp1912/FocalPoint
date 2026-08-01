@@ -28,6 +28,10 @@ vias = [item for item in board.GetTracks() if type(item).__name__ == "PCB_VIA"]
 layer_stats = collections.defaultdict(lambda: [0, 0.0])
 edge_hits = []
 side_minima = {side: (float("inf"), None) for side in ("left", "right", "top", "bottom")}
+via_edge_hits = []
+via_side_minima = {
+    side: (float("inf"), None) for side in ("left", "right", "top", "bottom")
+}
 short_1 = short_2 = 0
 nodes = collections.defaultdict(list)
 net_lengths = collections.defaultdict(float)
@@ -56,13 +60,33 @@ for track in tracks:
         if distance < side_minima[side][0]:
             side_minima[side] = (distance, (net, layer, ax, ay, bx, by, width))
     clearance = min(side_distances.values())
-    if clearance < 0.50:
+    if clearance < 1.0:
         side = min(side_distances, key=side_distances.get)
         edge_hits.append((clearance, side, net, layer, ax, ay, bx, by, width))
     key_a = (net, layer, a.x, a.y)
     key_b = (net, layer, b.x, b.y)
     nodes[key_a].append((bx - ax, by - ay))
     nodes[key_b].append((ax - bx, ay - by))
+
+for via in vias:
+    position = via.GetPosition()
+    x, y = position.x / 1e6, position.y / 1e6
+    diameter = via.GetWidth(pcbnew.F_Cu) / 1e6
+    radius = diameter / 2
+    net = via.GetNetname()
+    side_distances = {
+        "left": x - x0 - radius,
+        "right": x1 - x - radius,
+        "top": y - y0 - radius,
+        "bottom": y1 - y - radius,
+    }
+    for side, distance in side_distances.items():
+        if distance < via_side_minima[side][0]:
+            via_side_minima[side] = (distance, (net, x, y, diameter))
+    clearance = min(side_distances.values())
+    if clearance < 1.0:
+        side = min(side_distances, key=side_distances.get)
+        via_edge_hits.append((clearance, side, net, x, y, diameter))
 
 corner_counts = collections.Counter()
 for vectors in nodes.values():
@@ -112,15 +136,32 @@ print("corner_counts=" + ",".join(f"{key}:{value}" for key, value in sorted(corn
 print("layer_usage:")
 for layer, (count, length) in sorted(layer_stats.items()):
     print(f"  {layer}: segments={count} length_mm={length:.1f}")
-print(f"copper_segments_under_0.50mm_from_edge={len(edge_hits)}")
+print(f"tracks_under_1.00mm_from_edge={len(edge_hits)}")
 print("minimum_track_edge_clearance_by_side:")
 for side, (distance, item) in side_minima.items():
     net, layer, ax, ay, bx, by, width = item
     print(f"  {side}: clearance={distance:.3f} net={net} layer={layer} width={width:.3f} from=({ax:.3f},{ay:.3f}) to=({bx:.3f},{by:.3f})")
-print("closest_edge_segments:")
+print("tracks_under_1.00mm:")
 for hit in sorted(edge_hits)[:20]:
     clearance, side, net, layer, ax, ay, bx, by, width = hit
     print(f"  clearance={clearance:.3f} side={side} net={net} layer={layer} width={width:.3f} from=({ax:.3f},{ay:.3f}) to=({bx:.3f},{by:.3f})")
+print(f"vias_under_1.00mm_from_edge={len(via_edge_hits)}")
+print("minimum_via_edge_clearance_by_side:")
+for side, (distance, item) in via_side_minima.items():
+    net, x, y, diameter = item
+    print(
+        f"  {side}: clearance={distance:.3f} net={net} diameter={diameter:.3f} "
+        f"at=({x:.3f},{y:.3f})"
+    )
+print("vias_under_1.00mm:")
+for clearance, side, net, x, y, diameter in sorted(via_edge_hits):
+    print(
+        f"  clearance={clearance:.3f} side={side} net={net} "
+        f"diameter={diameter:.3f} at=({x:.3f},{y:.3f})"
+    )
 print("largest_two_pad_detour_ratios:")
 for ratio, net, length, direct in sorted(detours, reverse=True)[:25]:
     print(f"  ratio={ratio:.2f} net={net} routed_mm={length:.1f} direct_mm={direct:.1f}")
+
+if edge_hits or via_edge_hits:
+    raise SystemExit("external-edge copper clearance target failed")

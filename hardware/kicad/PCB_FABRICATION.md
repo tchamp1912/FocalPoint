@@ -48,14 +48,11 @@ manufactured impedance or USB behavior; prototype measurement remains a gate.
 - Footprint audit: `focalpoint_rev_b_4layer_footprint_audit.txt` reports zero
   project-local geometry mismatches.
 - Route audit: `focalpoint_rev_b_4layer_route_audit.txt` records 1,033 track
-  segments, 227 vias, and no copper closer than 0.50 mm to the external edge.
-  The closest track is KEY12 at 0.941 mm from the bottom edge; the criticized
-  left-edge routing now has 2.850 mm clearance.
-
-The 0.941 mm bottom clearance is below the internal 1.0 mm preference by
-0.059 mm, but is far above the configured 0.20 mm board-edge rule and does not
-produce a DRC violation. It is accepted for this two-unit prototype rather
-than perturbing a clean route for a cosmetic 0.059 mm improvement.
+  segments and 227 vias. It checks tracks and via annular rings separately.
+  No track or via is within the enforced 1.00 mm external-edge target. The
+  closest bottom via is KEY12 at
+  1.100 mm; the closest bottom track is KEY12 at 1.300 mm. The criticized
+  left-edge track clearance is 2.850 mm.
 
 ## Release generation
 

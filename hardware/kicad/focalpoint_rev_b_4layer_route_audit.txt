@@ -5,24 +5,31 @@ segments_under_1mm=419
 segments_under_2mm=612
 corner_counts=45_degree:533,90_degree:48,>95_degree:9,other:20,straight_redundant:21
 layer_usage:
-  B.Cu: segments=687 length_mm=2167.2
+  B.Cu: segments=687 length_mm=2167.0
   F.Cu: segments=127 length_mm=1413.6
-  GND + slow routing: segments=191 length_mm=1903.4
+  GND + slow routing: segments=191 length_mm=1903.2
   GND plane: segments=28 length_mm=460.6
-copper_segments_under_0.50mm_from_edge=0
+tracks_under_1.00mm_from_edge=0
 minimum_track_edge_clearance_by_side:
   left: clearance=2.850 net=+3V3 layer=B.Cu width=0.300 from=(103.000,181.175) to=(106.000,181.175)
   right: clearance=1.883 net=USB_DN_ESD layer=F.Cu width=0.233 from=(213.133,184.383) to=(214.000,186.000)
   top: clearance=4.564 net=USB_DP_CONN layer=F.Cu width=0.142 from=(145.319,104.635) to=(145.250,104.705)
-  bottom: clearance=0.941 net=KEY12 layer=B.Cu width=0.200 from=(200.493,214.959) to=(141.242,214.959)
-closest_edge_segments:
+  bottom: clearance=1.300 net=KEY12 layer=B.Cu width=0.200 from=(200.852,214.600) to=(141.242,214.600)
+tracks_under_1.00mm:
+vias_under_1.00mm_from_edge=0
+minimum_via_edge_clearance_by_side:
+  left: clearance=6.325 net=GND diameter=0.600 at=(106.625,205.000)
+  right: clearance=1.700 net=USB_DN_ESD diameter=0.600 at=(214.000,186.000)
+  top: clearance=4.335 net=USB_DP_CONN diameter=0.600 at=(145.319,104.635)
+  bottom: clearance=1.100 net=KEY12 diameter=0.600 at=(141.242,214.600)
+vias_under_1.00mm:
 largest_two_pad_detour_ratios:
   ratio=3.22 net=U6_CT routed_mm=20.6 direct_mm=6.4
   ratio=2.21 net=LED3_DIN routed_mm=111.3 direct_mm=50.3
   ratio=1.94 net=LED7_DIN routed_mm=133.9 direct_mm=68.9
   ratio=1.73 net=TOUCH_SNS2 routed_mm=9.0 direct_mm=5.2
   ratio=1.58 net=BQ_TMR routed_mm=15.4 direct_mm=9.7
-  ratio=1.47 net=KEY12 routed_mm=102.9 direct_mm=70.2
+  ratio=1.46 net=KEY12 routed_mm=102.6 direct_mm=70.2
   ratio=1.46 net=BB_L1 routed_mm=7.4 direct_mm=5.0
   ratio=1.44 net=KEY4 routed_mm=126.0 direct_mm=87.2
   ratio=1.44 net=BB_L2 routed_mm=10.7 direct_mm=7.5
