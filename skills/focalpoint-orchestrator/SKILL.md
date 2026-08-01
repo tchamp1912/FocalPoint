@@ -28,6 +28,15 @@ operation you need.
    Update the order when priorities genuinely change. The daemon removes ended
    sessions and appends newly registered sessions; numbered slots do not move.
 
+   **Gotcha — `prioritize` accepts only the currently *live* sessions.**
+   `fpctl-agent status` also lists disconnected/tombstoned sessions (kept
+   visible for recovery) that are *not* part of the live attention set;
+   including one fails with `unknown session`, and the "missing/unknown" error
+   can look self-contradictory mid-churn. Build the order from `fpctl-agent
+   order` (the live `attention_order`) or from status rows with
+   `connected: true` — never the raw session list — and re-read it immediately
+   before prioritizing, since the live set can change between calls.
+
 3. Focus a specific session only when the user asks:
 
    ```sh
