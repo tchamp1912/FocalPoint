@@ -35,6 +35,9 @@ dirs = "5"
 # kill(pid, 0) liveness check for the dead-process sweep (daemon.rs) — no
 # new transitive weight, already pulled in indirectly by tokio/hidapi.
 libc = "0.2"
+# Shared daemon state: unlike std::sync::Mutex, this remains usable after a
+# panic while held so one failed request cannot brick subsequent clients.
+parking_lot = "0.12"
 # Process ancestry (ppid/comm/argv) for identity.rs's tty/pid resolution —
 # safe, cross-platform, avoids hand-written unsafe FFI against macOS's
 # sysctl/kinfo_proc struct layout.

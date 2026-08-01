@@ -21,8 +21,10 @@ use crate::protocol::{
 };
 use crate::session::{Effect, Registry, Session};
 use crate::styles::{Style, StyleTable};
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// True if a process with this pid exists, via `kill(pid, 0)` — sends no
@@ -229,6 +231,7 @@ pub struct Shared {
 #[derive(Clone)]
 struct EventCtx {
     evt_tx: tokio::sync::broadcast::Sender<String>,
+    runtime: tokio::runtime::Handle,
     config: Arc<Config>,
     shared: Arc<Mutex<Shared>>,
 }
@@ -347,7 +350,7 @@ fn styles_json(table: &StyleTable) -> serde_json::Value {
 /// the aggregate `SET_STATE`, then each occupied slot's `SET_KEY_STATE`.
 #[cfg(unix)]
 fn replay_state_cmds(shared: &Mutex<Shared>) -> Vec<HostCmd> {
-    let s = shared.lock().unwrap();
+    let s = shared.lock();
     let mut cmds = Vec::new();
     for (state, style) in s.styles.iter() {
         cmds.push(style.to_host_cmd(state));
@@ -428,8 +431,46 @@ fn apply_effects(
         }
     }
     if session_effect {
-        save_snapshot(&ctx.shared);
+        save_snapshot(ctx);
     }
+}
+
+/// Full subscriber state, sent when a client first subscribes and whenever it
+/// falls behind the broadcast buffer.
+#[cfg(unix)]
+fn subscription_snapshot(shared: &Mutex<Shared>) -> String {
+    let (aggregate, sessions, usage, styles) = {
+        let s = shared.lock();
+        (
+            s.registry.aggregate(),
+            s.registry.list(),
+            s.usage.clone(),
+            s.styles,
+        )
+    };
+    let mut snapshot = state_event_line(aggregate);
+    for sess in &sessions {
+        snapshot.push('\n');
+        snapshot.push_str(&session_event_line(
+            &sess.id,
+            &sess.kind,
+            &sess.label,
+            &sess.name,
+            &sess.meta,
+            sess.slot,
+            sess.state,
+        ));
+    }
+    for (provider, usage_snapshot) in usage {
+        snapshot.push('\n');
+        snapshot.push_str(&usage_event_line(&provider, &usage_snapshot));
+    }
+    for (state, style) in styles.iter() {
+        snapshot.push('\n');
+        snapshot.push_str(&style_event_line(state, &style));
+    }
+    snapshot.push('\n');
+    snapshot
 }
 
 /// `Session` -> the JSON shape both `"list-sessions"` and the persisted
@@ -499,10 +540,10 @@ fn restore_instant(saved_at_unix_ms: u64, elapsed_ms: u64) -> Instant {
 /// permissions) is silently swallowed, same tolerance every other
 /// persistence path in this codebase already has for its own I/O.
 #[cfg(unix)]
-fn save_snapshot(shared: &Mutex<Shared>) {
+fn save_snapshot(ctx: &EventCtx) {
     let now = Instant::now();
     let (sessions, tombstones, usage) = {
-        let s = shared.lock().unwrap();
+        let s = ctx.shared.lock();
         let sessions: Vec<serde_json::Value> = s
             .registry
             .list()
@@ -535,12 +576,34 @@ fn save_snapshot(shared: &Mutex<Shared>) {
         "tombstones": tombstones,
         "usage": usage,
     });
-    let path = crate::paths::daemon_state_path();
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
     if let Ok(data) = serde_json::to_string(&snapshot) {
-        let _ = std::fs::write(&path, data);
+        let path = crate::paths::daemon_state_path();
+        ctx.runtime
+            .spawn_blocking(move || write_snapshot_atomically(&path, &data));
+    }
+}
+
+/// Persist `data` atomically: a partially-written temporary file is never
+/// visible as the state snapshot. The temporary lives beside the destination
+/// so `rename` is an atomic replacement on the same filesystem.
+#[cfg(unix)]
+fn write_snapshot_atomically(path: &std::path::Path, data: &str) {
+    static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
+
+    let Some(parent) = path.parent() else {
+        return;
+    };
+    if std::fs::create_dir_all(parent).is_err() {
+        return;
+    }
+    let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("state.json");
+    let temp_path = parent.join(format!(
+        ".{file_name}.{}.{}.tmp",
+        std::process::id(),
+        NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed),
+    ));
+    if std::fs::write(&temp_path, data).is_ok() {
+        let _ = std::fs::rename(&temp_path, path);
     }
 }
 
@@ -626,7 +689,7 @@ fn load_snapshot(
 fn reconcile_on_startup(shared: &Mutex<Shared>) {
     let now = Instant::now();
     let dead: Vec<String> = {
-        let s = shared.lock().unwrap();
+        let s = shared.lock();
         s.registry
             .list()
             .into_iter()
@@ -642,7 +705,7 @@ fn reconcile_on_startup(shared: &Mutex<Shared>) {
     if dead.is_empty() {
         return;
     }
-    let mut s = shared.lock().unwrap();
+    let mut s = shared.lock();
     for id in dead {
         s.registry.reap_session(&id, now);
     }
@@ -703,7 +766,6 @@ fn handle_device_event(ev: DeviceEvent, ctx: &EventCtx) {
                     let session = ctx
                         .shared
                         .lock()
-                        .unwrap()
                         .registry
                         .session_by_slot(slot)
                         .cloned();
@@ -764,7 +826,7 @@ fn run_hid_device(mut host_rx: tokio::sync::mpsc::UnboundedReceiver<HostCmd>, ct
         match open_device(&api) {
             Some(device) => {
                 eprintln!("[device] connected");
-                ctx.shared.lock().unwrap().device_present = true;
+                ctx.shared.lock().device_present = true;
 
                 // On connect: attach as host, then replay the full remembered
                 // state — all six styles, the aggregate, and every occupied
@@ -777,13 +839,13 @@ fn run_hid_device(mut host_rx: tokio::sync::mpsc::UnboundedReceiver<HostCmd>, ct
 
                 let disconnected = device_io_loop(&device, &mut host_rx, &ctx);
 
-                ctx.shared.lock().unwrap().device_present = false;
+                ctx.shared.lock().device_present = false;
                 if disconnected {
                     eprintln!("[device] disconnected; will retry");
                 }
             }
             None => {
-                ctx.shared.lock().unwrap().device_present = false;
+                ctx.shared.lock().device_present = false;
                 // Discard any queued commands (registry state is re-pushed on
                 // reconnect) so the channel stays bounded.
                 while host_rx.try_recv().is_ok() {}
@@ -873,7 +935,7 @@ fn hid_write(
 
 #[cfg(unix)]
 fn run_mock_device(host_rx: tokio::sync::mpsc::UnboundedReceiver<HostCmd>, ctx: EventCtx) {
-    ctx.shared.lock().unwrap().device_present = true;
+    ctx.shared.lock().device_present = true;
     eprintln!("[mock] virtual device attached. Inject events on stdin, e.g.:");
     eprintln!("[mock]   key accept 1     (control press)   key accept 0  (release)");
     eprintln!("[mock]   dial 2           (dial delta)      dial -1");
@@ -1011,6 +1073,7 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
     // socket handlers (so injected events take the same dispatch path).
     let ctx = EventCtx {
         evt_tx: evt_tx.clone(),
+        runtime: tokio::runtime::Handle::current(),
         config: config.clone(),
         shared: shared.clone(),
     };
@@ -1033,7 +1096,7 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
             let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
             loop {
                 tick.tick().await;
-                let effects = { ctx.shared.lock().unwrap().registry.expire(Instant::now()) };
+                let effects = { ctx.shared.lock().registry.expire(Instant::now()) };
                 if !effects.is_empty() {
                     apply_effects(effects, &ctx, &host_tx);
                 }
@@ -1055,10 +1118,7 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
             loop {
                 tick.tick().await;
                 let effects = {
-                    ctx.shared
-                        .lock()
-                        .unwrap()
-                        .registry
+                    ctx.shared.lock().registry
                         .expire_tombstones(Instant::now())
                 };
                 if !effects.is_empty() {
@@ -1083,10 +1143,7 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
             loop {
                 tick.tick().await;
                 let effects = {
-                    ctx.shared
-                        .lock()
-                        .unwrap()
-                        .registry
+                    ctx.shared.lock().registry
                         .expire_compacting(Instant::now())
                 };
                 if !effects.is_empty() {
@@ -1113,7 +1170,7 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
             loop {
                 tick.tick().await;
                 let dead: Vec<String> = {
-                    let shared = ctx.shared.lock().unwrap();
+                    let shared = ctx.shared.lock();
                     shared
                         .registry
                         .list()
@@ -1129,7 +1186,7 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
                     continue;
                 }
                 let effects: Vec<Effect> = {
-                    let mut shared = ctx.shared.lock().unwrap();
+                    let mut shared = ctx.shared.lock();
                     let now = Instant::now();
                     dead.iter()
                         .flat_map(|id| shared.registry.reap_session(id, now))
@@ -1161,7 +1218,7 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
             loop {
                 tick.tick().await;
                 let dead: Vec<String> = {
-                    let shared = ctx.shared.lock().unwrap();
+                    let shared = ctx.shared.lock();
                     shared
                         .registry
                         .list()
@@ -1174,7 +1231,7 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
                     continue;
                 }
                 let effects: Vec<Effect> = {
-                    let mut shared = ctx.shared.lock().unwrap();
+                    let mut shared = ctx.shared.lock();
                     let now = Instant::now();
                     dead.iter()
                         .flat_map(|id| shared.registry.reap_session(id, now))
@@ -1255,37 +1312,7 @@ async fn handle_client(
                 // event, one `session` event per live session, then one `style`
                 // event per state (all six) (§3).
                 let mut rx = ctx.evt_tx.subscribe();
-                let (aggregate, sessions, usage, styles) = {
-                    let s = shared.lock().unwrap();
-                    (
-                        s.registry.aggregate(),
-                        s.registry.list(),
-                        s.usage.clone(),
-                        s.styles,
-                    )
-                };
-                let mut snapshot = state_event_line(aggregate);
-                for sess in &sessions {
-                    snapshot.push('\n');
-                    snapshot.push_str(&session_event_line(
-                        &sess.id,
-                        &sess.kind,
-                        &sess.label,
-                        &sess.name,
-                        &sess.meta,
-                        sess.slot,
-                        sess.state,
-                    ));
-                }
-                for (provider, usage_snapshot) in usage {
-                    snapshot.push('\n');
-                    snapshot.push_str(&usage_event_line(&provider, &usage_snapshot));
-                }
-                for (state, style) in styles.iter() {
-                    snapshot.push('\n');
-                    snapshot.push_str(&style_event_line(state, &style));
-                }
-                snapshot.push('\n');
+                let snapshot = subscription_snapshot(&shared);
                 if writer.write_all(snapshot.as_bytes()).await.is_err() {
                     return;
                 }
@@ -1297,7 +1324,12 @@ async fn handle_client(
                                 return;
                             }
                         }
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                            let snapshot = subscription_snapshot(&shared);
+                            if writer.write_all(snapshot.as_bytes()).await.is_err() {
+                                return;
+                            }
+                        }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
                     }
                 }
@@ -1338,7 +1370,7 @@ fn dispatch(
                 .get("meta")
                 .and_then(|m| m.as_object())
                 .cloned();
-            let effects = shared.lock().unwrap().registry.set_state(
+            let effects = shared.lock().registry.set_state(
                 session,
                 state,
                 kind,
@@ -1368,10 +1400,7 @@ fn dispatch(
                 .unwrap_or_default();
             // Unknown sessions are a silent no-op (never registers one) —
             // see `Registry::merge_meta`.
-            let effects = shared
-                .lock()
-                .unwrap()
-                .registry
+            let effects = shared.lock().registry
                 .merge_meta(session, kind, label, meta, Instant::now());
             apply_effects(effects, ctx, host_tx);
             Dispatch::Reply(serde_json::json!({ "ok": true }))
@@ -1385,7 +1414,7 @@ fn dispatch(
             // disconnected) from this one poll; live `session-disconnected`
             // events keep an already-connected subscriber in sync.
             let (sessions, tombstones) = {
-                let s = shared.lock().unwrap();
+                let s = shared.lock();
                 (s.registry.list(), s.registry.tombstones_snapshot())
             };
             let mut arr: Vec<serde_json::Value> = sessions
@@ -1411,18 +1440,18 @@ fn dispatch(
                 return err("set-usage requires object 'usage'");
             };
             let snapshot = {
-                let mut s = shared.lock().unwrap();
+                let mut s = shared.lock();
                 match merge_usage(&mut s.usage, provider, update) {
                     Ok(snapshot) => snapshot,
                     Err(message) => return err(&message),
                 }
             };
             ctx.broadcast(&usage_event_line(provider, &snapshot));
-            save_snapshot(shared);
+            save_snapshot(ctx);
             Dispatch::Reply(serde_json::json!({ "ok": true }))
         }
         "get-usage" => {
-            let usage = shared.lock().unwrap().usage.clone();
+            let usage = shared.lock().usage.clone();
             Dispatch::Reply(serde_json::json!({ "ok": true, "usage": usage }))
         }
         "rename-session" => {
@@ -1432,7 +1461,7 @@ fn dispatch(
             // A missing/null `name`, or an empty one, clears the rename so
             // the session falls back to the adapter's label.
             let name = value.get("name").and_then(|n| n.as_str());
-            let effects = shared.lock().unwrap().registry.rename(id, name);
+            let effects = shared.lock().registry.rename(id, name);
             let Some(effects) = effects else {
                 return err(&format!("unknown session: {id}"));
             };
@@ -1446,7 +1475,7 @@ fn dispatch(
             let Some(id2) = value.get("session2").and_then(|s| s.as_str()) else {
                 return err("swap-slots requires 'session2'");
             };
-            let result = shared.lock().unwrap().registry.swap_slots(id1, id2);
+            let result = shared.lock().registry.swap_slots(id1, id2);
             match result {
                 Ok(effects) => {
                     apply_effects(effects, ctx, host_tx);
@@ -1459,7 +1488,7 @@ fn dispatch(
             let Some(id) = value.get("session").and_then(|s| s.as_str()) else {
                 return err("end-session requires 'session'");
             };
-            let effects = shared.lock().unwrap().registry.end_session(id);
+            let effects = shared.lock().registry.end_session(id);
             apply_effects(effects, ctx, host_tx);
             Dispatch::Reply(serde_json::json!({ "ok": true }))
         }
@@ -1476,10 +1505,7 @@ fn dispatch(
             let Some(id) = value.get("session").and_then(|s| s.as_str()) else {
                 return err("quit-session requires 'session'");
             };
-            let pid = shared
-                .lock()
-                .unwrap()
-                .registry
+            let pid = shared.lock().registry
                 .session_or_tombstone(id)
                 .and_then(|s| s.pid());
             match pid {
@@ -1489,14 +1515,14 @@ fn dispatch(
                     let id = id.to_string();
                     std::thread::spawn(move || {
                         quit_agent_process(pid);
-                        let effects = ctx.shared.lock().unwrap().registry.end_session(&id);
+                        let effects = ctx.shared.lock().registry.end_session(&id);
                         apply_effects(effects, &ctx, &host_tx);
                     });
                 }
                 None => {
                     // Nothing to signal (no resolved pid) — just remove it,
                     // same as end-session.
-                    let effects = shared.lock().unwrap().registry.end_session(id);
+                    let effects = shared.lock().registry.end_session(id);
                     apply_effects(effects, ctx, host_tx);
                 }
             }
@@ -1515,7 +1541,7 @@ fn dispatch(
             let Some(id) = value.get("session").and_then(|s| s.as_str()) else {
                 return err("focus-session requires 'session'");
             };
-            let session = shared.lock().unwrap().registry.session_or_tombstone(id);
+            let session = shared.lock().registry.session_or_tombstone(id);
             match session {
                 Some(sess) => {
                     let ctx = ctx.clone();
@@ -1538,7 +1564,7 @@ fn dispatch(
             Err(e) => err(&e),
         },
         "get-state" => {
-            let state = shared.lock().unwrap().registry.aggregate();
+            let state = shared.lock().registry.aggregate();
             Dispatch::Reply(serde_json::json!({ "ok": true, "state": state.name() }))
         }
         "set-led" => {
@@ -1567,7 +1593,7 @@ fn dispatch(
             Dispatch::Reply(serde_json::json!({ "ok": true }))
         }
         "get-styles" => {
-            let styles = shared.lock().unwrap().styles;
+            let styles = shared.lock().styles;
             Dispatch::Reply(serde_json::json!({ "ok": true, "styles": styles_json(&styles) }))
         }
         "set-style" => {
@@ -1584,14 +1610,14 @@ fn dispatch(
             if let Err(e) = Config::write_style(&path, state, style) {
                 return err(&format!("failed to persist style: {e}"));
             }
-            shared.lock().unwrap().styles.set(state, style);
+            shared.lock().styles.set(state, style);
             let _ = host_tx.send(style.to_host_cmd(state));
             ctx.broadcast(&style_event_line(state, &style));
             Dispatch::Reply(serde_json::json!({ "ok": true }))
         }
         "subscribe" => Dispatch::Subscribe,
         "ping" => {
-            let present = shared.lock().unwrap().device_present;
+            let present = shared.lock().device_present;
             Dispatch::Reply(serde_json::json!({ "ok": true, "device": present }))
         }
         other => err(&format!("unknown cmd: {other:?}")),
