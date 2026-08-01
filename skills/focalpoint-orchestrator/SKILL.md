@@ -81,6 +81,80 @@ operation you need.
 7. Explain which order or session you selected and why. Without an explicit
    order, the daemon uses its deterministic state-based fallback.
 
+## Balancing subscriptions
+
+Before every `launch`, read the `usage` block from `fpctl-agent status` and
+spread work so overall utilization across every tracked subscription stays
+high — never drain one provider while another, already paid for, sits idle.
+
+- Each provider's entry is a flat map of numeric keys, not a fixed schema.
+  Claude's adapter reports `five_hour_used` / `seven_day_used` (percentages,
+  0-100) and `five_hour_resets_at` / `seven_day_resets_at` (unix epoch
+  seconds) — read both windows, since a provider can be fine on the short
+  window and close to exhausted on the long one. Other providers' adapters
+  may report differently named `*_used` / `*_resets_at`-style keys as they
+  mature; don't assume Claude's exact key names apply everywhere.
+- `cursor` usage is tracked in this same block even though Cursor is not yet
+  a launchable provider (`fpctl-agent launch --provider` only accepts
+  `claude` and `codex` today). Read it anyway so your utilization picture is
+  complete, but never attempt `--provider cursor`.
+- When two candidates are a comparable fit for the task (see below), prefer
+  launching on whichever has more headroom: the lower `*_used` percentage,
+  or the window resetting soonest — burn down toward a reset instead of
+  pushing a provider that just started a fresh window past it.
+- If a provider's `*_used` is climbing toward 100 or a window's
+  `*_resets_at` is imminent, shift new launches to the other provider even
+  if it's normally the weaker choice for that task type, and say so
+  explicitly in your explanation.
+- No `usage` entry for a provider means no adapter has reported yet —
+  treat that as unknown, not as free headroom.
+
+## Choosing the right provider/model
+
+Pick `--provider`/`--model` for the task in front of you, not out of habit.
+As of early August 2026:
+
+- **Deep architecture, hard reasoning, ambiguous multi-step design work** —
+  `--provider claude --model opus` (Claude Opus 4.8). Leads on SWE-bench Pro/
+  Verified and deep mathematical reasoning; treat it as the escalation lane
+  for work flagged genuinely hard, not the default.
+- **Large multi-file refactors, everyday agentic coding, orchestrator
+  duty** — `--provider claude --model sonnet` (Claude Sonnet 5). Reaches
+  most of Opus's coding/agentic quality, wins Terminal-Bench 2.1, and is
+  faster and substantially cheaper — the sensible default lane.
+- **Long-context digests, high-volume implement/debug/test loops,
+  terminal- and DevOps-heavy autonomy** — `--provider codex --model
+  gpt-5.6-sol`. Codex CLI's current default model; strong terminal-bench and
+  SWE-bench Pro scores with high token efficiency.
+- **Hardware/CAD/KiCad work (`hardware/`, `case/`)** — no launchable
+  provider specializes in CAD; use whichever of Opus/Sonnet has headroom for
+  the reasoning load and lean on this repo's `cad`/`sendcutsend` skills for
+  the domain tooling itself, not the model choice.
+- **Quick, mechanical edits** (renames, one-file patches, small config
+  tweaks) — don't spend an Opus launch on it; use Sonnet or Codex, whichever
+  has headroom.
+- **Speed-sensitive / low-latency interactive tasks** — Sonnet 5 (lower
+  latency than Opus) or Codex, whichever has headroom.
+- **Cursor CLI models** — once Cursor becomes a launchable provider, it
+  fronts multiple upstream models (Claude Sonnet/Opus, GPT-5.x, Gemini,
+  Grok, plus Cursor's own Composer/Sonic tiers); check Cursor's own
+  `/models` listing for what's actually available before assuming an id.
+
+**Re-verify before trusting any of the above.** Model ids, defaults, and
+relative strengths shift every few months — the ids and rankings here are a
+snapshot from research done in early August 2026, not a permanent contract.
+Before launching, especially for a model id you haven't used recently, check
+current names and pricing via the `claude-api` skill for Claude models and
+current provider docs for Codex/Cursor, rather than trusting a stale id
+baked into this file.
+
+**Reconciling fit and headroom.** Prefer the best-fit model for the task
+first. When two candidates are roughly comparable fits, break the tie using
+the headroom rule above — pick the under-utilized subscription. When the
+single best-fit provider is close to its window limit or an imminent reset,
+don't force it: say so explicitly, and fall back to the next-best model on
+a provider with headroom.
+
 ## Permanent guardrails
 
 - Never answer or bypass an agent approval.
