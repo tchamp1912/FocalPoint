@@ -233,6 +233,7 @@ install_script "$ADAPTERS_DIR/codex-cli/notify.sh" codex-notify.sh
 install_script "$ADAPTERS_DIR/codex-cli/hooks.sh" codex-hooks.sh
 install_script "$ADAPTERS_DIR/cursor/hooks.sh" cursor-hooks.sh
 install_script "$ADAPTERS_DIR/cursor/focus-cursor.sh" focus-cursor.sh
+install_script "$ADAPTERS_DIR/cursor-cli/wrap.sh" cursor-cli-focalpoint.sh
 
 # ---------------------------------------------------------------------------
 # 7. Merge Claude Code hooks into ~/.claude/settings.json

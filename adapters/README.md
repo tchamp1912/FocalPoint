@@ -2,7 +2,7 @@
 
 FocalPoint is agent-agnostic — it speaks a simple protocol. **Adapters** are lightweight integrations that wire specific tools (Claude Code, Codex CLI, or your own script) to FocalPoint's state machine.
 
-This directory contains four reference adapters and a template for building your own.
+This directory contains five reference adapters and a template for building your own.
 
 ## Adapter Overview
 
@@ -10,6 +10,7 @@ This directory contains four reference adapters and a template for building your
 |---------|--------|------|--------------|-------------|----------|
 | **claude-code** | Production | Hooks | ~1 min | Automatic via `~/.claude/settings.json` | Auto-registers per Claude session (`session_id`/`cwd` from hook JSON); `end-session` on `SessionEnd`; ships the default `[session] focus` action |
 | **cursor** | Production | Hooks | ~1 min | Automatic via `~/.cursor/hooks.json` | Auto-registers per conversation (`conversation_id`/workspace root); `end-session` on `sessionEnd`; no `waiting` state and no token stats ([why](cursor/README.md)) |
+| **cursor-cli** | Production | Headless stream wrapper | ~1 min | Invoke wrapper for `cursor-agent` / `cursor agent -p` runs | Registers from Cursor's stream `session_id`; derives thinking/running/done/error and ends at process exit; no `waiting` or token stats ([why](cursor-cli/README.md)) |
 | **codex-cli** | Production | Lifecycle hooks | ~1 min | Automatic via `~/.codex/hooks.json` | Auto-registers at `SessionStart`; full thinking/running/waiting/done states; `end-session` on `SessionEnd` |
 | **generic** | Production | Wrapper | ~1 min | Call `wrap.sh` in your scripts/CI | Opt-in via `--session`/`--kind`/`--label`; sessionless by default |
 
@@ -40,6 +41,19 @@ cd adapters/cursor
 Each Cursor chat then claims its own key. See
 [cursor/README.md](cursor/README.md) for the event mapping and the three
 things Cursor can't report (no `waiting`, no tokens, workspace-level focus).
+
+### Cursor CLI (headless agent)
+
+This is distinct from the Cursor IDE adapter above. Cursor CLI does not expose
+full lifecycle hooks, so use its stream-transparent wrapper for headless
+agents:
+
+```bash
+~/.config/focalpoint/adapters/cursor-cli-focalpoint.sh --force "Review current changes"
+```
+
+See [cursor-cli/README.md](cursor-cli/README.md) for the supported stream
+events, setup, and lifecycle ceiling.
 
 ### Generic (Any Tool)
 
