@@ -339,27 +339,29 @@ static void vk_paint_state(uint8_t idx, uint8_t state, bool aggregate) {
 
 bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
     if (!vk_host_mode) return true;
-    /* Attached FocalPoint is deliberately quiet: only session, aggregate,
-     * and navigation indicators may emit light; everything else is black. */
-    for (uint8_t idx = led_min; idx < led_max; idx++) rgb_matrix_set_color(idx, 0, 0, 0);
-    /* Esc = aggregate state (idle paints nothing => normal effect shows). */
-    if (VK_LED_ESC >= led_min && VK_LED_ESC < led_max) {
-        vk_paint_state(VK_LED_ESC, vk_aggregate, true);
-    }
+    /* QMK may invoke the advanced callback in LED ranges. Do not merely paint
+     * its current range: the keyboard effect can otherwise leave a travelling
+     * wave in a range that has not been visited yet. FocalPoint owns the whole
+     * frame while attached, repainting a black overlay across every LED before
+     * restoring its tiny set of indicators. */
+    (void)led_min;
+    (void)led_max;
+    for (uint8_t idx = 0; idx < DRIVER_LED_TOTAL; idx++) rgb_matrix_set_color(idx, 0, 0, 0);
+
+    /* Esc = aggregate state (idle paints nothing). */
+    vk_paint_state(VK_LED_ESC, vk_aggregate, true);
 
     /* Number row = session slots 1..12. */
     for (uint8_t i = 0; i < VK_USER_KEY_COUNT; i++) {
         uint8_t idx = vk_slot_led(i);
-        if (idx < led_min || idx >= led_max) continue;
-
         if (vk_override[i].active) {       /* SET_LED override wins */
             rgb_matrix_set_color(idx, vk_override[i].r, vk_override[i].g, vk_override[i].b);
         } else if (vk_key_state[i] != VK_STATE_EMPTY) {
             vk_paint_state(idx, vk_key_state[i], false);
         }
-        /* else: empty slot -> leave the user's ambient effect untouched */
+        /* else: stays black in the full FocalPoint overlay */
     }
-    if (VK_LED_RIGHT_ARROW >= led_min && VK_LED_RIGHT_ARROW < led_max && vk_next_attention != VK_STATE_EMPTY) {
+    if (vk_next_attention != VK_STATE_EMPTY) {
         vk_paint_state(VK_LED_RIGHT_ARROW, vk_next_attention, false);
     }
     return true;

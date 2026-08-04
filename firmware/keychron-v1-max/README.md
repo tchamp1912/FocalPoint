@@ -12,9 +12,12 @@ Target board: `keychron/v1_max/ansi_encoder` (the knob variant).
 
 ## What it does
 
-- **Normal keyboard, always.** Hold **Option** in Mac mode or **Alt** in Windows
-  mode to invoke FocalPoint (`MO(FOCALPOINT)`). Mac mode swaps the physical left
-  Control and Command positions. Wireless (Bluetooth / 2.4 GHz) is untouched.
+- **Normal keyboard, always.** The left **Option** in Mac mode or **Alt** in
+  Windows mode is always a normal modifier, so every existing Option/Alt
+  shortcut works. Tap it alone, release it, then press one FocalPoint control
+  key to invoke FocalPoint; a normal next key cancels the one-shot layer. Mac
+  mode swaps the physical left Control and Command positions. Wireless
+  (Bluetooth / 2.4 GHz) is untouched.
 - **RGB status painting** (over whatever RGB effect you run), via
   `rgb_matrix_indicators_advanced_user`:
   - Number-row keys `1 2 3 4 5 6 7 8 9 0 - =` are **session slots 1–12**
@@ -23,9 +26,11 @@ Target board: `keychron/v1_max/ansi_encoder` (the knob variant).
     nothing (the key shows your normal effect).
   - State colors, patterns, and periods exactly follow the UI's Styles editor
     (`SET_STATE_STYLE`). An empty slot (`0xFF`) paints nothing.
-  - While attached, every non-FocalPoint key is black; Right Arrow shows the
+  - While attached, FocalPoint clears and repaints a full-board overlay on
+    every RGB-matrix frame, so stock travelling-wave effects cannot leak
+    through. Every non-FocalPoint key remains black; Right Arrow shows the
     next-attention session's state.
-- **FocalPoint control layer** (hold Option/Alt):
+- **FocalPoint control layer** (tap Option/Alt alone, then one control key):
   - number keys `1`–`=` → `KEY_EVENT` for user keys 1–12 (control IDs 4–15)
   - `A` / `R` / `N` → accept / reject / new-task (control IDs 0 / 1 / 2)
   - `Space` → push-to-talk (control ID 3, sends **press and release**)
@@ -42,13 +47,14 @@ Target board: `keychron/v1_max/ansi_encoder` (the knob variant).
 
 | Layer | # | How reached | Contents |
 |-------|---|-------------|----------|
-| `MAC_BASE` | 0 | default (Mac switch) | Option = `MO(FOCALPOINT)`; left Ctrl/Cmd swapped |
+| `MAC_BASE` | 0 | default (Mac switch) | Option is normal modifier; solo tap arms FocalPoint; left Ctrl/Cmd swapped |
 | `MAC_FN`   | 1 | hold stock Fn | stock |
-| `WIN_BASE` | 2 | OS switch = Win | Alt = `MO(FOCALPOINT)` |
+| `WIN_BASE` | 2 | OS switch = Win | Alt is normal modifier; solo tap arms FocalPoint |
 | `WIN_FN`   | 3 | hold stock Fn | stock |
-| `FOCALPOINT`  | 4 | **hold Option/Alt** | control surface below |
+| `FOCALPOINT`  | 4 | tap Option/Alt alone, then press one key | one-shot control surface below |
 
-FocalPoint layer (transparent everywhere else, so held typing still works):
+FocalPoint layer is one-shot and transparent everywhere else, so a normal key
+after the standalone Option/Alt tap simply cancels it and types normally:
 
 | Physical key | Keycode | Emits |
 |--------------|---------|-------|

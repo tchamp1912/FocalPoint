@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
  * Layers 0..3 are the stock Keychron Mac/Win base + Fn layers, unchanged
- * except that Option/Alt invokes MO(FOCALPOINT).
+ * except that tapping left Option/Alt alone arms FocalPoint for one key.
  * Layer 4 (FOCALPOINT) is the held control surface (see README).
  */
 
@@ -15,7 +15,7 @@ enum layers {
     MAC_FN,
     WIN_BASE,
     WIN_FN,
-    FOCALPOINT,   /* held via MO(FOCALPOINT) on Option/Alt */
+    FOCALPOINT,   /* one-shot after a standalone Option/Alt tap */
 };
 
 /* Custom keycodes start after Keychron's QK_KB_0 range (NEW_SAFE_RANGE). */
@@ -41,6 +41,8 @@ enum focalpoint_keycodes {
     VK_ATT_PREV,               /* left arrow -> control 18 */
     VK_SESSION_NEXT,           /* down arrow -> control 19 */
     VK_SESSION_PREV,           /* up arrow -> control 20 */
+    VK_FP_MAC_OPTION,          /* normal Option; standalone tap arms FocalPoint */
+    VK_FP_WIN_ALT,             /* normal Alt; standalone tap arms FocalPoint */
 };
 
 // clang-format off
@@ -51,7 +53,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         KC_TAB,   KC_Q,     KC_W,     KC_E,     KC_R,     KC_T,     KC_Y,     KC_U,     KC_I,     KC_O,     KC_P,     KC_LBRC,  KC_RBRC,  KC_BSLS,            KC_PGDN,
         KC_CAPS,  KC_A,     KC_S,     KC_D,     KC_F,     KC_G,     KC_H,     KC_J,     KC_K,     KC_L,     KC_SCLN,  KC_QUOT,            KC_ENT,             KC_HOME,
         KC_LSFT,            KC_Z,     KC_X,     KC_C,     KC_V,     KC_B,     KC_N,     KC_M,     KC_COMM,  KC_DOT,   KC_SLSH,            KC_RSFT,  KC_UP,
-        KC_LCMMD, MO(FOCALPOINT), KC_LCTL,                          KC_SPC,                                 KC_RCMMD,MO(MAC_FN),KC_LOPTN,     KC_LEFT, KC_DOWN,  KC_RGHT),
+        KC_LCMMD, VK_FP_MAC_OPTION, KC_LCTL,                        KC_SPC,                                 KC_RCMMD,MO(MAC_FN),KC_LOPTN,     KC_LEFT, KC_DOWN,  KC_RGHT),
 
     [MAC_FN] = LAYOUT_ansi_82(
         _______,  KC_F1,    KC_F2,    KC_F3,    KC_F4,    KC_F5,    KC_F6,    KC_F7,    KC_F8,    KC_F9,    KC_F10,   KC_F11,   KC_F12,   _______,            RGB_TOG,
@@ -67,7 +69,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         KC_TAB,   KC_Q,     KC_W,     KC_E,     KC_R,     KC_T,     KC_Y,     KC_U,     KC_I,     KC_O,     KC_P,     KC_LBRC,  KC_RBRC,  KC_BSLS,            KC_PGDN,
         KC_CAPS,  KC_A,     KC_S,     KC_D,     KC_F,     KC_G,     KC_H,     KC_J,     KC_K,     KC_L,     KC_SCLN,  KC_QUOT,            KC_ENT,             KC_HOME,
         KC_LSFT,            KC_Z,     KC_X,     KC_C,     KC_V,     KC_B,     KC_N,     KC_M,     KC_COMM,  KC_DOT,   KC_SLSH,            KC_RSFT,  KC_UP,
-        KC_LCTL,  KC_LGUI,  MO(FOCALPOINT),                         KC_SPC,                                 KC_RALT, MO(WIN_FN),KC_LALT,      KC_LEFT, KC_DOWN,  KC_RGHT),
+        KC_LCTL,  KC_LGUI,  VK_FP_WIN_ALT,                          KC_SPC,                                 KC_RALT, MO(WIN_FN),KC_LALT,      KC_LEFT, KC_DOWN,  KC_RGHT),
 
     [WIN_FN] = LAYOUT_ansi_82(
         _______,  KC_BRID,  KC_BRIU,  KC_TASK,  KC_FILE,  RGB_VAD,  RGB_VAI,  KC_MPRV,  KC_MPLY,  KC_MNXT,  KC_MUTE,  KC_VOLD,  KC_VOLU,  _______,            RGB_TOG,
@@ -85,7 +87,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         _______,  _______,  _______,  _______,  VK_REJ,   _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,            _______,
         _______,  VK_ACC,   _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,            _______,            _______,
         _______,            _______,  _______,  _______,  _______,  _______,  VK_NEW,   _______,  _______,  _______,  _______,            _______,  VK_SESSION_PREV,
-        _______,  _______,  _______,                                VK_PTT,                                 _______,  _______,  _______,  VK_ATT_PREV, VK_SESSION_NEXT, VK_ATT_NEXT),
+        _______,  VK_FP_MAC_OPTION, VK_FP_WIN_ALT,                  VK_PTT,                                 _______,  _______,  _______,  VK_ATT_PREV, VK_SESSION_NEXT, VK_ATT_NEXT),
 };
 
 // clang-format on
@@ -119,13 +121,56 @@ static uint8_t vk_control_for(uint16_t keycode) {
     }
 }
 
+static bool vk_option_down;
+static bool vk_option_used_as_modifier;
+static bool vk_focalpoint_armed;
+static bool vk_focalpoint_control_down;
+static uint16_t vk_focalpoint_armed_at;
+
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
+    /* Option/Alt must remain a true OS modifier: it is frequently used for
+     * application hotkeys. A standalone tap arms one FocalPoint command after
+     * release; pressing any other key while held is an ordinary Option/Alt
+     * chord and never enables the FocalPoint layer. */
+    if (keycode == VK_FP_MAC_OPTION || keycode == VK_FP_WIN_ALT) {
+        uint16_t modifier = keycode == VK_FP_MAC_OPTION ? KC_LOPTN : KC_LALT;
+        if (record->event.pressed) {
+            register_code16(modifier);
+            vk_option_down = true;
+            vk_option_used_as_modifier = false;
+        } else {
+            unregister_code16(modifier);
+            if (vk_option_down && !vk_option_used_as_modifier && vk_host_mode_on()) {
+                layer_on(FOCALPOINT);
+                vk_focalpoint_armed = true;
+                vk_focalpoint_armed_at = timer_read();
+            }
+            vk_option_down = false;
+        }
+        return false;
+    }
+
+    if (vk_option_down && record->event.pressed) vk_option_used_as_modifier = true;
+
     uint8_t control = vk_control_for(keycode);
+    if (vk_focalpoint_armed && record->event.pressed && control == 0xFF) {
+        /* A non-control key consumes the one-shot layer transparently. */
+        layer_off(FOCALPOINT);
+        vk_focalpoint_armed = false;
+    }
     if (control != 0xFF) {
         /* FocalPoint control key. When a daemon is attached (host mode on) emit a
          * HID event and never a keystroke; when detached, act as a no-op. */
         if (vk_host_mode_on()) {
             vk_send_key_event(control, record->event.pressed);
+        }
+        if (vk_focalpoint_armed) {
+            if (record->event.pressed) vk_focalpoint_control_down = true;
+            else if (vk_focalpoint_control_down) {
+                layer_off(FOCALPOINT);
+                vk_focalpoint_armed = false;
+                vk_focalpoint_control_down = false;
+            }
         }
         return false;  /* consume: never types */
     }
@@ -135,6 +180,15 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
         return false;
     }
     return true;
+}
+
+void matrix_scan_user(void) {
+    /* Avoid leaving a surprising control layer armed after an accidental tap. */
+    if (vk_focalpoint_armed && !vk_focalpoint_control_down
+        && timer_elapsed(vk_focalpoint_armed_at) > 1000) {
+            layer_off(FOCALPOINT);
+            vk_focalpoint_armed = false;
+    }
 }
 
 #if defined(ENCODER_ENABLE)
