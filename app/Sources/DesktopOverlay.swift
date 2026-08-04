@@ -194,11 +194,12 @@ struct DesktopWidgetView: View {
                         if let percent = usage.secondaryUsed {
                             usageRow(usage.provider, label: usage.secondaryMeterLabel, percent: percent, reset: usage.secondaryResetsAt)
                         }
-                        if let spend = usage.apiSpendUSD {
+                        if let spend = model.trackedAPISpend(for: usage) {
                             apiSpendRow(usage, spend: spend)
                         }
-                        if let input = usage.apiInputTokens, let output = usage.apiOutputTokens {
-                            Text("\(usage.displayName) \(Int(input)) in / \(Int(output)) out today")
+                        if let input = model.trackedAPIInputTokens(for: usage),
+                           let output = model.trackedAPIOutputTokens(for: usage) {
+                            Text("\(usage.displayName) \(Int(input)) in / \(Int(output)) out \(model.apiUsageTrackingLabel)")
                                 .font(.caption2).foregroundStyle(.secondary)
                         }
                     }
@@ -215,7 +216,7 @@ struct DesktopWidgetView: View {
     }
 
     private func apiSpendRow(_ usage: ProviderUsage, spend: Double) -> some View {
-        Text("\(usage.displayName) $\(spend.formatted(.number.precision(.fractionLength(2)))) \(usage.apiSpendPeriodLabel)")
+        Text("\(usage.displayName) $\(spend.formatted(.number.precision(.fractionLength(2)))) \(model.apiUsageTrackingEnabled ? "since reset" : usage.apiSpendPeriodLabel)")
             .font(.caption2)
             .foregroundStyle(.secondary)
     }

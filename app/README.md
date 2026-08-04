@@ -173,9 +173,8 @@ Open **Settings** from the dropdown footer.
   API/project keys cannot read organization billing, so they intentionally do
   not enable this monitor.
 - API-billed Claude usage is supported with `ANTHROPIC_ADMIN_KEY`, which shows
-  the current UTC day's exact input/output tokens from Anthropic's Admin API.
-  Anthropic does not return a billing total from that report, so FocalPoint does
-  not estimate one.
+  the current UTC day's exact input/output tokens and cost from Anthropic's
+  Admin Usage and Cost APIs.
 - Cursor teams can set `CURSOR_ADMIN_API_KEY` to show the documented Admin API
   current-cycle spend. Individual Cursor API keys intentionally cannot access
   the team billing report.

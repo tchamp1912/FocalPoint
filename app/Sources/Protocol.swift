@@ -356,6 +356,7 @@ struct ProviderUsage: Identifiable, Equatable {
     var updatedAt: Date
 
     var id: String { provider }
+    var isAPIAccount: Bool { provider == "openai-api" || provider == "claude-api" || provider == "cursor-api" }
 
     var fiveHourUsed: Double? { values["five_hour_used"] }
     var fiveHourResetsAt: Date? { epochDate("five_hour_resets_at") }

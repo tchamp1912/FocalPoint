@@ -38,6 +38,22 @@ final class AppModel: ObservableObject {
     @Published var sessionsSupported = false     // daemon emits session events / list-sessions
     @Published var usage: [ProviderUsage] = []
     @Published var usageSupported = false
+    /// Tracks API-account telemetry from the moment this is enabled (or last
+    /// reset). It is entirely local: provider billing periods are untouched.
+    @Published var apiUsageTrackingEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(apiUsageTrackingEnabled, forKey: "apiUsageTrackingEnabled")
+            if apiUsageTrackingEnabled && !oldValue { resetAPIUsageTracking() }
+        }
+    }
+    @Published private(set) var apiUsageTrackingResetAt: Date?
+    private var apiUsageBaselines: [String: [String: Double]] = [:] {
+        didSet {
+            if let data = try? JSONEncoder().encode(apiUsageBaselines) {
+                UserDefaults.standard.set(data, forKey: "apiUsageBaselines")
+            }
+        }
+    }
     /// Completed sessions, newest first — snapshotted at `"session-ended"`
     /// (see `recordSessionEnded`), since the daemon itself keeps no history.
     /// Persisted client-side, capped at `maxSessionHistoryEntries`.
@@ -255,6 +271,12 @@ final class AppModel: ObservableObject {
             visibleStats = Set(SessionStat.allCases)
         }
         showUsage = d.object(forKey: "showUsage") as? Bool ?? true
+        apiUsageTrackingEnabled = d.object(forKey: "apiUsageTrackingEnabled") as? Bool ?? false
+        apiUsageTrackingResetAt = d.object(forKey: "apiUsageTrackingResetAt") as? Date
+        if let data = d.data(forKey: "apiUsageBaselines"),
+           let decoded = try? JSONDecoder().decode([String: [String: Double]].self, from: data) {
+            apiUsageBaselines = decoded
+        }
         showModelBadge = d.object(forKey: "showModelBadge") as? Bool ?? true
         codexUsageEnabled = d.object(forKey: "codexUsageEnabled") as? Bool ?? false
         cursorUsageEnabled = d.object(forKey: "cursorUsageEnabled") as? Bool ?? true
@@ -287,6 +309,49 @@ final class AppModel: ObservableObject {
         if n > 0 { return n }
         if sessions.isEmpty && aggregate.needsAttention { return 1 }
         return 0
+    }
+
+    /// Starts a fresh local accounting interval at the latest provider values.
+    /// This never changes remote billing, rate limits, or daemon snapshots.
+    func resetAPIUsageTracking() {
+        apiUsageBaselines = Dictionary(uniqueKeysWithValues: usage
+            .filter { $0.isAPIAccount }
+            .map { ($0.provider, $0.values) })
+        apiUsageTrackingResetAt = Date()
+        UserDefaults.standard.set(apiUsageTrackingResetAt, forKey: "apiUsageTrackingResetAt")
+    }
+
+    func trackedAPISpend(for record: ProviderUsage) -> Double? {
+        trackedAPIValue("api_spend_usd", for: record)
+    }
+
+    func trackedAPIInputTokens(for record: ProviderUsage) -> Double? {
+        trackedAPIValue("api_input_tokens", for: record)
+    }
+
+    func trackedAPIOutputTokens(for record: ProviderUsage) -> Double? {
+        trackedAPIValue("api_output_tokens", for: record)
+    }
+
+    var apiUsageTrackingLabel: String {
+        apiUsageTrackingEnabled ? "since reset" : "this provider period"
+    }
+
+    private func trackedAPIValue(_ key: String, for record: ProviderUsage) -> Double? {
+        guard let current = record.values[key] else { return nil }
+        guard apiUsageTrackingEnabled else { return current }
+        let baseline = apiUsageBaselines[record.provider]?[key] ?? current
+        return max(0, current - baseline)
+    }
+
+    private func captureAPIUsageBaselineIfNeeded(for record: ProviderUsage) {
+        guard apiUsageTrackingEnabled, record.isAPIAccount,
+              apiUsageBaselines[record.provider] == nil else { return }
+        apiUsageBaselines[record.provider] = record.values
+        if apiUsageTrackingResetAt == nil {
+            apiUsageTrackingResetAt = Date()
+            UserDefaults.standard.set(apiUsageTrackingResetAt, forKey: "apiUsageTrackingResetAt")
+        }
     }
 
     /// The highest-priority eligible row. The daemon owns the independent
@@ -622,6 +687,7 @@ final class AppModel: ObservableObject {
               let values = Self.parseUsage(event["usage"] as? [String: Any]) else { return }
         usageSupported = true
         let record = ProviderUsage(provider: provider, values: values, updatedAt: Date())
+        captureAPIUsageBaselineIfNeeded(for: record)
         if let index = usage.firstIndex(where: { $0.provider == provider }) {
             usage[index] = record
         } else {
@@ -687,6 +753,7 @@ final class AppModel: ObservableObject {
             return ProviderUsage(provider: provider, values: values, updatedAt: Date())
         }
         .sorted { $0.provider < $1.provider }
+        usage.filter(\.isAPIAccount).forEach(captureAPIUsageBaselineIfNeeded)
     }
 
     private func applyAttentionOrderResponse(_ response: [String: Any]?,

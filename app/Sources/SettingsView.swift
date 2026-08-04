@@ -349,10 +349,19 @@ struct IntegrationsSettingsView: View {
                     Toggle("Show account usage monitor", isOn: $model.showUsage)
                     Text("The monitor displays provider-reported subscription quota and reset times, not estimates from session token counts.")
                         .font(.caption).foregroundStyle(.secondary)
+                    Toggle("Track API usage totals", isOn: $model.apiUsageTrackingEnabled)
+                    HStack {
+                        Text("Tracks Claude, Cursor, and OpenAI API values locally from this point onward. Resetting never changes provider billing or limits.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Reset totals") { model.resetAPIUsageTracking() }
+                            .buttonStyle(.bordered)
+                            .disabled(!model.apiUsageTrackingEnabled)
+                    }
                     Divider()
                     Text("Claude Code")
                         .font(.subheadline).bold()
-                    Text("Install the FocalPoint status-line reporter for subscription limits. Set ANTHROPIC_ADMIN_KEY to show exact API input/output tokens for today; the admin key is used only for Anthropic's usage report and is never stored or sent to the daemon.")
+                    Text("Install the FocalPoint status-line reporter for subscription limits. Set ANTHROPIC_ADMIN_KEY to show exact API input/output tokens and spend for today; the admin key is used only for Anthropic's Usage and Cost reports and is never stored or sent to the daemon.")
                         .font(.caption).foregroundStyle(.secondary)
                     Text("Codex")
                         .font(.subheadline).bold()

@@ -333,12 +333,13 @@ struct MenuContentView: View {
             if let percent = usage.secondaryUsed {
                 usageMeter(label: usage.secondaryMeterLabel, percent: percent, reset: usage.secondaryResetsAt)
             }
-            if let spend = usage.apiSpendUSD {
+            if let spend = model.trackedAPISpend(for: usage) {
                 Text(apiSpendText(usage, spend: spend))
                     .font(.caption2).foregroundStyle(.secondary)
             }
-            if let input = usage.apiInputTokens, let output = usage.apiOutputTokens {
-                Text("API tokens today: \(compactTokenCount(input)) in · \(compactTokenCount(output)) out")
+            if let input = model.trackedAPIInputTokens(for: usage),
+               let output = model.trackedAPIOutputTokens(for: usage) {
+                Text("API tokens \(model.apiUsageTrackingLabel): \(compactTokenCount(input)) in · \(compactTokenCount(output)) out")
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }
@@ -347,9 +348,9 @@ struct MenuContentView: View {
     private func apiSpendText(_ usage: ProviderUsage, spend: Double) -> String {
         let amount = spend.formatted(.currency(code: "USD"))
         if let end = usage.apiSpendPeriodEndsAt {
-            return "API spend \(amount) \(usage.apiSpendPeriodLabel) · resets \(end.formatted(date: .omitted, time: .shortened))"
+            return "API spend \(amount) \(model.apiUsageTrackingEnabled ? "since reset" : usage.apiSpendPeriodLabel) · resets \(end.formatted(date: .omitted, time: .shortened))"
         }
-        return "API spend \(amount) \(usage.apiSpendPeriodLabel)"
+        return "API spend \(amount) \(model.apiUsageTrackingEnabled ? "since reset" : usage.apiSpendPeriodLabel)"
     }
 
     private func compactTokenCount(_ value: Double) -> String {
