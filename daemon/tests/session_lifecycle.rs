@@ -485,7 +485,7 @@ fn dead_pid_sweep_reaps_and_tombstone_is_recoverable() {
 }
 
 #[test]
-fn label_and_cwd_recovery_after_dead_tty_reap() {
+fn shared_label_and_cwd_do_not_recover_a_dead_tty_tombstone() {
     let d = TestDaemon::start();
 
     d.cli_ok(&[
@@ -525,7 +525,8 @@ fn label_and_cwd_recovery_after_dead_tty_reap() {
             .any(|s| s["session"] == "old" && s["connected"] == serde_json::json!(false))
     });
 
-    // Different pid *and* tty — only label+cwd can match (2-of-4 pooled rule).
+    // Different pid *and* tty. A title plus cwd is shared by unrelated fresh
+    // sessions, so it must not consume the disconnected tombstone.
     d.cli_ok(&[
         "set-state",
         "thinking",
@@ -546,9 +547,12 @@ fn label_and_cwd_recovery_after_dead_tty_reap() {
     ]);
     let sessions = d.cli_json(&["sessions", "--json"]);
     let arr = sessions.as_array().unwrap();
-    assert_eq!(arr.len(), 1);
-    assert_eq!(arr[0]["session"], "new");
-    assert_eq!(arr[0]["meta"]["turns"], 8, "7 carried + 1 incoming");
+    assert_eq!(arr.len(), 2);
+    let new = arr.iter().find(|session| session["session"] == "new").unwrap();
+    assert_eq!(new["connected"], serde_json::json!(true));
+    assert_eq!(new["meta"]["turns"], 1, "fresh session must not inherit old totals");
+    let old = arr.iter().find(|session| session["session"] == "old").unwrap();
+    assert_eq!(old["connected"], serde_json::json!(false));
 }
 
 #[test]
@@ -683,6 +687,8 @@ fn tombstone_infinite_ttl_recovers_after_simulated_long_gap() {
         "/tmp/proj",
         "--label",
         "Old Chat",
+        "--meta",
+        "resume_session_id=ancient",
         "--meta",
         "tty=/dev/test-tty-different",
     ]);

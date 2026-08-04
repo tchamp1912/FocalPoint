@@ -206,22 +206,23 @@ off of). A `set-meta` still counts as session activity for
   - If the *same* `session_id` sends the next `set-state` (the common case),
     it's an ordinary update: state changes normally, meta merges forward as
     always. Nothing was lost.
-  - If a *different* `session_id` registers next while a recoverable
-    predecessor exists — either a live `compacting` session still within its
-    **5-minute grace period** (the fast compaction-continuation path; a
-    still-visible "compacting" key is almost always claimed within seconds)
-    or a tombstoned session within `tombstone_ttl_minutes` (the general
-    "reappeared after an unexplained sweep-driven disappearance" path) — the
-    daemon reunites them: the new id takes over the old session's slot,
-    `name`, and merged `meta` in place, and the old id is dropped. Matching
-    uses a pooled set of signals `{label, cwd, tty, pid}`: **at least 2 must
-    agree**, and `cwd` alone is never enough (multiple simultaneous sessions
-    commonly share one). The right pair falls out naturally per cause —
-    `label`+`cwd` for a compaction/resume fork (new pid, maybe new tty;
-    Claude Code's `ai-title` survives a compaction fork even though pid/tty
-    don't), `pid`+`cwd` or `pid`+`tty` for a false-reap (same process, never
-    actually died). Ties (same score) are broken by most recent activity. On
-    reunification, **cumulative** meta keys (`turns`, `tool_calls`,
+  - If a *different* `session_id` registers next while a live `compacting`
+    predecessor is still within its **5-minute grace period** (the fast
+    compaction-continuation path; a still-visible "compacting" key is almost
+    always claimed within seconds), the daemon reunites them from pooled
+    signals `{label, cwd, tty, pid}`: **at least 2 must agree**, and `cwd`
+    alone is never enough. `label`+`cwd` is valid here because Claude Code's
+    `ai-title` survives a compaction fork even when pid/tty do not.
+  - Tombstones deliberately use a stricter rule: the same incoming provider
+    `session_id` always reclaims its own unexpired tombstone. For a *different*
+    id, fuzzy recovery is only for a false reap of the **same process**
+    (matching pid plus one other signal, such as cwd or tty). A fresh provider
+    process must carry the exact `resume_session_id` stamped by the managed
+    resume launcher; shared title and cwd are not conversation identity. A
+    reunited id takes over the old session's slot, `name`, and merged `meta` in
+    place, and the old id is dropped. Ties are broken by most recent activity.
+    On reunification,
+    **cumulative** meta keys (`turns`, `tool_calls`,
     `subagents`, `tokens_in`, `tokens_out`, `cost_usd`) are **added** to the
     predecessor's totals rather than overwritten; the `compactions` counter
     increments; instantaneous keys (`context_tokens`, `context_window`, `tty`,

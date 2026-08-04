@@ -736,18 +736,22 @@ impl Registry {
     /// any — either a live `State::Compacting` session within
     /// `COMPACT_GRACE` (the fast compaction-continuation path — a
     /// still-visible "compacting" key almost always claimed within
-    /// seconds) or a tombstoned one within `tombstone_ttl` (the general
-    /// "reappeared after an unexplained sweep-driven disappearance" path).
-    /// Same pooled signal matcher either way: `label` (Claude Code's
+    /// seconds) or a tombstoned one within `tombstone_ttl` (only a false-reap
+    /// of the same still-running process). Live compacting candidates use the
+    /// pooled signal matcher: `label` (Claude Code's
     /// `ai-title`, verified to survive a compaction fork even though pid/tty
     /// don't — see identity.rs's doc comment for why those two are
     /// OS-process-identity signals that a real fork/resume can't preserve),
     /// `cwd`, `tty`, `pid` — **at least 2 must agree**, and `cwd` alone is
     /// never enough (it's explicitly not unique — multiple simultaneous
     /// sessions commonly share one). The right pair falls out naturally per
-    /// cause: label+cwd for a compaction/resume fork (new pid, maybe new
-    /// tty), pid+cwd or pid+tty for a false-reap (same process, never
-    /// actually died). Ties (same score) broken by most recent activity.
+    /// cause: label+cwd for a compaction fork (new pid, maybe new tty),
+    /// pid+cwd or pid+tty for a false-reap (same process, never actually
+    /// died). A tombstone additionally requires a matching pid: title+cwd is
+    /// not process identity and is routinely shared by unrelated fresh
+    /// sessions. Fresh-process history recovery is only allowed through the
+    /// exact `resume_session_id` marker below. Ties (same score) break by most
+    /// recent activity.
     fn find_recovery_candidate(
         &self,
         incoming_label: &str,
@@ -792,7 +796,14 @@ impl Registry {
                 .tombstone_ttl
                 .map(|ttl| now.saturating_duration_since(t.reaped_at) <= ttl)
                 .unwrap_or(true); // None = never expire
-            if within_grace {
+            if within_grace
+                && incoming_pid.is_some()
+                && incoming_pid == t.session.pid()
+            {
+                // A tombstone is only a false-reap candidate when this is
+                // demonstrably the same process. `consider` still requires a
+                // second agreeing signal, preventing a recycled pid by itself
+                // from linking two sessions.
                 consider(id, &t.session, t.reaped_at);
             }
         }
@@ -938,11 +949,20 @@ impl Registry {
                         .and_then(Value::as_str)
                         .filter(|resume_id| !resume_id.is_empty());
 
+                    let same_id_tombstone = self.tombstones.get(id).is_some_and(|tombstone| {
+                        self.tombstone_ttl
+                            .map(|ttl| now.saturating_duration_since(tombstone.reaped_at) <= ttl)
+                            .unwrap_or(true)
+                    });
                     let recovery_id = match explicit_resume_id {
                         Some(resume_id) if self.tombstones.contains_key(resume_id) => {
                             Some(resume_id.to_string())
                         }
                         Some(_) => None,
+                        // The provider's own exact id is stronger than fuzzy
+                        // signals and safely reunites a false reap even while
+                        // identity resolution has not supplied pid/tty yet.
+                        None if same_id_tombstone => Some(id.to_string()),
                         None => self.find_recovery_candidate(
                             incoming_label,
                             incoming_cwd,
@@ -2052,6 +2072,38 @@ mod tests {
     }
 
     #[test]
+    fn same_id_recovers_its_tombstone_without_identity_metadata() {
+        let mut r = Registry::new(None);
+        let now = t0();
+        r.set_state(
+            Some("same-id"),
+            State::Running,
+            Some("claude".into()),
+            Some("Original".into()),
+            Some(meta("/repo", "/dev/ttys004")),
+            now,
+        );
+        r.reap_session("same-id", now);
+
+        let later = now.checked_add(Duration::from_secs(1)).unwrap();
+        let effects = r.set_state(
+            Some("same-id"),
+            State::Thinking,
+            Some("claude".into()),
+            Some("Original".into()),
+            Some(Map::new()),
+            later,
+        );
+
+        assert!(effects.contains(&Effect::SessionRekeyed {
+            old_id: "same-id".into(),
+            new_id: "same-id".into(),
+        }));
+        assert!(r.tombstones_snapshot().is_empty());
+        assert!(r.list().iter().any(|session| session.id == "same-id"));
+    }
+
+    #[test]
     fn differing_id_fork_still_carries_forward_after_reap_recovery() {
         // Contrast with the same-id case above: a genuinely different id
         // recovering from a tombstone (real cross-process fork, just routed
@@ -2255,11 +2307,11 @@ mod tests {
     }
 
     #[test]
-    fn reap_session_creates_a_tombstone_recoverable_by_label_and_cwd() {
-        // The "resumed after an unexplained gap" case: a genuinely
-        // different process (new pid, and this time no tty resolved at
-        // all), but the same conversation — label survives even though
-        // pid/tty can't (see identity.rs's doc comment).
+    fn tombstone_does_not_recover_a_fresh_session_by_shared_label_and_cwd() {
+        // Generated titles and a repository directory are not a stable
+        // conversation identity. A fresh Claude/Codex session can share both
+        // with a disconnected row, so only an explicit resume marker may
+        // recover a fresh process from a tombstone.
         let mut r = Registry::new(None);
         let now = t0();
         let m = meta("/repo", "/dev/ttys004");
@@ -2284,10 +2336,16 @@ mod tests {
             later,
         );
 
-        assert!(effects.contains(&Effect::SessionRekeyed {
-            old_id: "old".into(),
-            new_id: "new".into(),
-        }));
+        assert!(!effects.iter().any(|effect| matches!(
+            effect,
+            Effect::SessionRekeyed { old_id, new_id }
+                if old_id == "old" && new_id == "new"
+        )));
+        assert!(r.list().iter().any(|session| session.id == "new"));
+        assert!(r
+            .tombstones_snapshot()
+            .iter()
+            .any(|(id, _, _)| id == "old"));
     }
 
     #[test]
