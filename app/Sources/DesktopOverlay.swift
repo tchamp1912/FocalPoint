@@ -233,7 +233,7 @@ struct DesktopWidgetView: View {
     private func sessionRow(_ s: SessionInfo) -> some View {
         let hasStats = SessionStat.allCases.contains { model.visibleStats.contains($0) && s.stats[$0] != nil }
         let overBudget = model.isOverBudget(s)
-        // Same stale heuristic as MenuContentView's sessionRow — see that
+        // Same stale heuristic (including approval prompts) as MenuContentView's sessionRow — see that
         // file (and AppModel.isStale) for the rationale.
         let stale = model.isStale(s)
         let displayState: AgentState = stale ? .idle : s.state

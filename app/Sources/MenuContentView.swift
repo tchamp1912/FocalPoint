@@ -154,7 +154,7 @@ struct MenuContentView: View {
     private func sessionRow(_ s: SessionInfo) -> some View {
         let hasStats = SessionStat.allCases.contains { model.visibleStats.contains($0) && s.stats[$0] != nil }
         let overBudget = model.isOverBudget(s)
-        // A session stuck "thinking"/"running"/"waiting" past the stale
+        // A session stuck "thinking"/"running"/"waiting"/"approval" past the stale
         // threshold almost always means its agent died without a clean
         // shutdown, not that it's still working — see AppModel.isStale.
         // Displayed as idle (icon, color, label) and dimmed, rather than

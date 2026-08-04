@@ -7,21 +7,22 @@ import SwiftUI
 // MARK: - Agent states (PROTOCOL.md §1)
 
 enum AgentState: String, CaseIterable, Identifiable, Codable {
-    case idle, thinking, running, waiting, done, error
+    case idle, thinking, running, waiting, approval, done, error
     /// Transient: a Claude Code session between a `PreCompact` hook and its
     /// post-compaction continuation claiming the slot (PROTOCOL.md §1/§3).
     /// Never set by a user action — only ever arrives via a `session` event.
     case compacting
     var id: String { rawValue }
 
-    /// Aggregate ordering: error > waiting > running > thinking > done >
-    /// compacting > idle. `compacting` sits just above idle — it's
+    /// Aggregate ordering: error > approval > waiting > running > thinking >
+    /// done > compacting > idle. `compacting` sits just above idle — it's
     /// bookkeeping, not agent work, so it shouldn't read as alarming while a
     /// session waits (typically under a second) to be reunited with its
     /// continuation.
     var severity: Int {
         switch self {
-        case .error:      return 6
+        case .error:      return 7
+        case .approval:   return 6
         case .waiting:    return 5
         case .running:    return 4
         case .thinking:   return 3
@@ -37,6 +38,7 @@ enum AgentState: String, CaseIterable, Identifiable, Codable {
         case .thinking:   return "Thinking"
         case .running:    return "Running"
         case .waiting:    return "Waiting"
+        case .approval:   return "Approval Needed"
         case .done:       return "Done"
         case .error:      return "Error"
         case .compacting: return "Compacting"
@@ -44,7 +46,7 @@ enum AgentState: String, CaseIterable, Identifiable, Codable {
     }
 
     /// True when this state should raise a menu-bar attention badge.
-    var needsAttention: Bool { self == .waiting || self == .error }
+    var needsAttention: Bool { self == .waiting || self == .approval || self == .error }
 
     /// SF Symbol shown instead of a plain color dot — a distinct outline
     /// shape reads faster at a glance than color alone. Tinted with the
@@ -55,6 +57,7 @@ enum AgentState: String, CaseIterable, Identifiable, Codable {
         case .thinking:   return "brain"
         case .running:    return "bolt"
         case .waiting:    return "hourglass"
+        case .approval:   return "hand.raised.fill"
         case .done:       return "checkmark"
         case .error:      return "exclamationmark.triangle"
         case .compacting: return "arrow.triangle.2.circlepath"
@@ -95,6 +98,7 @@ let defaultStyles: [AgentState: StateStyle] = [
     .thinking:   StateStyle(rgb: [160, 32, 240], pattern: .breathe, periodMs: 2500),
     .running:    StateStyle(rgb: [255, 176, 0],  pattern: .breathe, periodMs: 800),
     .waiting:    StateStyle(rgb: [30, 144, 255], pattern: .blink,   periodMs: 800),
+    .approval:   StateStyle(rgb: [255, 105, 30], pattern: .blink,   periodMs: 500),
     .done:       StateStyle(rgb: [0, 200, 0],    pattern: .solid,   periodMs: 1000),
     .error:      StateStyle(rgb: [255, 0, 0],    pattern: .blink,   periodMs: 250),
     // Slate/lavender grey — distinct from idle's plain grey, matching the

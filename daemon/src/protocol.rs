@@ -5,7 +5,7 @@
 
 /// Protocol version advertised in `PING`/`PONG`.
 pub const PROTO_MAJOR: u8 = 0;
-pub const PROTO_MINOR: u8 = 2;
+pub const PROTO_MINOR: u8 = 3;
 
 /// QMK Raw HID reports are 32 bytes (PROTOCOL.md §2).
 pub const REPORT_LEN: usize = 32;
@@ -52,6 +52,10 @@ pub enum State {
     /// older firmware/clients that don't recognize it simply fail
     /// `from_id`/`from_name` rather than misrendering it as another state.
     Compacting,
+    /// A Claude Code permission prompt awaiting an explicit user decision.
+    /// This is intentionally distinct from `Waiting`, which means ordinary
+    /// user input is needed. Added additively in protocol v0.3.
+    Approval,
 }
 
 impl State {
@@ -64,6 +68,7 @@ impl State {
             State::Done => 4,
             State::Error => 5,
             State::Compacting => 6,
+            State::Approval => 7,
         }
     }
 
@@ -76,6 +81,7 @@ impl State {
             4 => State::Done,
             5 => State::Error,
             6 => State::Compacting,
+            7 => State::Approval,
             _ => return None,
         })
     }
@@ -89,6 +95,7 @@ impl State {
             State::Done => "done",
             State::Error => "error",
             State::Compacting => "compacting",
+            State::Approval => "approval",
         }
     }
 
@@ -101,13 +108,14 @@ impl State {
             "done" => State::Done,
             "error" => State::Error,
             "compacting" => State::Compacting,
+            "approval" => State::Approval,
             _ => return None,
         })
     }
 
     /// Aggregation priority (PROTOCOL.md §3): the worst state across live
-    /// sessions wins, ordered `error > waiting > running > thinking > done >
-    /// compacting > idle`. Note this differs from the numeric
+    /// sessions wins, ordered `error > approval > waiting > running > thinking
+    /// > done > compacting > idle`. Note this differs from the numeric
     /// [`id`](State::id) ordering (`done`/`error` are swapped relative to
     /// severity). `compacting` sits just above `idle` — deliberately the
     /// lowest non-idle priority, since it's bookkeeping (a session between
@@ -122,7 +130,8 @@ impl State {
             State::Thinking => 3,
             State::Running => 4,
             State::Waiting => 5,
-            State::Error => 6,
+            State::Approval => 6,
+            State::Error => 7,
         }
     }
 }
@@ -378,6 +387,14 @@ mod tests {
     }
 
     #[test]
+    fn approval_is_an_additive_distinct_state() {
+        assert_eq!(State::Approval.id(), 7);
+        assert_eq!(State::from_id(7), Some(State::Approval));
+        assert_eq!(State::from_name("approval"), Some(State::Approval));
+        assert!(State::Approval.priority() > State::Waiting.priority());
+    }
+
+    #[test]
     fn set_led_encodes_index_and_rgb() {
         let buf = HostCmd::SetLed {
             index: 0xFF,
@@ -529,12 +546,12 @@ mod tests {
 
     #[test]
     fn state_name_and_id_roundtrip() {
-        for id in 0..=6u8 {
+        for id in 0..=7u8 {
             let s = State::from_id(id).unwrap();
             assert_eq!(s.id(), id);
             assert_eq!(State::from_name(s.name()), Some(s));
         }
-        assert_eq!(State::from_id(7), None);
+        assert_eq!(State::from_id(8), None);
         assert_eq!(State::from_name("nope"), None);
     }
 

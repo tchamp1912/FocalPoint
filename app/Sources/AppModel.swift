@@ -195,7 +195,7 @@ final class AppModel: ObservableObject {
         }
     }
     /// Minutes of no update before a session still showing an
-    /// active-looking state (thinking/running/waiting) is treated as
+    /// active-looking state (thinking/running/waiting/approval) is treated as
     /// probably-stale — almost always because the underlying agent process
     /// died without a clean Stop/SessionEnd (crash, killed terminal, sleep)
     /// rather than because it's genuinely still working that long. nil turns
@@ -302,7 +302,7 @@ final class AppModel: ObservableObject {
 
     // MARK: - Derived
 
-    /// Sessions that need user attention (waiting/error). Falls back to the
+    /// Sessions that need user attention (waiting/approval/error). Falls back to the
     /// aggregate when the daemon is aggregate-only (no session events).
     var attentionCount: Int {
         let n = sessions.filter { $0.state.needsAttention }.count
@@ -391,7 +391,7 @@ final class AppModel: ObservableObject {
     }
 
     /// True when `s` claims to still be actively working (thinking/running/
-    /// waiting) but hasn't been updated in at least `staleThresholdMinutes`.
+    /// waiting/approval) but hasn't been updated in at least `staleThresholdMinutes`.
     /// Idle/done/error sessions are excluded — those are already "at rest"
     /// states where sitting unchanged is normal, not a sign the agent died.
     /// Purely client-side and purely visual (see `sessionRow` in
@@ -400,7 +400,7 @@ final class AppModel: ObservableObject {
     /// layered heuristic, not a real daemon state.
     func isStale(_ s: SessionInfo) -> Bool {
         guard let staleThresholdMinutes else { return false }
-        guard [AgentState.thinking, .running, .waiting].contains(s.state) else { return false }
+        guard [AgentState.thinking, .running, .waiting, .approval].contains(s.state) else { return false }
         return Date().timeIntervalSince(s.lastChange) >= Double(staleThresholdMinutes) * 60
     }
 

@@ -364,8 +364,9 @@ impl Registry {
         sessions.sort_by_key(|session| {
             let state_rank = match session.state {
                 State::Error => 0,
-                State::Waiting => 1,
-                _ => 2,
+                State::Approval => 1,
+                State::Waiting => 2,
+                _ => 3,
             };
             (
                 state_rank,
@@ -484,7 +485,7 @@ impl Registry {
             .filter(|id| {
                 self.sessions
                     .get(id)
-                    .is_some_and(|session| matches!(session.state, State::Waiting | State::Error))
+                    .is_some_and(|session| matches!(session.state, State::Waiting | State::Approval | State::Error))
             })
             .collect();
         if eligible.is_empty() {
@@ -523,7 +524,7 @@ impl Registry {
     pub fn next_attention_state(&self) -> Option<State> {
         let eligible: Vec<&Session> = self.attention_order().iter()
             .filter_map(|id| self.sessions.get(id))
-            .filter(|s| matches!(s.state, State::Waiting | State::Error))
+            .filter(|s| matches!(s.state, State::Waiting | State::Approval | State::Error))
             .collect();
         if eligible.is_empty() { return None; }
         let index = self.attention_cursor.as_ref()
@@ -1514,16 +1515,18 @@ mod tests {
     }
 
     #[test]
-    fn attention_fallback_is_error_waiting_then_slot_and_cycles_eligible_only() {
+    fn attention_fallback_is_error_approval_waiting_then_slot_and_cycles_eligible_only() {
         let mut r = Registry::new(None);
         let now = t0();
         r.set_state(Some("idle"), State::Idle, None, None, None, now);
         r.set_state(Some("wait"), State::Waiting, None, None, None, now);
+        r.set_state(Some("approval"), State::Approval, None, None, None, now);
         r.set_state(Some("err"), State::Error, None, None, None, now);
         r.set_state(Some("running"), State::Running, None, None, None, now);
 
-        assert_eq!(r.attention_order(), vec!["err", "wait", "idle", "running"]);
+        assert_eq!(r.attention_order(), vec!["err", "approval", "wait", "idle", "running"]);
         assert_eq!(r.next_attention().unwrap().id, "err");
+        assert_eq!(r.next_attention().unwrap().id, "approval");
         assert_eq!(r.next_attention().unwrap().id, "wait");
         assert_eq!(r.next_attention().unwrap().id, "err");
         assert_eq!(r.previous_attention().unwrap().id, "wait");
@@ -1535,9 +1538,12 @@ mod tests {
         let now = t0();
         r.set_state(Some("run"), State::Running, None, None, None, now);
         r.set_state(Some("wait"), State::Waiting, None, None, None, now);
+        r.set_state(Some("approval"), State::Approval, None, None, None, now);
         r.set_state(Some("err"), State::Error, None, None, None, now);
         assert_eq!(r.next_attention_state(), Some(State::Error));
         assert_eq!(r.next_attention().unwrap().id, "err");
+        assert_eq!(r.next_attention_state(), Some(State::Approval));
+        assert_eq!(r.next_attention().unwrap().id, "approval");
         assert_eq!(r.next_attention_state(), Some(State::Waiting));
         assert_eq!(r.next_session().unwrap().id, "run");
         assert_eq!(r.next_session().unwrap().id, "wait");

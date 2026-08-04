@@ -20,7 +20,7 @@ enum Cmd {
     /// Set the agent state (drives the LEDs). With --session, registers/updates
     /// that session; without, sets the sessionless default.
     SetState {
-        /// idle | thinking | running | waiting | done | error
+        /// idle | thinking | running | waiting | approval | done | error | compacting
         state: String,
         /// Session id (implicitly registers the session on first sight).
         #[arg(long)]
@@ -129,7 +129,7 @@ enum Cmd {
     },
     /// Override a state's render style (persists to config.toml).
     SetStyle {
-        /// idle | thinking | running | waiting | done | error
+        /// idle | thinking | running | waiting | approval | done | error | compacting
         state: String,
         r: u8,
         g: u8,

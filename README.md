@@ -120,7 +120,7 @@ is expected to fail with an app-only install unless the daemon is in mock mode.
   you where your attention has the highest value.
 - Permission requests get a two-second grace period, so Claude/Codex
   auto-approvals do not create false attention signals; only a request that
-  remains blocked reaches `waiting`.
+  remains blocked reaches `approval`; ordinary input requests use `waiting`.
 
 ### Every agent in one place
 
@@ -148,7 +148,8 @@ FocalPoint normalizes agent lifecycle events into six states:
 | `idle` | No active work |
 | `thinking` | The model is reasoning or generating |
 | `running` | A tool or command is executing |
-| `waiting` | The agent needs approval or input |
+| `waiting` | The agent needs ordinary user input |
+| `approval` | A Claude Code permission decision needs attention |
 | `done` | The current turn completed |
 | `error` | Something failed and needs attention |
 
@@ -166,7 +167,7 @@ Usage monitoring stays local and can be enabled or disabled per integration.
 
 ### Native macOS controls
 
-- Compact menu-bar dashboard with a waiting/error attention badge.
+- Compact menu-bar dashboard with a waiting/approval/error attention badge.
 - Movable translucent desktop widget with the same live session data.
 - Configurable global hotkeys for focusing sessions, accepting/rejecting,
   starting tasks, push-to-talk, and jumping through the attention queue.

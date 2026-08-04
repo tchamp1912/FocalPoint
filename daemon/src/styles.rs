@@ -46,6 +46,9 @@ pub fn default_style(state: State) -> Style {
         State::Thinking => Style::new([158, 89, 242], Pattern::Breathe, 2500),
         State::Running => Style::new([255, 166, 26], Pattern::Breathe, 800),
         State::Waiting => Style::new([64, 140, 255], Pattern::Blink, 800),
+        // Permission approval is more urgent than ordinary user input, but
+        // remains visibly distinct from an error.
+        State::Approval => Style::new([255, 105, 30], Pattern::Blink, 500),
         State::Done => Style::new([51, 204, 89], Pattern::Solid, 1000),
         State::Error => Style::new([242, 64, 64], Pattern::Blink, 250),
         // Slate/lavender grey — distinct from idle's plain dim white so the
@@ -56,10 +59,10 @@ pub fn default_style(state: State) -> Style {
     }
 }
 
-/// All seven styles, indexed by state id.
+/// All eight styles, indexed by state id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StyleTable {
-    styles: [Style; 7],
+    styles: [Style; 8],
 }
 
 impl Default for StyleTable {
@@ -73,6 +76,7 @@ impl Default for StyleTable {
                 default_style(State::Done),
                 default_style(State::Error),
                 default_style(State::Compacting),
+                default_style(State::Approval),
             ],
         }
     }
@@ -87,9 +91,9 @@ impl StyleTable {
         self.styles[state.id() as usize] = style;
     }
 
-    /// Iterate `(state, style)` in state-id order (idle..compacting).
+    /// Iterate `(state, style)` in state-id order.
     pub fn iter(&self) -> impl Iterator<Item = (State, Style)> + '_ {
-        (0..7u8).map(move |i| (State::from_id(i).unwrap(), self.styles[i as usize]))
+        (0..8u8).map(move |i| (State::from_id(i).unwrap(), self.styles[i as usize]))
     }
 }
 
@@ -121,7 +125,7 @@ mod tests {
             t.get(State::Error),
             Style::new([242, 64, 64], Pattern::Blink, 250)
         );
-        // iter yields all seven in id order.
+        // iter yields all eight in id order.
         let states: Vec<State> = t.iter().map(|(s, _)| s).collect();
         assert_eq!(
             states,
@@ -133,6 +137,7 @@ mod tests {
                 State::Done,
                 State::Error,
                 State::Compacting,
+                State::Approval,
             ]
         );
     }

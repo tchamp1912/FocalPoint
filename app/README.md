@@ -8,7 +8,7 @@ edit the per-state render styles — all over the `focalpointd` unix-socket prot
 
 - Menu-bar item: a neutral **keyboard** template icon (deliberately not a
   colored dot). A numeric **attention badge** appears when any session is
-  `waiting` or `error`.
+  `waiting`, `approval`, or `error`.
 - Dropdown: one row per live session (slot, kind, label, state + color swatch,
   time since last change), an aggregate + connection header, and Settings/Quit.
 - **Rename a session**: right-click any session row (dropdown or desktop
@@ -147,7 +147,7 @@ Open **Settings** from the dropdown footer.
   aggregate state instead of the neutral template.
 
 **State styles** — one row per state (`idle`, `thinking`, `running`, `waiting`,
-`done`, `error`):
+`approval`, `done`, `error`, `compacting`):
 
 - **Color** (`ColorPicker`), **Pattern** (`solid / breathe / blink / strobe /
   off`), **Period** (100–5000 ms slider, debounced).

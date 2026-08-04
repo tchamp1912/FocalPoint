@@ -121,7 +121,7 @@ pub fn set_state(
     if State::from_name(name).is_none() {
         return Err(CliError::new(
             format!(
-                "unknown state {name:?}; expected one of idle|thinking|running|waiting|done|error|compacting"
+                "unknown state {name:?}; expected one of idle|thinking|running|waiting|approval|done|error|compacting"
             ),
             2,
         ));
@@ -459,7 +459,7 @@ pub fn styles(json: bool) -> Result<(), CliError> {
         "idle",
         "thinking",
         "running",
-        "waiting",
+        "waiting", "approval",
         "done",
         "error",
         "compacting",

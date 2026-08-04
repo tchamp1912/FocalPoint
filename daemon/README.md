@@ -2,7 +2,7 @@
 
 The host-side bridge for [FocalPoint](../PLAN.md): it pushes a coding agent's live
 state to the macropad's RGB keys and turns key/dial/joystick events into agent
-actions. It implements [`PROTOCOL.md`](../PROTOCOL.md) v0.2 (the wire contract;
+actions. It implements [`PROTOCOL.md`](../PROTOCOL.md) v0.3 (the wire contract;
 the v0.3 material in PROTOCOL.md §6 is a draft and not implemented here).
 
 Two binaries, one crate:
@@ -41,7 +41,7 @@ device appears, and reconnects automatically on hot-plug.
 ### CLI
 
 ```sh
-focalpoint set-state <idle|thinking|running|waiting|done|error|compacting>
+focalpoint set-state <idle|thinking|running|waiting|approval|done|error|compacting>
         [--session ID] [--kind KIND] [--label LABEL] [--cwd PATH]
 focalpoint get-state        # aggregate state (worst across live sessions)
 focalpoint sessions [--json]   # live sessions in slot order
@@ -61,7 +61,8 @@ Example driving the LEDs from an agent hook:
 
 ```sh
 focalpoint set-state thinking   # model is reasoning  -> purple pulse
-focalpoint set-state waiting    # blocked on approval -> blue slow blink
+focalpoint set-state waiting    # waiting for user input -> blue slow blink
+focalpoint set-state approval   # permission approval needed -> orange fast blink
 focalpoint set-state done       # turn finished       -> green
 ```
 
@@ -74,7 +75,7 @@ id implicitly registers that session (PROTOCOL.md §3):
   slot for its lifetime; slots never shift. Sessions past 12 get `slot: null`.
   The device shows each session's state on its own key via `SET_KEY_STATE`.
 - The **aggregate state** — worst across all live sessions,
-  `error > waiting > running > thinking > done > compacting > idle` — is what
+  `error > approval > waiting > running > thinking > done > compacting > idle` — is what
   `get-state`, the `state` event, and the device's `SET_STATE` (ambient zone)
   report.
 - `kind`/`label`/`--cwd` (→ `meta.cwd`) merge into the record on later updates.
@@ -122,7 +123,7 @@ come from the PROTOCOL.md §1 table; `[styles.<state>]` config entries override
 them at startup.
 
 ```sh
-focalpoint styles                                  # table of all seven styles
+focalpoint styles                                  # table of all eight styles
 focalpoint set-style waiting 30 144 255 blink 800  # change one (persists)
 ```
 
@@ -130,7 +131,7 @@ focalpoint set-style waiting 30 144 255 blink 800  # change one (persists)
 broadcasts a `style` event to subscribers, and **persists** by rewriting only
 the `[styles.<state>]` table in `~/.config/focalpoint/config.toml` in place — the
 rest of your config (comments, formatting, other sections) is preserved
-verbatim (via `toml_edit`). All seven styles are (re)pushed to the device on
+verbatim (via `toml_edit`). All eight styles are (re)pushed to the device on
 connect. Period defaults to the state default when omitted.
 
 ### Subscribing to events
@@ -145,7 +146,7 @@ connect. Period defaults to the state default when omitted.
   `compacting` session (PROTOCOL.md §1/§3) is reunited with its
   post-compaction continuation under a new session_id — front-ends should
   relabel their existing record in place rather than treat it as an end,
-- one `{"event":"style",...}` per state (all seven) after the state/session
+- one `{"event":"style",...}` per state (all eight) after the state/session
   snapshot events, plus a `style` event on every later `set-style`,
 - every device event, real or injected
   (`key` / `dial` / `joy`, per PROTOCOL.md §3).

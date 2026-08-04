@@ -1,12 +1,12 @@
-# FocalPoint Protocol v0.2
+# FocalPoint Protocol v0.3
 
 The contract between the **host daemon** (`focalpointd`), the **keyboard firmware**,
 and **agent adapters**. Implementations MUST NOT change wire formats below
 without bumping the protocol version. Details not specified here are
 implementation-defined.
 
-Sections 1–5 are **v0.2** — the operative contract implemented by the shipped
-daemon and firmware. Section 6 is a purely additive **v0.3 DRAFT** covering the
+Sections 1–5 are **v0.3** — the operative contract implemented by the shipped
+daemon and firmware. Section 6 is a purely additive **v0.4 DRAFT** covering the
 Rev A custom hardware (13th key, capacitive touch, capability descriptor,
 mapping profiles) and the BLE transport; nothing in §6 is implemented yet.
 
@@ -21,14 +21,20 @@ Canonical state names and numeric IDs, used across all layers:
 | 0 | `idle` | No agent session active | dim white breathing |
 | 1 | `thinking` | Model is reasoning | purple pulse |
 | 2 | `running` | Executing a tool/command | amber chase |
-| 3 | `waiting` | Blocked on user input/approval | blue slow blink |
+| 3 | `waiting` | Blocked on ordinary user input | blue slow blink |
 | 4 | `done` | Turn/task finished | green solid (fades to idle after 30 s) |
 | 5 | `error` | Failure needing attention | red blink |
 | 6 | `compacting` | Transient: session is between identities across a Claude Code compaction (§3 Sessions) | slate-grey breathe, dimmed like idle |
+| 7 | `approval` | Claude Code permission approval needed (not ordinary user input) | orange fast blink |
 
 `compacting` was added in v0.2, additively (older firmware/clients that only
 know ids 0–5 simply fail to recognize it via `from_id`/`from_name` rather than
 misrendering it as another state — see §3 for when it's used).
+
+`approval` was added in v0.3. It is distinct from `waiting`: adapters use
+`waiting` for ordinary user input and `approval` only when a permission prompt
+requires an explicit user decision. Both need attention, while approval ranks
+above waiting in the aggregate and attention fallback.
 
 ## 2. Device transport: USB Raw HID
 
@@ -46,7 +52,7 @@ misrendering it as another state — see §3 for when it's used).
 | `0x02` | `SET_LED` | byte 1: LED index (0xFF = all), bytes 2–4: R,G,B. Overrides effect until next `SET_STATE`. |
 | `0x03` | `SET_HOST_MODE` | byte 1: 1 = daemon attached (keys report via HID events), 0 = detached (keys send their fallback keycodes) |
 | `0x04` | `SET_KEY_STATE` | byte 1: user-key number 1–12, byte 2: state ID, or `0xFF` = slot empty (key returns to ambient/off). Firmware renders that state's effect on that key's LED only. |
-| `0x05` | `SET_STATE_STYLE` | byte 1: state ID, bytes 2–4: R,G,B, byte 5: pattern (0 solid, 1 breathe, 2 blink, 3 strobe, 4 off), bytes 6–7: period in ms (little-endian u16). Overrides that state's default effect everywhere it renders (aggregate and per-key). Stored in RAM; defaults restored on power cycle. The daemon pushes all seven styles on device connect. |
+| `0x05` | `SET_STATE_STYLE` | byte 1: state ID, bytes 2–4: R,G,B, byte 5: pattern (0 solid, 1 breathe, 2 blink, 3 strobe, 4 off), bytes 6–7: period in ms (little-endian u16). Overrides that state's default effect everywhere it renders (aggregate and per-key). Stored in RAM; defaults restored on power cycle. The daemon pushes all eight styles on device connect. |
 | `0x06` | `SET_NAV_STATE` | byte 1: state ID of the next attention session, or `0xFF` when none. Firmware renders it on its dedicated next-attention indicator (Right Arrow on the Keychron V1 Max). |
 
 ### Device → host
@@ -286,7 +292,7 @@ off of). A `set-meta` still counts as session activity for
   serving its first request. Missing or corrupt snapshots are a silent
   no-op (start empty). Session `name` values are **not** in the snapshot.
 - The **aggregate state** is the worst state across all live sessions:
-  `error > waiting > running > thinking > done > compacting > idle`.
+  `error > approval > waiting > running > thinking > done > compacting > idle`.
   `compacting` sits just above `idle` — it's bookkeeping, not agent work, so
   it must never make the aggregate (or another session's own key) look
   alarming while a session waits to be reunited with its continuation.
@@ -354,8 +360,8 @@ once; changes broadcast `{"event":"attention-order","sessions":[...]}`.
 Ended sessions are removed, newly registered sessions are appended
 deterministically, rekeys retain position, and the explicit order persists in
 the daemon snapshot. Without an explicit order the fallback is error first,
-then waiting, then slot and id. `focus-next-attention` and
-`focus-prev-attention` wrap an internal cursor across only live waiting/error
+then approval, then waiting, then slot and id. `focus-next-attention` and
+`focus-prev-attention` wrap an internal cursor across only live waiting/approval/error
 sessions and reply with `{"ok":true,"session":"id"}` or `session:null`.
 
 `launch-session` is the daemon's narrow managed-process primitive. It accepts
@@ -484,7 +490,7 @@ Every state has a render **style**: `rgb` + `pattern`
 `[styles]` config section, broadcasts
 `{"event":"style","state":"waiting","rgb":[…],"pattern":"blink","period_ms":800}`
 to subscribers, and pushes `SET_STATE_STYLE` to the device. `get-styles`
-returns all seven. Renderers (firmware, menu bar, backlight) MUST honor styles
+returns all eight. Renderers (firmware, menu bar, backlight) MUST honor styles
 where physically possible (single-color channels use pattern + brightness and
 ignore hue). The `subscribe` snapshot includes one `style` event per state.
 
@@ -499,7 +505,7 @@ State names in JSON are the lowercase names from §1 (`running` not
 ## 4. CLI (stable interface for adapters and scripts)
 
 ```
-focalpoint set-state <idle|thinking|running|waiting|done|error|compacting>
+focalpoint set-state <idle|thinking|running|waiting|approval|done|error|compacting>
         [--session ID] [--kind KIND] [--label LABEL] [--cwd PATH]
         [--meta KEY=VALUE]... [--refresh-identity]
 focalpoint set-meta --session ID [--kind KIND] [--label LABEL]
@@ -598,21 +604,21 @@ period_ms = 800
 
 Action types: `keystroke`, `paste`, `shell`, `none`.
 
-## 6. Protocol v0.3 — DRAFT (not yet implemented)
+## 6. Protocol v0.4 — DRAFT (not yet implemented)
 
 > **Status: DRAFT.** Nothing in this section is implemented by the shipped
 > daemon, firmware, adapters, or app. It is the design target for the Rev A
 > custom hardware (`hardware/`) and its Zephyr/nRF-Connect firmware, published
 > here so the daemon, firmware, and hardware teams converge on one contract
-> before code exists. Everything is **purely additive** over v0.2: no v0.2
-> message changes meaning, no ID is reused, and a v0.2 host talking to a v0.3
-> device (or vice versa) keeps working with the v0.2 feature set. Wire details
+> before code exists. Everything is **purely additive** over v0.3: no v0.3
+> message changes meaning, no ID is reused, and a v0.3 host talking to a v0.4
+> device (or vice versa) keeps working with the v0.3 feature set. Wire details
 > marked **TBD** MUST be finalized before firmware work starts; the rest of the
 > section may still change until the version is declared stable and the DRAFT
 > marker is removed.
 
 Version signaling: a v0.3 device answers `PONG` with minor = 3. A daemon that
-sees minor ≤ 2 MUST assume the v0.2 control set (IDs 0–16, no capability
+sees minor ≤ 3 MUST assume the v0.3 control set (IDs 0–16, no capability
 descriptor, no mapping profiles, USB only).
 
 ### 6.1 New controls (Rev A hardware)
@@ -620,7 +626,7 @@ descriptor, no mapping profiles, USB only).
 Rev A exposes 16 physical controls (`hardware/CONTROL_MAPPING.md`): 13 RGB MX
 keys (12 frosted selector + 1 ceramic), an EC11 encoder, an analog joystick,
 and a capacitive touch region. Twelve selector keys, the encoder, and the
-joystick already have v0.2 IDs; v0.3 adds the remaining two:
+joystick already have v0.2 IDs; v0.4 adds the remaining two:
 
 | ID | Control | Physical ID | Notes |
 |----|---------|-------------|-------|
@@ -641,8 +647,8 @@ joystick already have v0.2 IDs; v0.3 adds the remaining two:
 
 ### 6.2 Capability descriptor
 
-v0.2's `PONG` reports only a bare key count. v0.3 extends `PONG` additively —
-bytes 4–5 were previously always `0x00`, so a v0.2 device implicitly reports
+v0.3's `PONG` reports only a bare key count. v0.4 extends `PONG` additively —
+bytes 4–5 were previously always `0x00`, so a v0.3 device implicitly reports
 "no v0.3 capabilities":
 
 | Byte | Meaning |
