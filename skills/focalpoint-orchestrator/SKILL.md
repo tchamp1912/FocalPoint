@@ -108,6 +108,19 @@ subagent's state actually changes instead of guessing a polling interval.
   polling loop as a substitute — a slower manual check plus the next
   successful watch reconnect is preferable to hammering the socket.
 
+If the orchestrator opens an inter-agent channel with a worker (`fpctl-agent
+channel create`, then `launch --channel CHANNEL_ID` or joining an existing
+worker to it), tell that worker in its task prompt to also set up a Monitor
+on the channel rather than manually re-reading it. `fpctl-agent channel read`
+is pull/poll-based — there is no native tail/stream subcommand for a channel
+— so the worker should wrap its own short poll loop (`fpctl-agent channel
+read --channel CHANNEL_ID --since LAST_CURSOR --tail N`, sleep, repeat, print
+a line whenever `read` returns anything new) as a background task and put a
+Monitor on that loop, the same way the orchestrator wraps `focalpoint watch`.
+That turns "did the orchestrator post something?" from a manual re-check
+into a wake-driven event for the worker too, so a channel conversation
+doesn't stall on either side waiting for someone to remember to poll.
+
 ## Balancing subscriptions
 
 Before every `launch`, read the `usage` block from `fpctl-agent status` and
