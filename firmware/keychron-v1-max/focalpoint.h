@@ -17,7 +17,7 @@
  * minor, and bumping VK_PROTO_MINOR is a code/behavior change tracked
  * separately from this comment-level doc fix. */
 #define VK_PROTO_MAJOR 0
-#define VK_PROTO_MINOR 1
+#define VK_PROTO_MINOR 2
 
 /* Number of user keys the firmware exposes (session slots 1..12). Reported
  * as byte 3 of PONG. */
@@ -30,6 +30,8 @@ enum vk_host_cmd {
     VK_CMD_SET_LED       = 0x02, /* b1: index (0xFF=all), b2..4: RGB  */
     VK_CMD_SET_HOST_MODE = 0x03, /* b1: 1=attached, 0=detached        */
     VK_CMD_SET_KEY_STATE = 0x04, /* b1: user-key 1..12, b2: state/0xFF */
+    VK_CMD_SET_STATE_STYLE = 0x05, /* b1: state, b2..4 RGB, b5 pattern, b6..7 period */
+    VK_CMD_SET_NAV_STATE = 0x06, /* b1: next-attention state or 0xFF */
 };
 
 /* ---- Device -> host command IDs (PROTOCOL.md 2, "Device -> host") ---- */
@@ -67,6 +69,10 @@ enum vk_control {
     VK_CTRL_USER_1    = 4,   /* user keys 1..12 -> ids 4..15          */
     /* VK_CTRL_USER_12 == 15 */
     VK_CTRL_DIAL_PRESS = 16,
+    VK_CTRL_ATTENTION_NEXT = 17,
+    VK_CTRL_ATTENTION_PREV = 18,
+    VK_CTRL_SESSION_NEXT = 19,
+    VK_CTRL_SESSION_PREV = 20,
 };
 
 /* ---- API used by keymap.c ---- */

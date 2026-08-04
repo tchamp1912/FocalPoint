@@ -357,7 +357,7 @@ struct IntegrationsSettingsView: View {
                     Text("Codex")
                         .font(.subheadline).bold()
                     Toggle("Read Codex quota with app-server", isOn: $model.codexUsageEnabled)
-                    Text("Uses a local Codex app-server process and your existing ChatGPT authentication. API-key accounts and ordinary CLI sessions without ChatGPT quota data remain unavailable; FocalPoint never parses terminal output.")
+                    Text("Uses a local Codex app-server process and your existing ChatGPT authentication for quota. To show API-billed spend, launch FocalPoint with OPENAI_ADMIN_KEY; the key is used only for OpenAI's organization Costs API, never stored or sent to the daemon. Ordinary API keys cannot read organization billing.")
                         .font(.caption).foregroundStyle(.secondary)
                     Text("Cursor")
                         .font(.subheadline).bold()

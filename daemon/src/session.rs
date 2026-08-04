@@ -339,6 +339,7 @@ pub struct Registry {
     attention_order: Option<Vec<String>>,
     /// Last eligible session selected by next/previous attention cycling.
     attention_cursor: Option<String>,
+    session_cursor: Option<String>,
 }
 
 impl Registry {
@@ -354,6 +355,7 @@ impl Registry {
             relaunch_guards: HashMap::new(),
             attention_order: None,
             attention_cursor: None,
+            session_cursor: None,
         }
     }
 
@@ -515,6 +517,37 @@ impl Registry {
     pub fn previous_attention(&mut self) -> Option<Session> {
         self.cycle_attention(false)
     }
+
+    /// State of the session which a following `next_attention` selects,
+    /// without advancing the cursor. This drives the keyboard's Right Arrow.
+    pub fn next_attention_state(&self) -> Option<State> {
+        let eligible: Vec<&Session> = self.attention_order().iter()
+            .filter_map(|id| self.sessions.get(id))
+            .filter(|s| matches!(s.state, State::Waiting | State::Error))
+            .collect();
+        if eligible.is_empty() { return None; }
+        let index = self.attention_cursor.as_ref()
+            .and_then(|id| eligible.iter().position(|s| &s.id == id))
+            .map(|i| (i + 1) % eligible.len())
+            .unwrap_or(0);
+        Some(eligible[index].state)
+    }
+
+    fn cycle_sessions(&mut self, forward: bool) -> Option<Session> {
+        let mut ordered: Vec<Session> = self.sessions.values().cloned().collect();
+        ordered.sort_by_key(|s| (s.slot.is_none(), s.slot.unwrap_or(u8::MAX), s.id.clone()));
+        if ordered.is_empty() { self.session_cursor = None; return None; }
+        let index = self.session_cursor.as_ref()
+            .and_then(|id| ordered.iter().position(|s| &s.id == id))
+            .map(|i| if forward { (i + 1) % ordered.len() } else if i == 0 { ordered.len() - 1 } else { i - 1 })
+            .unwrap_or(if forward { 0 } else { ordered.len() - 1 });
+        let session = ordered[index].clone();
+        self.session_cursor = Some(session.id.clone());
+        Some(session)
+    }
+
+    pub fn next_session(&mut self) -> Option<Session> { self.cycle_sessions(true) }
+    pub fn previous_session(&mut self) -> Option<Session> { self.cycle_sessions(false) }
 
     pub fn is_managed_relaunch_pending(&self, id: &str, launch_id: &str) -> bool {
         self.managed_relaunches
@@ -1494,6 +1527,21 @@ mod tests {
         assert_eq!(r.next_attention().unwrap().id, "wait");
         assert_eq!(r.next_attention().unwrap().id, "err");
         assert_eq!(r.previous_attention().unwrap().id, "wait");
+    }
+
+    #[test]
+    fn navigation_target_and_sequential_cycles_follow_live_sessions() {
+        let mut r = Registry::new(None);
+        let now = t0();
+        r.set_state(Some("run"), State::Running, None, None, None, now);
+        r.set_state(Some("wait"), State::Waiting, None, None, None, now);
+        r.set_state(Some("err"), State::Error, None, None, None, now);
+        assert_eq!(r.next_attention_state(), Some(State::Error));
+        assert_eq!(r.next_attention().unwrap().id, "err");
+        assert_eq!(r.next_attention_state(), Some(State::Waiting));
+        assert_eq!(r.next_session().unwrap().id, "run");
+        assert_eq!(r.next_session().unwrap().id, "wait");
+        assert_eq!(r.previous_session().unwrap().id, "run");
     }
 
     #[test]

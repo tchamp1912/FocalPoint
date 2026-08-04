@@ -54,6 +54,13 @@ static inline uint8_t vk_scale(uint8_t v, uint8_t s) {
 static bool    vk_host_mode          = false;               /* default off  */
 static uint8_t vk_aggregate          = VK_STATE_IDLE;       /* Esc          */
 static uint8_t vk_key_state[VK_USER_KEY_COUNT];             /* slots 1..12  */
+static uint8_t vk_next_attention     = VK_STATE_EMPTY;      /* Right arrow  */
+
+typedef struct {
+    uint8_t r, g, b, pattern;
+    uint16_t period_ms;
+} vk_style_t;
+static vk_style_t vk_styles[VK_STATE_COMPACTING + 1];
 
 typedef struct {
     bool    active;
@@ -66,6 +73,8 @@ static vk_led_override_t vk_override[VK_USER_KEY_COUNT];    /* SET_LED      */
  * which are LED indices 15..26.  Esc is LED index 0. */
 #define VK_LED_SESSION_BASE 15   /* LED index of user-key 1 ("1")           */
 #define VK_LED_ESC          0    /* LED index of Esc (aggregate indicator)  */
+/* The final LED in the V1 Max ANSI matrix is the physical Right Arrow. */
+#define VK_LED_RIGHT_ARROW  81
 
 static inline uint8_t vk_slot_led(uint8_t slot0) { /* slot0: 0..11 */
     return VK_LED_SESSION_BASE + slot0;
@@ -272,6 +281,21 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
             return;
         }
 
+        case VK_CMD_SET_STATE_STYLE:
+            if (data[1] <= VK_STATE_COMPACTING && data[5] <= 4) {
+                vk_styles[data[1]].r = data[2];
+                vk_styles[data[1]].g = data[3];
+                vk_styles[data[1]].b = data[4];
+                vk_styles[data[1]].pattern = data[5];
+                vk_styles[data[1]].period_ms = (uint16_t)data[6] | ((uint16_t)data[7] << 8);
+                if (vk_styles[data[1]].period_ms < 100) vk_styles[data[1]].period_ms = 100;
+            }
+            return;
+
+        case VK_CMD_SET_NAV_STATE:
+            vk_next_attention = data[1];
+            return;
+
         default:
             /* Not a FocalPoint command: hand to the Keychron responder. */
             vk_keychron_passthrough(data, length);
@@ -293,57 +317,31 @@ void suspend_power_down_user(void) {
 #ifdef RGB_MATRIX_ENABLE
 
 /* ~2 s triangle wave, 0..255, for breathing effects. */
-static uint8_t vk_breath(void) {
-    uint16_t t = (uint16_t)((timer_read32() >> 2) & 0x1FF); /* 0..511 */
-    return (t < 256) ? (uint8_t)t : (uint8_t)(511 - t);
-}
-/* Blink phase helpers: true = "lit" half of the cycle. */
-static bool vk_blink_slow(void) { return ((timer_read32() / 500) & 1) == 0; } /* ~1 Hz */
-static bool vk_blink_fast(void) { return ((timer_read32() / 250) & 1) == 0; } /* ~2 Hz */
-
 /* Paint one state on one LED index (already known to be in [min,max)).
  * aggregate=true means the Esc indicator, where idle paints nothing. */
 static void vk_paint_state(uint8_t idx, uint8_t state, bool aggregate) {
-    uint8_t r = 0, g = 0, b = 0;
-    switch (state) {
-        case VK_STATE_THINKING: {          /* purple breathing */
-            uint8_t s = vk_breath();
-            r = vk_scale(170, s); g = 0; b = vk_scale(255, s);
-            break;
-        }
-        case VK_STATE_RUNNING:             /* amber solid */
-            r = 255; g = 100; b = 0;
-            break;
-        case VK_STATE_WAITING:             /* blue slow blink */
-            if (!vk_blink_slow()) { r = g = b = 0; }
-            else { r = 0; g = 60; b = 255; }
-            break;
-        case VK_STATE_DONE:                /* green solid */
-            r = 0; g = 255; b = 60;
-            break;
-        case VK_STATE_ERROR:               /* red fast blink */
-            if (!vk_blink_fast()) { r = g = b = 0; }
-            else { r = 255; g = 0; b = 0; }
-            break;
-        case VK_STATE_IDLE:                /* dim white breathing (keys only) */
-            if (aggregate) return;         /* Esc: idle = no painting */
-            { uint8_t s = vk_breath(); r = g = b = vk_scale(48, s); }
-            break;
-        case VK_STATE_COMPACTING:          /* dim slate/lavender breathing */
-            /* Same aggregate-skip as idle: this is bookkeeping (a session
-             * between identities, not agent work), so it must not make the
-             * Esc ambient indicator look alarming — it only shows on the
-             * numbered key of the session actually compacting. */
-            if (aggregate) return;
-            { uint8_t s = vk_breath(); r = vk_scale(110, s); g = vk_scale(110, s); b = vk_scale(140, s); }
-            break;
-        default:
-            return;                        /* unknown / empty: no painting */
+    if (state > VK_STATE_COMPACTING || (aggregate && (state == VK_STATE_IDLE || state == VK_STATE_COMPACTING))) return;
+    vk_style_t style = vk_styles[state];
+    if (style.pattern == 4) return;
+    uint8_t r = style.r, g = style.g, b = style.b;
+    uint16_t period = style.period_ms ? style.period_ms : 1000;
+    uint16_t phase = timer_read32() % period;
+    if (style.pattern == 1) { /* breathe */
+        uint8_t level = phase < period / 2 ? (uint32_t)phase * 255 / (period / 2) : (uint32_t)(period - phase) * 255 / (period - period / 2);
+        r = vk_scale(r, level); g = vk_scale(g, level); b = vk_scale(b, level);
+    } else if (style.pattern == 2 && phase >= period / 2) { /* blink */
+        r = g = b = 0;
+    } else if (style.pattern == 3 && phase >= period / 8) { /* strobe */
+        r = g = b = 0;
     }
     rgb_matrix_set_color(idx, r, g, b);
 }
 
 bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
+    if (!vk_host_mode) return true;
+    /* Attached FocalPoint is deliberately quiet: only session, aggregate,
+     * and navigation indicators may emit light; everything else is black. */
+    for (uint8_t idx = led_min; idx < led_max; idx++) rgb_matrix_set_color(idx, 0, 0, 0);
     /* Esc = aggregate state (idle paints nothing => normal effect shows). */
     if (VK_LED_ESC >= led_min && VK_LED_ESC < led_max) {
         vk_paint_state(VK_LED_ESC, vk_aggregate, true);
@@ -361,6 +359,9 @@ bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
         }
         /* else: empty slot -> leave the user's ambient effect untouched */
     }
+    if (VK_LED_RIGHT_ARROW >= led_min && VK_LED_RIGHT_ARROW < led_max && vk_next_attention != VK_STATE_EMPTY) {
+        vk_paint_state(VK_LED_RIGHT_ARROW, vk_next_attention, false);
+    }
     return true;
 }
 #endif /* RGB_MATRIX_ENABLE */
@@ -374,5 +375,13 @@ void keyboard_post_init_user(void) {
         vk_override[i].active = false;
     }
     vk_aggregate = VK_STATE_IDLE;
+    vk_next_attention = VK_STATE_EMPTY;
+    const vk_style_t defaults[] = {
+        {40, 40, 40, 1, 4000}, {158, 89, 242, 1, 2500},
+        {255, 166, 26, 1, 800}, {64, 140, 255, 2, 800},
+        {51, 204, 89, 0, 1000}, {242, 64, 64, 2, 250},
+        {110, 110, 140, 1, 3000},
+    };
+    memcpy(vk_styles, defaults, sizeof(vk_styles));
     vk_host_mode = false;
 }

@@ -194,6 +194,9 @@ struct DesktopWidgetView: View {
                         if let percent = usage.secondaryUsed {
                             usageRow(usage.provider, label: usage.secondaryMeterLabel, percent: percent, reset: usage.secondaryResetsAt)
                         }
+                        if let spend = usage.apiSpendUSD {
+                            apiSpendRow(usage, spend: spend)
+                        }
                     }
                 }
                 .padding(.horizontal, 11)
@@ -205,6 +208,12 @@ struct DesktopWidgetView: View {
     private func usageRow(_ provider: String, label: String, percent: Double, reset: Date?) -> some View {
         UsageMeterBar(label: "\(provider.capitalized) \(label)",
                       labelWidth: 54, percent: percent, reset: reset, style: .widget)
+    }
+
+    private func apiSpendRow(_ usage: ProviderUsage, spend: Double) -> some View {
+        Text("\(usage.displayName) $\(spend.formatted(.number.precision(.fractionLength(2)))) today")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
     }
 
     private func shouldHighlightAttention(_ session: SessionInfo) -> Bool {

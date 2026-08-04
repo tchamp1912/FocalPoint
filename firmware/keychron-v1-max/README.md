@@ -12,23 +12,26 @@ Target board: `keychron/v1_max/ansi_encoder` (the knob variant).
 
 ## What it does
 
-- **Normal keyboard, always.** Layers 0–3 are the stock Keychron Mac/Win base +
-  Fn layers, unchanged except that **Right-Ctrl becomes the FocalPoint hold key**
-  (`MO(FOCALPOINT)`). Wireless (Bluetooth / 2.4 GHz) is untouched.
+- **Normal keyboard, always.** Hold **Option** in Mac mode or **Alt** in Windows
+  mode to invoke FocalPoint (`MO(FOCALPOINT)`). Mac mode swaps the physical left
+  Control and Command positions. Wireless (Bluetooth / 2.4 GHz) is untouched.
 - **RGB status painting** (over whatever RGB effect you run), via
   `rgb_matrix_indicators_advanced_user`:
   - Number-row keys `1 2 3 4 5 6 7 8 9 0 - =` are **session slots 1–12**
     (`SET_KEY_STATE`).
   - **Esc** shows the **aggregate** state (`SET_STATE`); aggregate `idle` paints
     nothing (the key shows your normal effect).
-  - State colors (simplified static/blink): `thinking` = purple breathing,
-    `running` = amber, `waiting` = blue slow blink, `done` = green,
-    `error` = red fast blink. An empty slot (`0xFF`) paints nothing.
-- **FocalPoint control layer** (hold Right-Ctrl):
+  - State colors, patterns, and periods exactly follow the UI's Styles editor
+    (`SET_STATE_STYLE`). An empty slot (`0xFF`) paints nothing.
+  - While attached, every non-FocalPoint key is black; Right Arrow shows the
+    next-attention session's state.
+- **FocalPoint control layer** (hold Option/Alt):
   - number keys `1`–`=` → `KEY_EVENT` for user keys 1–12 (control IDs 4–15)
   - `A` / `R` / `N` → accept / reject / new-task (control IDs 0 / 1 / 2)
   - `Space` → push-to-talk (control ID 3, sends **press and release**)
   - knob rotation → `DIAL` (±1); knob press → dial-press (control ID 16)
+  - arrows: Right / Left = next / previous attention; Down / Up = next /
+    previous session in slot order.
 - **Graceful degradation.** The FocalPoint control keys only emit HID events when a
   daemon has attached (`SET_HOST_MODE 1`). With no daemon they are no-ops (they
   never type stray characters). The knob still does volume when detached.
@@ -39,11 +42,11 @@ Target board: `keychron/v1_max/ansi_encoder` (the knob variant).
 
 | Layer | # | How reached | Contents |
 |-------|---|-------------|----------|
-| `MAC_BASE` | 0 | default (Mac switch) | stock, Right-Ctrl = `MO(FOCALPOINT)` |
+| `MAC_BASE` | 0 | default (Mac switch) | Option = `MO(FOCALPOINT)`; left Ctrl/Cmd swapped |
 | `MAC_FN`   | 1 | hold stock Fn | stock |
-| `WIN_BASE` | 2 | OS switch = Win | stock, Right-Ctrl = `MO(FOCALPOINT)` |
+| `WIN_BASE` | 2 | OS switch = Win | Alt = `MO(FOCALPOINT)` |
 | `WIN_FN`   | 3 | hold stock Fn | stock |
-| `FOCALPOINT`  | 4 | **hold Right-Ctrl** | control surface below |
+| `FOCALPOINT`  | 4 | **hold Option/Alt** | control surface below |
 
 FocalPoint layer (transparent everywhere else, so held typing still works):
 
@@ -56,6 +59,8 @@ FocalPoint layer (transparent everywhere else, so held typing still works):
 | `Space` | `VK_PTT` | `KEY_EVENT` control 3, press **and** release |
 | knob turn | (encoder) | `DIAL` ±1 |
 | knob press | `VK_DIALP` | `KEY_EVENT` control 16 (dial press) |
+| Right / Left | `VK_ATT_NEXT` / `VK_ATT_PREV` | attention next / previous (17 / 18) |
+| Down / Up | `VK_SESSION_NEXT` / `VK_SESSION_PREV` | session next / previous (19 / 20) |
 
 Custom keycodes are allocated from `NEW_SAFE_RANGE` (Keychron reuses the low
 `QK_KB_*` range for its own keycodes).
@@ -90,6 +95,7 @@ map) and cross-checked against the default keymap. **Not guessed.**
 | `0` | `[1,10]` | 24 | slot 10 |
 | `-` | `[1,11]` | 25 | slot 11 |
 | `=` | `[1,12]` | 26 | slot 12 |
+| Right Arrow | — | **81** | next-attention state |
 
 So session slots 1–12 are LED indices `15 + (slot-1)` (`VK_LED_SESSION_BASE 15`
 in `focalpoint.c`), and Esc is LED index `0`.
@@ -102,7 +108,8 @@ in `focalpoint.c`), and Esc is LED index `0`.
 payloads, and state IDs from `PROTOCOL.md` §2 — nothing on the wire deviates:
 
 - Host→device: `PING (0x00)`, `SET_STATE (0x01)`, `SET_LED (0x02)`,
-  `SET_HOST_MODE (0x03)`, `SET_KEY_STATE (0x04)`.
+  `SET_HOST_MODE (0x03)`, `SET_KEY_STATE (0x04)`, `SET_STATE_STYLE (0x05)`,
+  `SET_NAV_STATE (0x06)`.
 - Device→host: `PONG (0x80)` (major, minor, key count = 12),
   `KEY_EVENT (0x81)`, `DIAL (0x82)`. `JOY (0x83)` is never emitted (no
   joystick on this hardware — allowed by the protocol).

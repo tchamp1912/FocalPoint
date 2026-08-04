@@ -347,8 +347,9 @@ struct SessionHistoryEntry: Identifiable, Codable, Equatable {
 
 // MARK: - Provider account usage (PROTOCOL.md §3 Account usage)
 
-/// Last-known subscription quota for a provider. Values originate from the
-/// provider's supported local interface, never from estimated session tokens.
+/// Last-known provider account telemetry. This is either a subscription quota
+/// from a supported local interface or an explicitly authorized API billing
+/// total; it is never inferred from session token counts.
 struct ProviderUsage: Identifiable, Equatable {
     let provider: String
     var values: [String: Double]
@@ -364,6 +365,16 @@ struct ProviderUsage: Identifiable, Equatable {
     var primaryResetsAt: Date? { epochDate("primary_resets_at") }
     var secondaryUsed: Double? { values["secondary_used"] }
     var secondaryResetsAt: Date? { epochDate("secondary_resets_at") }
+    var apiSpendUSD: Double? { values["api_spend_usd"] }
+    var apiSpendPeriodStartedAt: Date? { epochDate("api_spend_period_started_at") }
+    var apiSpendPeriodEndsAt: Date? { epochDate("api_spend_period_ends_at") }
+
+    var displayName: String {
+        switch provider {
+        case "openai-api": return "OpenAI API"
+        default: return provider.capitalized
+        }
+    }
 
     /// Short meter label for the provider's primary quota window.
     var primaryMeterLabel: String {

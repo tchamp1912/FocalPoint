@@ -27,10 +27,14 @@ struct Cli {
 enum AgentCommand {
     /// Read live sessions, provider usage, and daemon-owned attention order.
     Status,
+    /// Read recoverable disconnected sessions retained by the daemon.
+    History,
     /// Read the daemon-owned attention order.
     Order,
     /// Focus one exact session id.
     Focus { session: String },
+    /// Promote one eligible unmanaged Claude/Codex session into the managed launcher.
+    Relaunch { session: String },
     /// Focus the next waiting/error session in daemon priority order.
     Next,
     /// Focus the previous waiting/error session in daemon priority order.
@@ -235,6 +239,19 @@ fn sanitized_sessions(response: &Value) -> Result<Value, String> {
     Ok(json!({"ok": true, "sessions": safe_rows}))
 }
 
+/// The daemon retains disconnected tombstones only while they are eligible for
+/// recovery. Keep the same deliberately small session representation as
+/// `status`, and never expose transcript, prompt, or arbitrary metadata.
+fn sanitized_history(response: &Value) -> Result<Value, String> {
+    let mut history = sanitized_sessions(response)?;
+    let sessions = history
+        .get_mut("sessions")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| "internal invalid sanitized session list".to_string())?;
+    sessions.retain(|session| session.get("connected").and_then(Value::as_bool) == Some(false));
+    Ok(history)
+}
+
 fn sanitized_usage(response: &Value) -> Result<Value, String> {
     let providers = response
         .get("usage")
@@ -265,9 +282,16 @@ fn run(command: AgentCommand) -> Result<(), String> {
             json!({"sessions": sanitized_sessions(&sessions)?,
                    "usage": sanitized_usage(&usage)?, "attention_order": order})
         }
+        AgentCommand::History => {
+            let sessions = request(json!({"cmd": "list-sessions"}))?;
+            sanitized_history(&sessions)?
+        }
         AgentCommand::Order => request(json!({"cmd": "get-attention-order"}))?,
         AgentCommand::Focus { session } => {
             request(json!({"cmd": "focus-session", "session": session}))?
+        }
+        AgentCommand::Relaunch { session } => {
+            request(json!({"cmd": "relaunch-managed-session", "session": session}))?
         }
         AgentCommand::Next => request(json!({"cmd": "focus-next-attention"}))?,
         AgentCommand::Previous => request(json!({"cmd": "focus-prev-attention"}))?,
@@ -335,8 +359,10 @@ mod tests {
         let help = Cli::command().render_long_help().to_string();
         for allowed in [
             "status",
+            "history",
             "order",
             "focus",
+            "relaunch",
             "next",
             "previous",
             "prioritize",
@@ -389,6 +415,27 @@ mod tests {
             }
             _ => panic!("expected launch"),
         }
+    }
+
+    #[test]
+    fn history_keeps_only_disconnected_rows_and_sanitizes_metadata() {
+        let response = json!({"sessions": [
+            {"session":"live", "kind":"codex", "connected":true, "meta":{"cwd":"/work", "secret":"nope"}},
+            {"session":"old", "kind":"claude", "state":"done", "connected":false,
+             "meta":{"cwd":"/history", "managed":true, "transcript_path":"private"}}
+        ]});
+        let history = sanitized_history(&response).unwrap();
+        assert_eq!(history["sessions"].as_array().unwrap().len(), 1);
+        let entry = &history["sessions"][0];
+        assert_eq!(entry["session"], "old");
+        assert_eq!(entry["meta"]["cwd"], "/history");
+        assert!(entry["meta"].get("transcript_path").is_none());
+    }
+
+    #[test]
+    fn relaunch_command_parses_only_an_exact_session_id() {
+        let parsed = Cli::try_parse_from(["fpctl-agent", "relaunch", "session-123"]).unwrap();
+        assert!(matches!(parsed.command, AgentCommand::Relaunch { session } if session == "session-123"));
     }
 
     #[test]

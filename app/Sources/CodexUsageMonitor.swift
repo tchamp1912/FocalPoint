@@ -2,7 +2,10 @@
 //
 // It uses the documented JSON-RPC account/rateLimits/read API over a local
 // `codex app-server` stdio transport. The process reuses Codex's ChatGPT auth;
-// API-key accounts simply return no rate-limit data.
+// API-key accounts do not expose rate-limit data. Organization owners can
+// optionally provide OPENAI_ADMIN_KEY to publish the current UTC day's API
+// spend as a separate `openai-api` usage record. The key stays in this process
+// environment and is never sent to focalpointd or persisted by the app.
 
 import Foundation
 
@@ -35,13 +38,24 @@ final class CodexUsageMonitor {
             defer {
                 DispatchQueue.main.async { self?.running = false }
             }
-            guard let values = Self.readRateLimits() else { return }
+            let rateLimitValues = Self.readRateLimits()
+            let apiBilledValues = Self.readAPIBilledUsage()
             DispatchQueue.main.async {
-                self?.model?.client.send([
-                    "cmd": "set-usage",
-                    "provider": "codex",
-                    "usage": values,
-                ])
+                guard let model = self?.model else { return }
+                if let values = rateLimitValues {
+                    model.client.send([
+                        "cmd": "set-usage",
+                        "provider": "codex",
+                        "usage": values,
+                    ])
+                }
+                if let values = apiBilledValues {
+                    model.client.send([
+                        "cmd": "set-usage",
+                        "provider": "openai-api",
+                        "usage": values,
+                    ])
+                }
             }
         }
     }
@@ -115,5 +129,62 @@ final class CodexUsageMonitor {
         if let duration = (window["windowDurationMins"] as? NSNumber)?.doubleValue {
             result["\(prefix)_window_minutes"] = duration
         }
+    }
+
+    /// The Organization Costs endpoint requires an Admin API key; deliberately
+    /// do not fall back to OPENAI_API_KEY because ordinary/project keys are not
+    /// authorized for this endpoint. Reporting uses a distinct provider so a
+    /// previous ChatGPT quota snapshot cannot be mistaken for API billing.
+    private static func readAPIBilledUsage() -> [String: Double]? {
+        guard let key = ProcessInfo.processInfo.environment["OPENAI_ADMIN_KEY"],
+              !key.isEmpty else { return nil }
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = Date()
+        let start = calendar.startOfDay(for: now)
+        guard let end = calendar.date(byAdding: .day, value: 1, to: start),
+              var components = URLComponents(string: "https://api.openai.com/v1/organization/costs") else {
+            return nil
+        }
+        components.queryItems = [
+            URLQueryItem(name: "start_time", value: String(Int(start.timeIntervalSince1970))),
+            URLQueryItem(name: "end_time", value: String(Int(end.timeIntervalSince1970))),
+            URLQueryItem(name: "bucket_width", value: "1d"),
+            URLQueryItem(name: "limit", value: "1"),
+        ]
+        guard let url = components.url else { return nil }
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 10
+        guard let data = syncData(for: request),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let buckets = json["data"] as? [[String: Any]] else { return nil }
+
+        let spend = buckets.flatMap { $0["results"] as? [[String: Any]] ?? [] }
+            .compactMap { (($0["amount"] as? [String: Any])?["value"] as? NSNumber)?.doubleValue }
+            .reduce(0, +)
+        guard spend.isFinite, spend >= 0 else { return nil }
+        return [
+            "api_spend_usd": spend,
+            "api_spend_period_started_at": start.timeIntervalSince1970,
+            "api_spend_period_ends_at": end.timeIntervalSince1970,
+        ]
+    }
+
+    private static func syncData(for request: URLRequest) -> Data? {
+        let semaphore = DispatchSemaphore(value: 0)
+        var result: Data?
+        let task = URLSession.shared.dataTask(with: request) { data, response, _ in
+            defer { semaphore.signal() }
+            guard let http = response as? HTTPURLResponse,
+                  (200...299).contains(http.statusCode) else { return }
+            result = data
+        }
+        task.resume()
+        _ = semaphore.wait(timeout: .now() + 12)
+        return result
     }
 }

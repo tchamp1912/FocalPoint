@@ -47,6 +47,7 @@ misrendering it as another state — see §3 for when it's used).
 | `0x03` | `SET_HOST_MODE` | byte 1: 1 = daemon attached (keys report via HID events), 0 = detached (keys send their fallback keycodes) |
 | `0x04` | `SET_KEY_STATE` | byte 1: user-key number 1–12, byte 2: state ID, or `0xFF` = slot empty (key returns to ambient/off). Firmware renders that state's effect on that key's LED only. |
 | `0x05` | `SET_STATE_STYLE` | byte 1: state ID, bytes 2–4: R,G,B, byte 5: pattern (0 solid, 1 breathe, 2 blink, 3 strobe, 4 off), bytes 6–7: period in ms (little-endian u16). Overrides that state's default effect everywhere it renders (aggregate and per-key). Stored in RAM; defaults restored on power cycle. The daemon pushes all seven styles on device connect. |
+| `0x06` | `SET_NAV_STATE` | byte 1: state ID of the next attention session, or `0xFF` when none. Firmware renders it on its dedicated next-attention indicator (Right Arrow on the Keychron V1 Max). |
 
 ### Device → host
 
@@ -67,9 +68,13 @@ misrendering it as another state — see §3 for when it's used).
 | 3 | push-to-talk (sends press AND release) |
 | 4–15 | user keys 1–12 |
 | 16 | dial press |
+| 17 | attention next (Right Arrow) |
+| 18 | attention previous (Left Arrow) |
+| 19 | session next (Down Arrow) |
+| 20 | session previous (Up Arrow) |
 
-(Protocol v0.3 — DRAFT, §6 — additively assigns IDs 17–18 to the Rev A
-hardware's 13th key and capacitive touch region, and reserves 19–31.)
+(Protocol v0.3 — DRAFT, §6 — additively assigns IDs 21–22 to the Rev A
+hardware's 13th key and capacitive touch region, and reserves 23–31.)
 
 Firmware MUST keep working as a plain Vial macropad when no daemon has sent
 `SET_HOST_MODE 1` (and revert on USB disconnect/suspend).
@@ -456,6 +461,12 @@ Clients should treat it as last-known data and display the update time when
 freshness matters. On `subscribe`, the daemon sends a `usage` event for every
 recorded provider after the session snapshot.
 
+`openai-api` is reserved by the macOS app for authorized API billing data. Its
+numeric `api_spend_usd`, `api_spend_period_started_at`, and
+`api_spend_period_ends_at` fields report the current UTC-day Organization Costs
+total. It is deliberately a separate provider from `codex`, whose
+`primary_*`/`secondary_*` values are ChatGPT rate-limit windows.
+
 ### Styles
 
 Every state has a render **style**: `rgb` + `pattern`
@@ -604,8 +615,8 @@ joystick already have v0.2 IDs; v0.3 adds the remaining two:
 
 | ID | Control | Physical ID | Notes |
 |----|---------|-------------|-------|
-| 17 | key 13 (ceramic action key) | `key_13` | press/release via `KEY_EVENT`, like any key |
-| 18 | touch region | `touch_01` | press/release via `KEY_EVENT`; firmware debounces/thresholds, host sees a clean binary contact |
+| 21 | key 13 (ceramic action key) | `key_13` | press/release via `KEY_EVENT`, like any key |
+| 22 | touch region | `touch_01` | press/release via `KEY_EVENT`; firmware debounces/thresholds, host sees a clean binary contact |
 | 19–31 | *reserved* | — | future controls; hosts MUST ignore unknown IDs |
 
 - `SET_KEY_STATE` is unchanged: session slots remain user keys 1–12. `key_13`

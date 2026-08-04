@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
  * Layers 0..3 are the stock Keychron Mac/Win base + Fn layers, unchanged
- * except that Right-Ctrl on both base layers becomes MO(FOCALPOINT).
+ * except that Option/Alt invokes MO(FOCALPOINT).
  * Layer 4 (FOCALPOINT) is the held control surface (see README).
  */
 
@@ -15,7 +15,7 @@ enum layers {
     MAC_FN,
     WIN_BASE,
     WIN_FN,
-    FOCALPOINT,   /* held via MO(FOCALPOINT) on Right-Ctrl */
+    FOCALPOINT,   /* held via MO(FOCALPOINT) on Option/Alt */
 };
 
 /* Custom keycodes start after Keychron's QK_KB_0 range (NEW_SAFE_RANGE). */
@@ -37,6 +37,10 @@ enum focalpoint_keycodes {
     VK_NEW,                   /* new-task -> control 2  */
     VK_PTT,                   /* push-to-talk -> control 3 (press AND release) */
     VK_DIALP,                 /* dial press -> control 16 */
+    VK_ATT_NEXT,               /* right arrow -> control 17 */
+    VK_ATT_PREV,               /* left arrow -> control 18 */
+    VK_SESSION_NEXT,           /* down arrow -> control 19 */
+    VK_SESSION_PREV,           /* up arrow -> control 20 */
 };
 
 // clang-format off
@@ -47,7 +51,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         KC_TAB,   KC_Q,     KC_W,     KC_E,     KC_R,     KC_T,     KC_Y,     KC_U,     KC_I,     KC_O,     KC_P,     KC_LBRC,  KC_RBRC,  KC_BSLS,            KC_PGDN,
         KC_CAPS,  KC_A,     KC_S,     KC_D,     KC_F,     KC_G,     KC_H,     KC_J,     KC_K,     KC_L,     KC_SCLN,  KC_QUOT,            KC_ENT,             KC_HOME,
         KC_LSFT,            KC_Z,     KC_X,     KC_C,     KC_V,     KC_B,     KC_N,     KC_M,     KC_COMM,  KC_DOT,   KC_SLSH,            KC_RSFT,  KC_UP,
-        KC_LCTL,  KC_LOPTN, KC_LCMMD,                               KC_SPC,                                 KC_RCMMD,MO(MAC_FN),MO(FOCALPOINT),KC_LEFT, KC_DOWN,  KC_RGHT),
+        KC_LCMMD, MO(FOCALPOINT), KC_LCTL,                          KC_SPC,                                 KC_RCMMD,MO(MAC_FN),KC_LOPTN,     KC_LEFT, KC_DOWN,  KC_RGHT),
 
     [MAC_FN] = LAYOUT_ansi_82(
         _______,  KC_F1,    KC_F2,    KC_F3,    KC_F4,    KC_F5,    KC_F6,    KC_F7,    KC_F8,    KC_F9,    KC_F10,   KC_F11,   KC_F12,   _______,            RGB_TOG,
@@ -63,7 +67,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         KC_TAB,   KC_Q,     KC_W,     KC_E,     KC_R,     KC_T,     KC_Y,     KC_U,     KC_I,     KC_O,     KC_P,     KC_LBRC,  KC_RBRC,  KC_BSLS,            KC_PGDN,
         KC_CAPS,  KC_A,     KC_S,     KC_D,     KC_F,     KC_G,     KC_H,     KC_J,     KC_K,     KC_L,     KC_SCLN,  KC_QUOT,            KC_ENT,             KC_HOME,
         KC_LSFT,            KC_Z,     KC_X,     KC_C,     KC_V,     KC_B,     KC_N,     KC_M,     KC_COMM,  KC_DOT,   KC_SLSH,            KC_RSFT,  KC_UP,
-        KC_LCTL,  KC_LGUI,  KC_LALT,                                KC_SPC,                                 KC_RALT, MO(WIN_FN),MO(FOCALPOINT),KC_LEFT, KC_DOWN,  KC_RGHT),
+        KC_LCTL,  KC_LGUI,  MO(FOCALPOINT),                         KC_SPC,                                 KC_RALT, MO(WIN_FN),KC_LALT,      KC_LEFT, KC_DOWN,  KC_RGHT),
 
     [WIN_FN] = LAYOUT_ansi_82(
         _______,  KC_BRID,  KC_BRIU,  KC_TASK,  KC_FILE,  RGB_VAD,  RGB_VAI,  KC_MPRV,  KC_MPLY,  KC_MNXT,  KC_MUTE,  KC_VOLD,  KC_VOLU,  _______,            RGB_TOG,
@@ -80,8 +84,8 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         _______,  VK_UK1,   VK_UK2,   VK_UK3,   VK_UK4,   VK_UK5,   VK_UK6,   VK_UK7,   VK_UK8,   VK_UK9,   VK_UK10,  VK_UK11,  VK_UK12,  _______,            _______,
         _______,  _______,  _______,  _______,  VK_REJ,   _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,            _______,
         _______,  VK_ACC,   _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,            _______,            _______,
-        _______,            _______,  _______,  _______,  _______,  _______,  VK_NEW,   _______,  _______,  _______,  _______,            _______,  _______,
-        _______,  _______,  _______,                                VK_PTT,                                 _______,  _______,  _______,  _______,  _______,  _______),
+        _______,            _______,  _______,  _______,  _______,  _______,  VK_NEW,   _______,  _______,  _______,  _______,            _______,  VK_SESSION_PREV,
+        _______,  _______,  _______,                                VK_PTT,                                 _______,  _______,  _______,  VK_ATT_PREV, VK_SESSION_NEXT, VK_ATT_NEXT),
 };
 
 // clang-format on
@@ -107,6 +111,10 @@ static uint8_t vk_control_for(uint16_t keycode) {
         case VK_NEW:             return VK_CTRL_NEW_TASK;
         case VK_PTT:             return VK_CTRL_PTT;
         case VK_DIALP:           return VK_CTRL_DIAL_PRESS;
+        case VK_ATT_NEXT:        return VK_CTRL_ATTENTION_NEXT;
+        case VK_ATT_PREV:        return VK_CTRL_ATTENTION_PREV;
+        case VK_SESSION_NEXT:    return VK_CTRL_SESSION_NEXT;
+        case VK_SESSION_PREV:    return VK_CTRL_SESSION_PREV;
         default:                 return 0xFF;
     }
 }

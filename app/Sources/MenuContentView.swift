@@ -320,7 +320,7 @@ struct MenuContentView: View {
 
     private func usageRow(_ usage: ProviderUsage) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(usage.provider.capitalized).font(.caption).bold()
+            Text(usage.displayName).font(.caption).bold()
             if let percent = usage.fiveHourUsed {
                 usageMeter(label: "5h", percent: percent, reset: usage.fiveHourResetsAt)
             }
@@ -333,7 +333,19 @@ struct MenuContentView: View {
             if let percent = usage.secondaryUsed {
                 usageMeter(label: usage.secondaryMeterLabel, percent: percent, reset: usage.secondaryResetsAt)
             }
+            if let spend = usage.apiSpendUSD {
+                Text(apiSpendText(usage, spend: spend))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
         }
+    }
+
+    private func apiSpendText(_ usage: ProviderUsage, spend: Double) -> String {
+        let amount = spend.formatted(.currency(code: "USD"))
+        if let end = usage.apiSpendPeriodEndsAt {
+            return "API spend \(amount) today · resets \(end.formatted(date: .omitted, time: .shortened))"
+        }
+        return "API spend \(amount) today"
     }
 
     private func usageMeter(label: String, percent: Double, reset: Date?) -> some View {

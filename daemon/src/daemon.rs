@@ -1039,6 +1039,7 @@ struct EventCtx {
     evt_tx: tokio::sync::broadcast::Sender<String>,
     config: Arc<Config>,
     shared: Arc<Mutex<Shared>>,
+    host_tx: tokio::sync::mpsc::UnboundedSender<HostCmd>,
 }
 
 #[cfg(unix)]
@@ -1325,6 +1326,7 @@ fn replay_state_cmds(shared: &Mutex<Shared>) -> Vec<HostCmd> {
             state: Some(state),
         });
     }
+    cmds.push(HostCmd::SetNavState(s.registry.next_attention_state()));
     cmds
 }
 
@@ -1437,6 +1439,9 @@ fn apply_effects(
     if session_effect {
         save_snapshot(&ctx.shared);
     }
+    let _ = host_tx.send(HostCmd::SetNavState(
+        ctx.shared.lock().unwrap().registry.next_attention_state(),
+    ));
 }
 
 /// `Session` -> the JSON shape both `"list-sessions"` and the persisted
@@ -1787,6 +1792,23 @@ fn handle_device_event(ev: DeviceEvent, ctx: &EventCtx) {
                         Some(session) => run_focus(ctx, &session, slot),
                         None => crate::actions::run(&ctx.config.action_for(&name)),
                     }
+                } else if (17..=20).contains(&control) {
+                    let session = {
+                        let mut shared = ctx.shared.lock().unwrap();
+                        match control {
+                            17 => shared.registry.next_attention(),
+                            18 => shared.registry.previous_attention(),
+                            19 => shared.registry.next_session(),
+                            20 => shared.registry.previous_session(),
+                            _ => unreachable!(),
+                        }
+                    };
+                    if let Some(session) = session {
+                        run_focus(ctx, &session, session.slot.unwrap_or(0));
+                    }
+                    let _ = ctx.host_tx.send(HostCmd::SetNavState(
+                        ctx.shared.lock().unwrap().registry.next_attention_state(),
+                    ));
                 } else {
                     crate::actions::run(&ctx.config.action_for(&name));
                 }
@@ -2024,6 +2046,10 @@ fn log_host_cmd(cmd: &HostCmd) {
             pattern.name(),
             period_ms
         ),
+        HostCmd::SetNavState(state) => match state {
+            Some(state) => eprintln!("[mock] LED <- SET_NAV_STATE {} ({})", state.id(), state.name()),
+            None => eprintln!("[mock] LED <- SET_NAV_STATE EMPTY"),
+        },
         HostCmd::Ping => eprintln!("[mock] PING"),
     }
 }
@@ -2091,6 +2117,7 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
         evt_tx: evt_tx.clone(),
         config: config.clone(),
         shared: shared.clone(),
+        host_tx: host_tx.clone(),
     };
 
     // Launch the device thread (real or mock).
@@ -2986,6 +3013,30 @@ pub async fn run(_opts: DaemonOpts) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn replay_includes_next_attention_navigation_state() {
+        let mut registry = Registry::new(None);
+        registry.set_state(
+            Some("needs-input"),
+            State::Waiting,
+            None,
+            None,
+            None,
+            Instant::now(),
+        );
+        let shared = Mutex::new(Shared {
+            registry,
+            usage: HashMap::new(),
+            styles: StyleTable::default(),
+            channels: Channels::default(),
+            channel_wake_last: HashMap::new(),
+            device_present: false,
+        });
+        assert!(replay_state_cmds(&shared)
+            .iter()
+            .any(|cmd| matches!(cmd, HostCmd::SetNavState(Some(State::Waiting)))));
+    }
 
     #[test]
     fn channel_rejects_non_member_and_worker_to_worker_posts() {

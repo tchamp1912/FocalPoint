@@ -165,8 +165,13 @@ Open **Settings** from the dropdown footer.
   see `adapters/claude-code/README.md` to opt in. The reporter sends only four
   numeric limit fields to the local daemon.
 - Codex is opt-in. The app starts a local `codex app-server` and calls its
-  supported `account/rateLimits/read` API using existing ChatGPT auth. API-key
-  accounts and unavailable app-server installations leave Codex blank.
+  supported `account/rateLimits/read` API using existing ChatGPT auth.
+- API-billed OpenAI usage is also supported for organization owners: launch
+  FocalPoint with `OPENAI_ADMIN_KEY` set. It reads the official Organization
+  Costs endpoint and shows the current UTC day's spend as a separate **OpenAI
+  API** record. The key is neither persisted nor sent to the daemon. Ordinary
+  API/project keys cannot read organization billing, so they intentionally do
+  not enable this monitor.
 
 ## How it maps to the protocol
 

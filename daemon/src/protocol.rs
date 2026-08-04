@@ -23,6 +23,7 @@ pub const CMD_SET_LED: u8 = 0x02;
 pub const CMD_SET_HOST_MODE: u8 = 0x03;
 pub const CMD_SET_KEY_STATE: u8 = 0x04;
 pub const CMD_SET_STATE_STYLE: u8 = 0x05;
+pub const CMD_SET_NAV_STATE: u8 = 0x06;
 
 /// Sentinel state byte for `SET_KEY_STATE` meaning "slot empty" (PROTOCOL.md §2).
 pub const KEY_STATE_EMPTY: u8 = 0xFF;
@@ -206,6 +207,7 @@ pub enum HostCmd {
         pattern: Pattern,
         period_ms: u16,
     },
+    SetNavState(Option<State>),
 }
 
 impl HostCmd {
@@ -255,6 +257,10 @@ impl HostCmd {
                 buf[6] = (period_ms & 0xFF) as u8;
                 buf[7] = (period_ms >> 8) as u8;
             }
+            HostCmd::SetNavState(state) => {
+                buf[0] = CMD_SET_NAV_STATE;
+                buf[1] = state.map_or(KEY_STATE_EMPTY, |s| s.id());
+            }
         }
         buf
     }
@@ -303,6 +309,10 @@ pub fn control_name(id: u8) -> String {
         3 => "push-to-talk".to_string(),
         4..=15 => format!("key{}", id - 3), // 4 => key1 .. 15 => key12
         16 => "dial-press".to_string(),
+        17 => "attention-next".to_string(),
+        18 => "attention-prev".to_string(),
+        19 => "session-next".to_string(),
+        20 => "session-prev".to_string(),
         other => format!("control{other}"),
     }
 }
@@ -315,6 +325,10 @@ pub fn control_id(name: &str) -> Option<u8> {
         "new-task" => Some(2),
         "push-to-talk" => Some(3),
         "dial-press" => Some(16),
+        "attention-next" => Some(17),
+        "attention-prev" => Some(18),
+        "session-next" => Some(19),
+        "session-prev" => Some(20),
         _ => {
             let n: u8 = name.strip_prefix("key")?.parse().ok()?;
             if (1..=12).contains(&n) {
@@ -396,6 +410,14 @@ mod tests {
         }
         .encode();
         assert_eq!(&empty[0..3], &[CMD_SET_KEY_STATE, 3, KEY_STATE_EMPTY]);
+    }
+
+    #[test]
+    fn set_nav_state_encodes_next_attention_or_empty() {
+        let waiting = HostCmd::SetNavState(Some(State::Waiting)).encode();
+        assert_eq!(&waiting[0..2], &[CMD_SET_NAV_STATE, State::Waiting.id()]);
+        let empty = HostCmd::SetNavState(None).encode();
+        assert_eq!(&empty[0..2], &[CMD_SET_NAV_STATE, KEY_STATE_EMPTY]);
     }
 
     #[test]
@@ -526,6 +548,10 @@ mod tests {
             (4, "key1"),
             (15, "key12"),
             (16, "dial-press"),
+            (17, "attention-next"),
+            (18, "attention-prev"),
+            (19, "session-next"),
+            (20, "session-prev"),
         ];
         for (id, name) in cases {
             assert_eq!(control_name(id), name);

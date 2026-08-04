@@ -20,6 +20,7 @@ the next session.
 
 ```sh
 fpctl-agent status
+fpctl-agent history
 fpctl-agent order
 fpctl-agent prioritize SESSION_ID ...
 ```
@@ -34,6 +35,19 @@ Focus is always explicit:
 ```sh
 fpctl-agent focus SESSION_ID
 ```
+
+`history` lists only the daemon's recoverable disconnected-session tombstones;
+they are not part of the live attention order and cannot be passed to
+`prioritize`. An orchestrator can promote an eligible live, unmanaged,
+idle/waiting/done Claude or Codex session to managed tmux transport:
+
+```sh
+fpctl-agent relaunch SESSION_ID
+```
+
+The daemon validates the session and performs the clean quit-and-resume
+handoff. It rejects disconnected history entries, already-managed sessions,
+and in-flight work.
 
 The menu-bar app and desktop widget highlight live states directly from the
 daemon. FocalPoint does not post system notifications.
