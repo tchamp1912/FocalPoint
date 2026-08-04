@@ -657,10 +657,13 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// UI-only elevation. Numbered-slot navigation keeps using `sessions` in
-    /// daemon slot order; this view projection cannot change key routing.
+    /// Rows use the canonical daemon slot order everywhere.  We used to lift
+    /// orchestrators ahead of worker sessions here, which meant the menu and
+    /// desktop widget could show (for example) slot 4 above slot 1 even while
+    /// the keyboard correctly navigated slot 1 first.  Keep the projection as
+    /// a named compatibility surface, but do not introduce a second order.
     var elevatedSessions: [SessionInfo] {
-        sessions.filter(\.isOrchestrator) + sessions.filter { !$0.isOrchestrator }
+        sessions
     }
 
     var orchestratorSessions: [SessionInfo] { sessions.filter(\.isOrchestrator) }
