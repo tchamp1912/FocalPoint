@@ -47,14 +47,16 @@
 # tty/pid can't (see identity.rs's doc comment for why those can't always).
 #
 # Session stats (tokens/tool-calls/turns/subagents): computed from the same
-# transcript on the Stop event only (once per turn, not per tool call, to
-# keep the hook fast) and sent via --meta (PROTOCOL.md §4). Optional
-# end-to-end: skipped without jq, and the menu bar app only shows a badge for
-# stats it actually receives (Settings → Claude & Codex). The daemon adds
-# these on top of whatever total a prior compaction segment already
-# accumulated (session.rs's cumulative-meta carry-forward) — this script
-# only ever reports "this segment's own recomputed total," never has to know
-# about compaction history itself.
+# transcript on Stop and PostToolUse. Claude Code runs these hooks
+# asynchronously, so the latter provides a fresh snapshot during a long tool
+# loop without delaying the agent. The final Stop recount remains authoritative.
+# Both are sent via --meta (PROTOCOL.md §4). Optional end-to-end: skipped
+# without jq, and the menu bar app only shows a badge for stats it actually
+# receives (Settings → Claude & Codex). The daemon adds these on top of
+# whatever total a prior compaction segment already accumulated
+# (session.rs's cumulative-meta carry-forward) — this script only ever
+# reports "this segment's own recomputed total," never has to know about
+# compaction history itself.
 #
 # Subagent count: Claude Code spawns subagents via a tool_use block in the
 # main transcript (its own sub-transcript isn't reachable from this hook's
@@ -405,7 +407,12 @@ if [ -n "${session_id:-}" ]; then
     args+=(--meta "manager_task_id=$FOCALPOINT_MANAGER_TASK_ID")
   [ -n "${FOCALPOINT_CHANNEL_ID:-}" ] && args+=(--meta "channel_id=$FOCALPOINT_CHANNEL_ID")
 
-  if [ "$event" = "Stop" ]; then
+  # Claude's hook configuration marks PostToolUse asynchronous. Publishing a
+  # whole-transcript snapshot here makes token/tool/turn badges appear during
+  # a multi-tool turn instead of waiting for the final Stop. Repeated segment
+  # totals are safe: focalpointd overwrites the current segment reading until
+  # an actual compaction fork establishes a new carry baseline.
+  if [ "$event" = "Stop" ] || [ "$event" = "PostToolUse" ]; then
     stats=$(extract_stats "$transcript_path")
     if [ -n "$stats" ]; then
       IFS=$'\t' read -r turns tool_calls subagents tokens_in tokens_out model context_tokens <<< "$stats"

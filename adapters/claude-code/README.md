@@ -38,6 +38,12 @@ The hooks block wires five Claude Code events to the dispatcher:
 | `Notification` (`permission_prompt`) | `approval` | A tool use awaits your approval |
 | `SessionEnd` | `end-session` | Session ended; its numbered-key slot is freed |
 
+After each `PostToolUse`, the asynchronous hook also publishes a fresh
+transcript-derived stats snapshot. This lets token, tool-call, turn, subagent,
+model, and context badges update during a long tool loop; `Stop` still sends
+the final authoritative snapshot. A transcript that is still being flushed can
+lag by one hook, but the next tool event or `Stop` corrects it.
+
 ### Subscription usage monitor (optional)
 
 For Claude.ai Pro/Max subscriptions, Claude Code's documented status-line JSON
