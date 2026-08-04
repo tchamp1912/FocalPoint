@@ -414,6 +414,10 @@ fn compaction_continuation_carries_stats_and_resets_context() {
         "instantaneous key: plain overwrite, not carried"
     );
     assert_eq!(s["meta"]["compactions"], 1);
+    assert!(
+        s["meta"].get("_carry_turns").is_none(),
+        "internal carry-forward bookkeeping must never cross the socket API"
+    );
 }
 
 #[test]
