@@ -132,7 +132,11 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     if (keycode == VK_FP_MAC_OPTION || keycode == VK_FP_WIN_ALT) {
         if (record->event.pressed) {
             vk_option_down = true;
-            vk_option_modifier = keycode == VK_FP_MAC_OPTION ? KC_LOPTN : KC_LALT;
+            /* KC_LOPTN is a Keychron semantic keycode normally translated by
+             * process_record_keychron_common(). This custom key consumes that
+             * path, so register the real HID modifier directly; macOS calls
+             * left Alt "Option" and Windows calls it "Alt". */
+            vk_option_modifier = KC_LALT;
             register_code16(vk_option_modifier);
             vk_option_sent = true;
             layer_on(FOCALPOINT);

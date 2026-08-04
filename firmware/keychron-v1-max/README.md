@@ -217,6 +217,11 @@ The V1 Max uses an STM32 (ARM) MCU in DFU bootloader mode.
 3. Unplug/replug. The keyboard boots as a plain keyboard; FocalPoint features light
    up once `focalpointd` attaches over USB.
 
+> The checked-in files under `build/` are an older reference build and do not
+> include changes made after July 26, 2026 (including the native Option/Alt
+> behavior). Build from the current source with the command above before
+> flashing until replacement artifacts are published.
+
 > Verify the exact bootloader gesture for your unit against Keychron's current
 > instructions — some batches document holding Esc, others a reset key. The
 > gesture does not change the firmware here.
