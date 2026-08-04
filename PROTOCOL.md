@@ -147,8 +147,8 @@ opinion about live agent state, so calling `set-state` would either require
 guessing a state or clobbering the real one. Unlike `set-state`, `session`
 is required and an unknown id is a silent no-op: `set-meta` never registers
 a new session (a state-less session has no state to key `SET_KEY_STATE`
-off of). A `set-meta` still counts as session activity for
-`session_ttl_minutes`, same as `set-state`.
+off of). Staleness is presentation-only; neither `set-meta` nor `set-state`
+drives an age-based session removal.
 
 - Each session claims the **lowest free numbered key** (1–12) at registration
   and keeps that slot for its lifetime; slots never shift automatically (a
@@ -157,22 +157,21 @@ off of). A `set-meta` still counts as session activity for
   app's dropdown) that exchanges two live sessions' slots outright. Sessions
   beyond 12 are tracked with `slot: null` and can't participate in a swap —
   there's no slot to give.
-- A session ends via `end-session`, after `session_ttl_minutes` (config,
-  default 60, 0 = never) without an update, or — for a session carrying a
+- A session ends via explicit `end-session`, or — for a session carrying a
   `tty` in `meta` (the well-known key, resolved by the daemon — see
   **Identity resolution** below) — the moment that pty device stops existing on
-  disk. The daemon sweeps for this every 30s, independent of
-  `session_ttl_minutes`; it's a hard OS fact (closing the terminal destroys
-  its pty) rather than a guess, so it reaps a dead session far sooner than
-  the TTL fallback without the false-positive risk of inferring death from a
-  failed window-focus attempt. Sessions with no `tty` are unaffected. Or —
+  disk. The daemon sweeps for this every 30s; it's a hard OS fact (closing the
+  terminal destroys its pty), not an age-based guess. Sessions with no `tty`
+  are unaffected. Or —
   for a session carrying a `pid` in `meta` (the well-known key, also resolved
   by the daemon) — the moment `kill(pid, 0)` reports that process gone. Also
   swept every 30s, same hard-fact tier as the tty check, and independent of
   it: `tty` catches "the terminal closed," `pid` catches "the agent itself
   crashed but the terminal is still open" — neither alone covers both failure
-  modes. Sessions with no `pid` are unaffected. Any end reason frees the
-  session's slot (`SET_KEY_STATE slot 0xFF` on the device).
+  modes. Sessions with no `pid` are unaffected. Time since the last update
+  never ends or disconnects a session; front-ends may show it as stale. Any
+  end reason frees the session's slot (`SET_KEY_STATE slot 0xFF` on the
+  device).
 - **Two removal paths.** An explicit `end-session` (adapter `SessionEnd`, or
   a user running `focalpoint end-session`) removes the session outright and
   **never** leaves a recoverable trace — not a tombstone, not a persisted
@@ -233,13 +232,9 @@ off of). A `set-meta` still counts as session activity for
     should relabel their existing record for `old_session` to `new_session`
     in place (preserving name/history/stats), not treat it as an end
     followed by a fresh registration.
-  - A session stuck in `compacting` for **5 minutes** with no claim (the
-    grace period, independent of `session_ttl_minutes` — including a
-    configured "never expire") is **reaped** (tombstoned), same 30s cadence
-    as the tty/pid sweeps: compaction was cancelled, or the continuation
-    genuinely never appeared, and a stuck `compacting` indicator is actively
-    misleading — but a very-late continuation can still recover via the
-    tombstone path if it arrives within `tombstone_ttl_minutes`.
+  - A session that remains `compacting` beyond the 5-minute matching grace
+    stays live. The grace only bounds fuzzy rekey matching; age alone is not
+    evidence that the session ended, and front-ends may render it stale.
 - **Identity resolution (daemon-side).** For `claude` and `codex` sessions,
   the `focalpoint` CLI resolves `meta.tty` and `meta.pid` automatically when
   `--kind` is passed — adapters no longer walk process ancestry themselves.
@@ -276,8 +271,8 @@ off of). A `set-meta` still counts as session activity for
   `label` on every `set-state`, which would otherwise overwrite a rename on
   the session's next state change; nothing but `rename-session` writes
   `name`. The value is trimmed, and an empty or omitted `name` clears the
-  rename. Renaming broadcasts a `session` event but does **not** count as
-  session activity, so it never extends `session_ttl_minutes`. Renaming an
+  rename. Renaming broadcasts a `session` event but does **not** affect
+  lifecycle. Renaming an
   unknown session is an error. Names live only as long as the session is live:
   they are not persisted across `end-session`, TTL/reap expiry, or a daemon
   restart (unlike session records, tombstones, and usage — see **Persisted
@@ -588,7 +583,6 @@ ccw  = "echo effort-down"
 # Runs when a numbered key with a live session is pressed (see §3 Focus).
 # The session is exposed via FOCALPOINT_SESSION_* env vars.
 focus = { type = "shell", run = "~/.config/focalpoint/adapters/focus-session.sh" }
-ttl_minutes = 60   # end sessions with no updates for this long (0 = never)
 tombstone_ttl_minutes = 30   # how long a sweep-reaped session stays recoverable (0 = never)
 
 [channel]

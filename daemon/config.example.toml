@@ -54,12 +54,11 @@ ccw  = "echo effort-down"
 # FOCALPOINT_SESSION_CWD, FOCALPOINT_SLOT (empty string for missing values). A key with
 # an empty slot falls back to its normal [actions] mapping.
 #
-# ttl_minutes: end sessions with no set-state update for this long. Absent => 60;
-# 0 => never expire.
+# Session update age is shown as a UI-only stale indication. It never ends a
+# session; existing ttl_minutes settings are accepted but ignored.
 # ---------------------------------------------------------------------------
 [session]
 focus = { type = "shell", run = "~/.config/focalpoint/adapters/focus-session.sh" }
-ttl_minutes = 60
 
 # ---------------------------------------------------------------------------
 # [styles.<state>] — per-state render styles (PROTOCOL.md §3 Styles).

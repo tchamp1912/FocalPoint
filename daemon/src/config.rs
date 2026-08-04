@@ -48,7 +48,8 @@ pub struct SessionConfig {
     /// session is exposed via `FOCALPOINT_SESSION_*` env vars.
     #[serde(default)]
     pub focus: Option<Action>,
-    /// End sessions with no updates for this long. Absent => 60; `0` => never.
+    /// Legacy compatibility setting. It is accepted but ignored: update age
+    /// is a UI-only stale indication and never ends a session.
     #[serde(default)]
     pub ttl_minutes: Option<u64>,
     /// How long a session reaped by a sweep (not an explicit end-session)
@@ -74,7 +75,8 @@ impl ChannelConfig {
 }
 
 impl SessionConfig {
-    /// Effective TTL: `None` means "never expire".
+    /// Legacy parsed value retained for config compatibility; daemon lifecycle
+    /// code deliberately does not use it.
     pub fn ttl(&self) -> Option<std::time::Duration> {
         match self.ttl_minutes.unwrap_or(60) {
             0 => None,

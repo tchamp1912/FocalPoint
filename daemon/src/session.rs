@@ -329,7 +329,9 @@ pub struct Registry {
     /// Last aggregate we emitted, for change detection.
     last_aggregate: State,
     /// TTL for identified sessions; `None` = never expire.
-    ttl: Option<Duration>,
+    // Retained only to accept existing construction/configuration paths.
+    // Staleness is presentation-only; the daemon never reaps by age.
+    _legacy_ttl: Option<Duration>,
     /// How long a tombstone stays recoverable; `None` = never expire.
     tombstone_ttl: Option<Duration>,
     managed_relaunches: HashMap<String, ManagedRelaunch>,
@@ -349,7 +351,7 @@ impl Registry {
             tombstones: HashMap::new(),
             default_state: None,
             last_aggregate: State::Idle,
-            ttl,
+            _legacy_ttl: ttl,
             tombstone_ttl: Some(DEFAULT_TOMBSTONE_TTL),
             managed_relaunches: HashMap::new(),
             relaunch_guards: HashMap::new(),
@@ -1314,51 +1316,19 @@ impl Registry {
         Ok(effects)
     }
 
-    /// End all sessions past their TTL. No-op when TTL is `None` (never).
-    /// Routes through `reap_session` — an idle timeout isn't a deliberate
-    /// "this is over," so the session stays recoverable as a tombstone.
-    pub fn expire(&mut self, now: Instant) -> Vec<Effect> {
-        let mut effects = Vec::new();
-        let Some(ttl) = self.ttl else {
-            return effects;
-        };
-        let mut expired: Vec<String> = self
-            .sessions
-            .values()
-            .filter(|s| now.saturating_duration_since(s.last_update) >= ttl)
-            .map(|s| s.id.clone())
-            .collect();
-        expired.sort();
-        for id in expired {
-            effects.extend(self.reap_session(&id, now));
-        }
-        effects
+    /// Kept as a compatibility no-op for callers built around the old TTL
+    /// sweep. Age is not evidence that an agent died: the app marks stale
+    /// rows visually, while daemon removal requires explicit SessionEnd or a
+    /// verified dead pid/tty sweep.
+    pub fn expire(&mut self, _now: Instant) -> Vec<Effect> {
+        Vec::new()
     }
 
-    /// End any session stuck in `State::Compacting` past `COMPACT_GRACE` —
-    /// its continuation never showed up (compaction was cancelled, or
-    /// genuinely never claimed the slot). Runs unconditionally, unlike
-    /// `expire`: a stuck "compacting" indicator is actively misleading (it
-    /// promises "this is temporary"), so it can't be left to
-    /// `session_ttl_minutes`, which may be configured to never expire.
-    /// Routes through `reap_session` — a very-late continuation shouldn't be
-    /// lost outright, just no longer shown as "compacting" (Part 3).
-    pub fn expire_compacting(&mut self, now: Instant) -> Vec<Effect> {
-        let mut effects = Vec::new();
-        let mut stuck: Vec<String> = self
-            .sessions
-            .values()
-            .filter(|s| {
-                s.state == State::Compacting
-                    && now.saturating_duration_since(s.last_update) >= COMPACT_GRACE
-            })
-            .map(|s| s.id.clone())
-            .collect();
-        stuck.sort();
-        for id in stuck {
-            effects.extend(self.reap_session(&id, now));
-        }
-        effects
+    /// Kept as a compatibility no-op. A delayed/cancelled compaction is stale
+    /// presentation state, not proof the session ended; it must not make the
+    /// daemon discard a still-live session.
+    pub fn expire_compacting(&mut self, _now: Instant) -> Vec<Effect> {
+        Vec::new()
     }
 
     /// Live sessions in slot order; slotless ones last (PROTOCOL.md §3).
@@ -1706,30 +1676,24 @@ mod tests {
     }
 
     #[test]
-    fn ttl_expiry_with_mock_clock() {
+    fn time_passage_never_reaps_live_sessions() {
         let ttl = Duration::from_secs(600); // 10 min
         let mut r = Registry::new(Some(ttl));
         let t = Instant::now();
         r.set_state(Some("a"), State::Running, None, None, None, t);
         r.set_state(Some("b"), State::Waiting, None, None, None, t);
-        // Refresh b just before the deadline.
-        let t_mid = t.checked_add(Duration::from_secs(300)).unwrap();
-        r.set_state(Some("b"), State::Waiting, None, None, None, t_mid);
-        // Advance past a's deadline but not b's.
-        let t_late = t.checked_add(Duration::from_secs(601)).unwrap();
+        // Advance far beyond the old TTL. Staleness belongs to the UI, not
+        // session lifecycle, so both sessions remain live.
+        let t_late = t.checked_add(Duration::from_secs(10_000)).unwrap();
         let effects = r.expire(t_late);
-        // A TTL sweep disconnects (keeps recoverable/visible), never ends.
-        assert!(effects.contains(&Effect::SessionDisconnected {
-            id: "a".into(),
-            slot: Some(1),
-        }));
-        assert!(r.session_by_slot(2).is_some(), "b should survive");
-        // Aggregate dropped from waiting(b)+running(a) — still waiting (b lives).
+        assert!(effects.is_empty());
+        assert!(r.session_by_slot(1).is_some());
+        assert!(r.session_by_slot(2).is_some());
         assert_eq!(r.aggregate(), State::Waiting);
     }
 
     #[test]
-    fn ttl_never_disables_expiry() {
+    fn legacy_ttl_none_is_also_a_lifecycle_noop() {
         let mut r = Registry::new(None);
         let t = Instant::now();
         r.set_state(Some("a"), State::Running, None, None, None, t);
@@ -1895,7 +1859,7 @@ mod tests {
     }
 
     #[test]
-    fn rename_does_not_extend_ttl() {
+    fn rename_does_not_change_stale_session_lifecycle() {
         let ttl = Duration::from_secs(600);
         let mut r = Registry::new(Some(ttl));
         let t = Instant::now();
@@ -1904,7 +1868,8 @@ mod tests {
         r.rename("a", Some("Backend")).unwrap();
         // Renaming is the user acting, not the session reporting activity.
         let t_expired = t_late.checked_add(Duration::from_secs(301)).unwrap();
-        assert!(!r.expire(t_expired).is_empty());
+        assert!(r.expire(t_expired).is_empty());
+        assert!(r.session_by_slot(1).is_some());
     }
 
     #[test]
@@ -2562,9 +2527,7 @@ mod tests {
     }
 
     #[test]
-    fn expire_compacting_reaps_stuck_sessions_regardless_of_ttl() {
-        // ttl = None ("never expire") must not stop the compacting-specific
-        // grace timeout from still applying.
+    fn time_passage_never_reaps_a_stuck_compacting_session() {
         let mut r = Registry::new(None);
         let t = Instant::now();
         r.set_state(
@@ -2577,26 +2540,17 @@ mod tests {
         );
         r.set_state(Some("b"), State::Running, None, None, None, t);
 
-        let too_soon = t.checked_add(Duration::from_secs(60)).unwrap();
-        assert!(
-            r.expire_compacting(too_soon).is_empty(),
-            "well within grace"
-        );
-
         let past_grace = t
             .checked_add(COMPACT_GRACE + Duration::from_secs(1))
             .unwrap();
         let effects = r.expire_compacting(past_grace);
-        // A stuck-compacting reap disconnects (recoverable), never ends.
-        assert!(effects.contains(&Effect::SessionDisconnected {
-            id: "a".into(),
-            slot: Some(1),
-        }));
+        assert!(effects.is_empty());
+        assert!(r.session_by_slot(1).is_some());
         assert!(
             r.session_by_slot(2).is_some(),
             "unrelated session b untouched"
         );
-        assert_eq!(r.list().len(), 1);
+        assert_eq!(r.list().len(), 2);
     }
 
     fn resumable_session(registry: &mut Registry, id: &str, state: State, now: Instant) {

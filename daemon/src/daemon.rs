@@ -2095,14 +2095,13 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
     use tokio::net::UnixListener;
 
     let config = Arc::new(Config::load()?);
-    let ttl = config.session.ttl();
     let tombstone_ttl = config.session.tombstone_ttl();
     // Restore sessions/tombstones/usage from the last run (Part 4) instead
     // of always starting fresh — a daemon restart shouldn't blank
     // `focalpoint sessions`/`focalpoint usage` until adapters naturally
     // re-report. Missing/corrupt snapshot: silently empty, same as before
     // this feature existed.
-    let (registry, usage, channels) = load_snapshot(ttl, tombstone_ttl);
+    let (registry, usage, channels) = load_snapshot(None, tombstone_ttl);
     let shared = Arc::new(Mutex::new(Shared {
         registry,
         usage,
@@ -2138,22 +2137,6 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
         }
     }
 
-    // Periodic TTL sweep: expire idle sessions (no-op when ttl = never).
-    if ttl.is_some() {
-        let ctx = ctx.clone();
-        let host_tx = host_tx.clone();
-        tokio::spawn(async move {
-            let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
-            loop {
-                tick.tick().await;
-                let effects = { ctx.shared.lock().unwrap().registry.expire(Instant::now()) };
-                if !effects.is_empty() {
-                    apply_effects(effects, &ctx, &host_tx);
-                }
-            }
-        });
-    }
-
     // Periodic tombstone sweep: age out reaped-but-not-explicitly-ended
     // sessions' recoverable history past `tombstone_ttl_minutes` (no-op when
     // never-expire). A tombstone is now surfaced as a *disconnected* session
@@ -2181,43 +2164,14 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
         });
     }
 
-    // Periodic compacting-timeout sweep: end any session stuck in
-    // `State::Compacting` (set by the Claude Code adapter's `PreCompact`
-    // hook, session.rs COMPACT_GRACE) whose continuation never claimed the
-    // slot — compaction cancelled, or the continuation genuinely never
-    // appeared. Runs regardless of `session_ttl_minutes` (including "never
-    // expire"): a stuck "compacting" indicator is actively misleading, not
-    // just stale.
-    {
-        let ctx = ctx.clone();
-        let host_tx = host_tx.clone();
-        tokio::spawn(async move {
-            let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
-            loop {
-                tick.tick().await;
-                let effects = {
-                    ctx.shared
-                        .lock()
-                        .unwrap()
-                        .registry
-                        .expire_compacting(Instant::now())
-                };
-                if !effects.is_empty() {
-                    apply_effects(effects, &ctx, &host_tx);
-                }
-            }
-        });
-    }
-
     // Periodic dead-tty sweep: reap a session whose focus target was a real
     // terminal (Claude Code sets `--meta tty=$(tty)`) the moment that pty
     // device stops existing — closing the terminal destroys it, a hard OS
     // fact, unlike inferring death from a failed AppleScript window match
     // (which would misfire for any terminal app other than Terminal/iTerm,
     // or when the daemon lacks Accessibility access). Runs independent of
-    // session_ttl_minutes/the TTL sweep above — sessions with no `tty` meta
-    // (Codex, Cursor) are untouched by this and keep relying on TTL or their
-    // own adapter-side end-session signal.
+    // time-based staleness — sessions with no `tty` meta (Codex, Cursor) are
+    // untouched by this and remain live until their adapter sends SessionEnd.
     {
         let ctx = ctx.clone();
         let host_tx = host_tx.clone();

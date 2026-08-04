@@ -199,10 +199,8 @@ final class AppModel: ObservableObject {
     /// probably-stale — almost always because the underlying agent process
     /// died without a clean Stop/SessionEnd (crash, killed terminal, sleep)
     /// rather than because it's genuinely still working that long. nil turns
-    /// this off. Deliberately much shorter than the daemon's own
-    /// `session.ttl_minutes` (config.toml, default 60), which is a hard
-    /// cutoff that ends the session outright — this is only an earlier,
-    /// purely-visual heads-up; the daemon still owns actually ending it.
+    /// this off. This is intentionally UI-only: the daemon never removes a
+    /// session merely because it has not updated.
     /// See `isStale`.
     @Published var staleThresholdMinutes: Int? {
         didSet {

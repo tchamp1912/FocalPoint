@@ -79,8 +79,9 @@ id implicitly registers that session (PROTOCOL.md §3):
   `get-state`, the `state` event, and the device's `SET_STATE` (ambient zone)
   report.
 - `kind`/`label`/`--cwd` (→ `meta.cwd`) merge into the record on later updates.
-- A session ends via `end-session` or after `[session] ttl_minutes` of no
-  updates; its slot is then freed (`SET_KEY_STATE <slot> EMPTY`).
+- A session ends via explicit `end-session` or verified dead PID/TTY cleanup;
+  update age is never a lifecycle signal. Its slot is then freed
+  (`SET_KEY_STATE <slot> EMPTY`).
 - A `set-state` with **no** `--session` is the back-compat *sessionless
   default*: it holds no slot but still counts toward the aggregate.
 
@@ -103,10 +104,8 @@ focalpoint rename-session claude-1        # clear it; the label shows again
 `name` is a *separate field* from `label` on purpose. Adapters re-send
 `--label` on every state change (`adapters/claude-code/hooks.sh` does), so a
 rename written into `label` would be wiped the next time the agent changed
-state. Nothing but `rename-session` writes `name`. Renaming broadcasts a
-`session` event but doesn't count as session activity, so it never extends
-`ttl_minutes`. Names are in-memory only: they don't survive the session
-ending or a daemon restart.
+state. Nothing but `rename-session` writes `name`. Names are in-memory only:
+they don't survive the session ending or a daemon restart.
 
 **Focus:** pressing a numbered key whose slot holds a live session runs the
 `[session] focus` action (not that key's `[actions]` entry), with the session
@@ -195,10 +194,11 @@ platforms `keystroke`/`paste` log a warning and are skipped (the socket event is
 still delivered). Key actions fire on **press**; the dial runs `cw`/`ccw`
 depending on tick direction.
 
-The `[session]` block configures the `focus` action (see Multi-session tracking
-above) and `ttl_minutes` (session idle timeout; absent → 60, `0` → never).
-`[styles.<state>]` blocks override the default render styles (see Render styles
-above); the daemon rewrites them in place on `set-style`.
+The `[session]` block configures the `focus` action (see Multi-session tracking).
+Update age is only a UI stale indication; the daemon retains a session until
+explicit end or verified PID/TTY death. `[styles.<state>]` blocks override the
+default render styles (see Render styles above); the daemon rewrites them in
+place on `set-style`.
 
 ## Test
 
