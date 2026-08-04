@@ -484,7 +484,7 @@ final class AppModel: ObservableObject {
     private func handleEvent(_ e: [String: Any]) {
         guard let ev = e["event"] as? String else { return }
         if ["state", "session", "session-ended", "session-disconnected",
-            "session-rekeyed", "managed-relaunch", "attention-order"].contains(ev) {
+            "session-rekeyed", "managed-relaunch", "attention-order", "focus"].contains(ev) {
             logEventSummary(e, event: ev)
         }
         switch ev {
@@ -540,6 +540,10 @@ final class AppModel: ObservableObject {
             handleManagedRelaunchEvent(e)
         case "attention-order":
             applyAttentionOrder(e["sessions"], source: "event")
+        case "focus":
+            if let id = e["session"] as? String {
+                focusedSessionID = id
+            }
         case "usage":
             upsertUsage(e)
         case "style":

@@ -343,6 +343,9 @@ Front-ends use it to focus a session with no live slot to press: a
 disconnected session (its terminal is usually still open — idle past the TTL,
 or an agent crash that left the window), or a slotless overflow session (>12
 live). Same env vars as above, from the session's last-known values.
+Every successful focus path (a session key, arrow navigation, or
+`focus-session`) broadcasts `{"event":"focus","session":"id"}` so every
+connected FocalPoint UI highlights the selected session.
 
 The daemon owns a complete attention order separately from numbered slots.
 `get-attention-order` returns `{"ok":true,"sessions":[...]}`.
@@ -422,6 +425,7 @@ Responses / events:
 {"event": "session-disconnected", "session": "id", "slot": 1}
 {"event": "session-rekeyed", "old_session": "old-id", "new_session": "new-id"}
 {"event": "attention-order", "sessions": ["id-a", "id-b"]}
+{"event": "focus", "session": "id"}
 {"event": "key", "control": "accept", "pressed": true}
 {"event": "dial", "delta": 2}
 {"event": "joy", "gesture": "north"}

@@ -128,6 +128,10 @@ pub enum Event {
     SessionEnded { session: String, slot: Option<u8> },
     SessionDisconnected { session: String, slot: Option<u8> },
     SessionRekeyed { old_session: String, new_session: String },
+    /// A controller selected this session for the configured focus action.
+    /// This is presentation state for clients; the daemon never treats it as
+    /// durable session metadata.
+    Focus { session: String },
     Key { control: String, pressed: bool },
     Dial { delta: i8 },
     Joy { gesture: String },
@@ -1789,7 +1793,10 @@ fn handle_device_event(ev: DeviceEvent, ctx: &EventCtx) {
                         .session_by_slot(slot)
                         .cloned();
                     match session {
-                        Some(session) => run_focus(ctx, &session, slot),
+                        Some(session) => {
+                            ctx.broadcast(&event_line(Event::Focus { session: session.id.clone() }));
+                            run_focus(ctx, &session, slot)
+                        }
                         None => crate::actions::run(&ctx.config.action_for(&name)),
                     }
                 } else if (17..=20).contains(&control) {
@@ -1804,6 +1811,7 @@ fn handle_device_event(ev: DeviceEvent, ctx: &EventCtx) {
                         }
                     };
                     if let Some(session) = session {
+                        ctx.broadcast(&event_line(Event::Focus { session: session.id.clone() }));
                         run_focus(ctx, &session, session.slot.unwrap_or(0));
                     }
                     let _ = ctx.host_tx.send(HostCmd::SetNavState(
@@ -2919,6 +2927,7 @@ fn dispatch(
                 Some(sess) => {
                     let ctx = ctx.clone();
                     let slot = sess.slot.unwrap_or(0);
+                    ctx.broadcast(&event_line(Event::Focus { session: sess.id.clone() }));
                     std::thread::spawn(move || run_focus(&ctx, &sess, slot));
                     ok()
                 }
@@ -3438,6 +3447,14 @@ mod tests {
         assert_eq!(
             state_event_line(State::Thinking),
             r#"{"event":"state","state":"thinking"}"#
+        );
+    }
+
+    #[test]
+    fn focus_event_matches_protocol() {
+        assert_eq!(
+            event_line(Event::Focus { session: "session-123".into() }),
+            r#"{"event":"focus","session":"session-123"}"#
         );
     }
 
