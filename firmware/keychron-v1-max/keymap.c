@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
  * Layers 0..3 are the stock Keychron Mac/Win base + Fn layers, unchanged
- * except that tapping left Option/Alt alone arms FocalPoint for one key.
+ * except that left Option/Alt holds the FocalPoint chord layer.
  * Layer 4 (FOCALPOINT) is the held control surface (see README).
  */
 
@@ -15,7 +15,7 @@ enum layers {
     MAC_FN,
     WIN_BASE,
     WIN_FN,
-    FOCALPOINT,   /* one-shot after a standalone Option/Alt tap */
+    FOCALPOINT,   /* held by the custom left Option/Alt chord key */
 };
 
 /* Custom keycodes start after Keychron's QK_KB_0 range (NEW_SAFE_RANGE). */
@@ -41,8 +41,8 @@ enum focalpoint_keycodes {
     VK_ATT_PREV,               /* left arrow -> control 18 */
     VK_SESSION_NEXT,           /* down arrow -> control 19 */
     VK_SESSION_PREV,           /* up arrow -> control 20 */
-    VK_FP_MAC_OPTION,          /* normal Option; standalone tap arms FocalPoint */
-    VK_FP_WIN_ALT,             /* normal Alt; standalone tap arms FocalPoint */
+    VK_FP_MAC_OPTION,          /* Option + FocalPoint chord layer */
+    VK_FP_WIN_ALT,             /* Alt + FocalPoint chord layer */
 };
 
 // clang-format off
@@ -122,56 +122,61 @@ static uint8_t vk_control_for(uint16_t keycode) {
 }
 
 static bool vk_option_down;
-static bool vk_option_used_as_modifier;
-static bool vk_focalpoint_armed;
-static bool vk_focalpoint_control_down;
-static uint16_t vk_focalpoint_armed_at;
+static bool vk_option_passthrough;
+static bool vk_option_sent;
+static bool vk_option_command;
+static uint16_t vk_option_pressed_at;
+static uint16_t vk_option_modifier;
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
-    /* Option/Alt must remain a true OS modifier: it is frequently used for
-     * application hotkeys. A standalone tap arms one FocalPoint command after
-     * release; pressing any other key while held is an ordinary Option/Alt
-     * chord and never enables the FocalPoint layer. */
+    /* Option/Alt is a held chord layer, but never at the expense of ordinary
+     * OS hotkeys. The FocalPoint layer maps only documented controls; an
+     * unrecognized next key is forwarded with the native modifier. A solo
+     * one-second hold also emits the native modifier for modifier-only tools. */
     if (keycode == VK_FP_MAC_OPTION || keycode == VK_FP_WIN_ALT) {
-        uint16_t modifier = keycode == VK_FP_MAC_OPTION ? KC_LOPTN : KC_LALT;
         if (record->event.pressed) {
-            register_code16(modifier);
             vk_option_down = true;
-            vk_option_used_as_modifier = false;
+            vk_option_passthrough = false;
+            vk_option_sent = false;
+            vk_option_command = false;
+            vk_option_pressed_at = timer_read();
+            vk_option_modifier = keycode == VK_FP_MAC_OPTION ? KC_LOPTN : KC_LALT;
+            layer_on(FOCALPOINT);
         } else {
-            unregister_code16(modifier);
-            if (vk_option_down && !vk_option_used_as_modifier && vk_host_mode_on()) {
-                layer_on(FOCALPOINT);
-                vk_focalpoint_armed = true;
-                vk_focalpoint_armed_at = timer_read();
-            }
+            if (vk_option_sent) unregister_code16(vk_option_modifier);
+            layer_off(FOCALPOINT);
             vk_option_down = false;
+            vk_option_passthrough = false;
+            vk_option_sent = false;
+            vk_option_command = false;
         }
         return false;
     }
 
-    if (vk_option_down && record->event.pressed) vk_option_used_as_modifier = true;
-
     uint8_t control = vk_control_for(keycode);
-    if (vk_focalpoint_armed && record->event.pressed && control == 0xFF) {
-        /* A non-control key consumes the one-shot layer transparently. */
+    if (vk_option_down && record->event.pressed && control == 0xFF) {
+        /* The layer is transparent here, so QMK will emit this normal key.
+         * Register Option/Alt immediately before it reaches the host. */
+        if (!vk_option_sent) {
+            register_code16(vk_option_modifier);
+            vk_option_sent = true;
+        }
+        vk_option_passthrough = true;
         layer_off(FOCALPOINT);
-        vk_focalpoint_armed = false;
     }
     if (control != 0xFF) {
         /* FocalPoint control key. When a daemon is attached (host mode on) emit a
          * HID event and never a keystroke; when detached, act as a no-op. */
+        if (record->event.pressed && vk_option_sent) {
+            /* A delayed solo-modifier report must not contaminate a later
+             * FocalPoint command with an OS Option/Alt keystroke. */
+            unregister_code16(vk_option_modifier);
+            vk_option_sent = false;
+        }
         if (vk_host_mode_on()) {
             vk_send_key_event(control, record->event.pressed);
         }
-        if (vk_focalpoint_armed) {
-            if (record->event.pressed) vk_focalpoint_control_down = true;
-            else if (vk_focalpoint_control_down) {
-                layer_off(FOCALPOINT);
-                vk_focalpoint_armed = false;
-                vk_focalpoint_control_down = false;
-            }
-        }
+        vk_option_command = true;
         return false;  /* consume: never types */
     }
 
@@ -183,11 +188,10 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
 }
 
 void matrix_scan_user(void) {
-    /* Avoid leaving a surprising control layer armed after an accidental tap. */
-    if (vk_focalpoint_armed && !vk_focalpoint_control_down
-        && timer_elapsed(vk_focalpoint_armed_at) > 1000) {
-            layer_off(FOCALPOINT);
-            vk_focalpoint_armed = false;
+    if (vk_option_down && !vk_option_passthrough && !vk_option_command
+        && !vk_option_sent && timer_elapsed(vk_option_pressed_at) >= 1000) {
+        register_code16(vk_option_modifier);
+        vk_option_sent = true;
     }
 }
 
