@@ -68,3 +68,8 @@ comparable providers with available reported headroom.
 - One priority writer at a time. Explain any focus/order decision.
 - `launch` creates a process: do not create worktrees, install dependencies,
   decompose tasks, or duplicate stable task ids unless explicitly authorized.
+
+When an orchestrator wants a monitor-driven follow-up, it should put the exact
+marker `FOCALPOINT_WAKE` in its final visible response (preferably on its own
+line). A transcript monitor may treat that marker as a request to wake or
+re-check the orchestration session; ordinary completion does not require it.
