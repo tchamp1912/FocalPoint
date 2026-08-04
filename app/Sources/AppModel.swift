@@ -222,6 +222,7 @@ final class AppModel: ObservableObject {
     private var timer: Timer?
     private var codexUsageMonitor: CodexUsageMonitor?
     private var cursorUsageMonitor: CursorUsageMonitor?
+    private var claudeUsageMonitor: ClaudeUsageMonitor?
     /// Last session focused by the all-session navigation hotkeys, so the next
     /// press advances relative to it. Attention navigation is daemon-owned.
     private var lastSessionFocusID: String?
@@ -270,6 +271,7 @@ final class AppModel: ObservableObject {
         }
         codexUsageMonitor = CodexUsageMonitor(model: self)
         cursorUsageMonitor = CursorUsageMonitor(model: self)
+        claudeUsageMonitor = ClaudeUsageMonitor(model: self)
         if let data = d.data(forKey: "sessionHistory"),
            let decoded = try? JSONDecoder().decode([SessionHistoryEntry].self, from: data) {
             sessionHistory = decoded
@@ -368,6 +370,10 @@ final class AppModel: ObservableObject {
         }
         if codexUsageEnabled { codexUsageMonitor?.start() }
         if cursorUsageEnabled { cursorUsageMonitor?.start() }
+        // This monitor is a no-op unless ANTHROPIC_ADMIN_KEY is present. Keep
+        // it independent of the Claude Code status-line integration: API
+        // billing telemetry and subscription rate limits are different data.
+        claudeUsageMonitor?.start()
     }
 
     private func setConnected(_ up: Bool) {

@@ -197,6 +197,10 @@ struct DesktopWidgetView: View {
                         if let spend = usage.apiSpendUSD {
                             apiSpendRow(usage, spend: spend)
                         }
+                        if let input = usage.apiInputTokens, let output = usage.apiOutputTokens {
+                            Text("\(usage.displayName) \(Int(input)) in / \(Int(output)) out today")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
                     }
                 }
                 .padding(.horizontal, 11)
@@ -211,7 +215,7 @@ struct DesktopWidgetView: View {
     }
 
     private func apiSpendRow(_ usage: ProviderUsage, spend: Double) -> some View {
-        Text("\(usage.displayName) $\(spend.formatted(.number.precision(.fractionLength(2)))) today")
+        Text("\(usage.displayName) $\(spend.formatted(.number.precision(.fractionLength(2)))) \(usage.apiSpendPeriodLabel)")
             .font(.caption2)
             .foregroundStyle(.secondary)
     }

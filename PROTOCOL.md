@@ -467,6 +467,11 @@ numeric `api_spend_usd`, `api_spend_period_started_at`, and
 total. It is deliberately a separate provider from `codex`, whose
 `primary_*`/`secondary_*` values are ChatGPT rate-limit windows.
 
+The app additionally uses `claude-api` for Anthropic Admin API usage reports
+(`api_input_tokens` and `api_output_tokens` for the current UTC day) and
+`cursor-api` for Cursor Admin API current-cycle spend (`api_spend_usd`). These
+remain separate from the corresponding subscription/quota provider records.
+
 ### Styles
 
 Every state has a render **style**: `rgb` + `pattern`

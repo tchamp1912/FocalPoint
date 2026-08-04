@@ -337,15 +337,24 @@ struct MenuContentView: View {
                 Text(apiSpendText(usage, spend: spend))
                     .font(.caption2).foregroundStyle(.secondary)
             }
+            if let input = usage.apiInputTokens, let output = usage.apiOutputTokens {
+                Text("API tokens today: \(compactTokenCount(input)) in · \(compactTokenCount(output)) out")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
         }
     }
 
     private func apiSpendText(_ usage: ProviderUsage, spend: Double) -> String {
         let amount = spend.formatted(.currency(code: "USD"))
         if let end = usage.apiSpendPeriodEndsAt {
-            return "API spend \(amount) today · resets \(end.formatted(date: .omitted, time: .shortened))"
+            return "API spend \(amount) \(usage.apiSpendPeriodLabel) · resets \(end.formatted(date: .omitted, time: .shortened))"
         }
-        return "API spend \(amount) today"
+        return "API spend \(amount) \(usage.apiSpendPeriodLabel)"
+    }
+
+    private func compactTokenCount(_ value: Double) -> String {
+        value >= 1_000_000 ? String(format: "%.1fM", value / 1_000_000) :
+            value >= 1_000 ? String(format: "%.1fk", value / 1_000) : String(Int(value))
     }
 
     private func usageMeter(label: String, percent: Double, reset: Date?) -> some View {

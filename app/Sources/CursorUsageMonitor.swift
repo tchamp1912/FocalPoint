@@ -41,13 +41,24 @@ final class CursorUsageMonitor {
             defer {
                 DispatchQueue.main.async { self?.running = false }
             }
-            guard let values = Self.readUsage() else { return }
+            let quotaValues = Self.readUsage()
+            let apiBilledValues = Self.readAPIBilledUsage()
             DispatchQueue.main.async {
-                self?.model?.client.send([
-                    "cmd": "set-usage",
-                    "provider": "cursor",
-                    "usage": values,
-                ])
+                guard let model = self?.model else { return }
+                if let values = quotaValues {
+                    model.client.send([
+                        "cmd": "set-usage",
+                        "provider": "cursor",
+                        "usage": values,
+                    ])
+                }
+                if let values = apiBilledValues {
+                    model.client.send([
+                        "cmd": "set-usage",
+                        "provider": "cursor-api",
+                        "usage": values,
+                    ])
+                }
             }
         }
     }
@@ -104,6 +115,43 @@ final class CursorUsageMonitor {
             result["primary_resets_at"] = end.timeIntervalSince1970
         }
         return result
+    }
+
+    /// Cursor's documented team Admin API exposes exact current-cycle spend.
+    /// A normal CURSOR_API_KEY cannot access this report, so only use the
+    /// deliberately separate admin credential and never persist it.
+    private static func readAPIBilledUsage() -> [String: Double]? {
+        guard let key = ProcessInfo.processInfo.environment["CURSOR_ADMIN_API_KEY"],
+              !key.isEmpty else { return nil }
+        guard let first = fetchSpendPage(key: key, page: 1),
+              let firstMembers = first["teamMemberSpend"] as? [[String: Any]] else { return nil }
+        let pageCount = max(1, Int(number(first["totalPages"]) ?? 1))
+        var members = firstMembers
+        if pageCount > 1 {
+            for page in 2...pageCount {
+                guard let json = fetchSpendPage(key: key, page: page),
+                      let rows = json["teamMemberSpend"] as? [[String: Any]] else { return nil }
+                members.append(contentsOf: rows)
+            }
+        }
+        let spend = members.compactMap { number($0["spendCents"]) }.reduce(0, +) / 100
+        guard spend.isFinite, spend >= 0 else { return nil }
+        var values: [String: Double] = ["api_spend_usd": spend]
+        if let start = epochSeconds(first["subscriptionCycleStart"]) {
+            values["api_spend_period_started_at"] = start
+        }
+        return values
+    }
+
+    private static func fetchSpendPage(key: String, page: Int) -> [String: Any]? {
+        guard let url = URL(string: "https://api.cursor.com/teams/spend") else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Basic \(Data("\(key):".utf8).base64EncodedString())", forHTTPHeaderField: "Authorization")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["page": page, "pageSize": 100])
+        guard let data = syncData(for: request) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 
     private static func readAuthValue(_ key: String) -> String? {

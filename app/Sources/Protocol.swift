@@ -368,12 +368,20 @@ struct ProviderUsage: Identifiable, Equatable {
     var apiSpendUSD: Double? { values["api_spend_usd"] }
     var apiSpendPeriodStartedAt: Date? { epochDate("api_spend_period_started_at") }
     var apiSpendPeriodEndsAt: Date? { epochDate("api_spend_period_ends_at") }
+    var apiInputTokens: Double? { values["api_input_tokens"] }
+    var apiOutputTokens: Double? { values["api_output_tokens"] }
 
     var displayName: String {
         switch provider {
         case "openai-api": return "OpenAI API"
+        case "claude-api": return "Claude API"
+        case "cursor-api": return "Cursor API"
         default: return provider.capitalized
         }
+    }
+
+    var apiSpendPeriodLabel: String {
+        provider == "cursor-api" ? "this cycle" : "today"
     }
 
     /// Short meter label for the provider's primary quota window.
