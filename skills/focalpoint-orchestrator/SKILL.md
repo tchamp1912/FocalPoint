@@ -90,6 +90,24 @@ operation you need.
 7. Explain which order or session you selected and why. Without an explicit
    order, the daemon uses its deterministic state-based fallback.
 
+## Waking on subagent state changes
+
+Prefer being woken over re-polling. Re-running `fpctl-agent status` on a
+timer to notice a worker reaching `waiting`/`done`/`error` wastes turns and
+adds latency. Instead, once workers are launched, start `focalpoint watch` as
+a background task and use the Monitor tool on it — each line it prints (a
+state transition) arrives as a notification, so you resume exactly when a
+subagent's state actually changes instead of guessing a polling interval.
+
+- Launch once per orchestration session, not per worker: `focalpoint watch`
+  streams every session's transitions, not just one.
+- Still use `fpctl-agent status`/`order` for the authoritative snapshot when
+  you need full metadata (usage, meta, connected) — `watch` tells you *when*
+  something changed, `status` tells you *what* changed.
+- If `watch` itself disconnects/errors, restart it; don't fall back to a fast
+  polling loop as a substitute — a slower manual check plus the next
+  successful watch reconnect is preferable to hammering the socket.
+
 ## Balancing subscriptions
 
 Before every `launch`, read the `usage` block from `fpctl-agent status` and
