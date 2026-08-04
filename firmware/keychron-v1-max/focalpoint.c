@@ -60,7 +60,7 @@ typedef struct {
     uint8_t r, g, b, pattern;
     uint16_t period_ms;
 } vk_style_t;
-static vk_style_t vk_styles[VK_STATE_COMPACTING + 1];
+static vk_style_t vk_styles[VK_STATE_APPROVAL + 1];
 
 typedef struct {
     bool    active;
@@ -282,7 +282,7 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
         }
 
         case VK_CMD_SET_STATE_STYLE:
-            if (data[1] <= VK_STATE_COMPACTING && data[5] <= 4) {
+            if (data[1] <= VK_STATE_APPROVAL && data[5] <= 4) {
                 vk_styles[data[1]].r = data[2];
                 vk_styles[data[1]].g = data[3];
                 vk_styles[data[1]].b = data[4];
@@ -320,7 +320,7 @@ void suspend_power_down_user(void) {
 /* Paint one state on one LED index (already known to be in [min,max)).
  * aggregate=true means the Esc indicator, where idle paints nothing. */
 static void vk_paint_state(uint8_t idx, uint8_t state, bool aggregate) {
-    if (state > VK_STATE_COMPACTING || (aggregate && (state == VK_STATE_IDLE || state == VK_STATE_COMPACTING))) return;
+    if (state > VK_STATE_APPROVAL || (aggregate && (state == VK_STATE_IDLE || state == VK_STATE_COMPACTING))) return;
     vk_style_t style = vk_styles[state];
     if (style.pattern == 4) return;
     uint8_t r = style.r, g = style.g, b = style.b;
@@ -383,6 +383,7 @@ void keyboard_post_init_user(void) {
         {255, 166, 26, 1, 800}, {64, 140, 255, 2, 800},
         {51, 204, 89, 0, 1000}, {242, 64, 64, 2, 250},
         {110, 110, 140, 1, 3000},
+        {255, 105, 30, 2, 500},
     };
     memcpy(vk_styles, defaults, sizeof(vk_styles));
     vk_host_mode = false;

@@ -11,13 +11,10 @@
 #include <stdbool.h>
 
 /* ---- Protocol version reported in PONG ----
- * PROTOCOL.md is at v0.2 and this firmware implements its semantics
- * (including the v0.2 `compacting` state id below), but PONG still reports
- * 0.1: v0.2 was purely additive, no current host gates behavior on the
- * minor, and bumping VK_PROTO_MINOR is a code/behavior change tracked
- * separately from this comment-level doc fix. */
+ * Protocol v0.3 adds the distinct `approval` state after the additive v0.2
+ * `compacting` state. Hosts can use PONG's minor version to confirm both. */
 #define VK_PROTO_MAJOR 0
-#define VK_PROTO_MINOR 2
+#define VK_PROTO_MINOR 3
 
 /* Number of user keys the firmware exposes (session slots 1..12). Reported
  * as byte 3 of PONG. */
@@ -55,6 +52,9 @@ enum vk_state {
      * older hosts never send it, so firmware from before this id existed
      * simply never receives it. */
     VK_STATE_COMPACTING = 6,
+    /* Permission approval is more urgent than ordinary user input. Added in
+     * protocol v0.3; its separate id lets it have a distinct orange style. */
+    VK_STATE_APPROVAL   = 7,
 };
 
 /* Sentinel for an empty session slot (SET_KEY_STATE b2 == 0xFF). */

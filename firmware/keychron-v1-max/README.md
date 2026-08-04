@@ -25,7 +25,8 @@ Target board: `keychron/v1_max/ansi_encoder` (the knob variant).
     (`SET_KEY_STATE`).
   - **Esc** shows the **aggregate** state (`SET_STATE`); aggregate `idle` paints
     nothing (the key shows your normal effect).
-  - State colors, patterns, and periods exactly follow the UI's Styles editor
+  - State colors, patterns, and periods (including the orange permission
+    approval state) exactly follow the UI's Styles editor
     (`SET_STATE_STYLE`). An empty slot (`0xFF`) paints nothing.
   - While attached, FocalPoint clears and repaints a full-board overlay on
     every RGB-matrix frame, so stock travelling-wave effects cannot leak
