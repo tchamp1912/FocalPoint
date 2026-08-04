@@ -35,7 +35,6 @@ enum focalpoint_keycodes {
     VK_ACC,                   /* accept   -> control 0  */
     VK_REJ,                   /* reject   -> control 1  */
     VK_NEW,                   /* new-task -> control 2  */
-    VK_PTT,                   /* push-to-talk -> control 3 (press AND release) */
     VK_DIALP,                 /* dial press -> control 16 */
     VK_ATT_NEXT,               /* right arrow -> control 17 */
     VK_ATT_PREV,               /* left arrow -> control 18 */
@@ -87,7 +86,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         _______,  _______,  _______,  _______,  VK_REJ,   _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,            _______,
         _______,  VK_ACC,   _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,  _______,            _______,            _______,
         _______,            _______,  _______,  _______,  _______,  _______,  VK_NEW,   _______,  _______,  _______,  _______,            _______,  VK_SESSION_PREV,
-        _______,  VK_FP_MAC_OPTION, VK_FP_WIN_ALT,                  VK_PTT,                                 _______,  _______,  _______,  VK_ATT_PREV, VK_SESSION_NEXT, VK_ATT_NEXT),
+        _______,  VK_FP_MAC_OPTION, VK_FP_WIN_ALT,                  _______,                               _______,  _______,  _______,  VK_ATT_PREV, VK_SESSION_NEXT, VK_ATT_NEXT),
 };
 
 // clang-format on
@@ -111,7 +110,6 @@ static uint8_t vk_control_for(uint16_t keycode) {
         case VK_ACC:             return VK_CTRL_ACCEPT;
         case VK_REJ:             return VK_CTRL_REJECT;
         case VK_NEW:             return VK_CTRL_NEW_TASK;
-        case VK_PTT:             return VK_CTRL_PTT;
         case VK_DIALP:           return VK_CTRL_DIAL_PRESS;
         case VK_ATT_NEXT:        return VK_CTRL_ATTENTION_NEXT;
         case VK_ATT_PREV:        return VK_CTRL_ATTENTION_PREV;
@@ -122,47 +120,39 @@ static uint8_t vk_control_for(uint16_t keycode) {
 }
 
 static bool vk_option_down;
-static bool vk_option_passthrough;
+/* True while the native Option/Alt modifier is registered with the host. */
 static bool vk_option_sent;
-static bool vk_option_command;
-static uint16_t vk_option_pressed_at;
 static uint16_t vk_option_modifier;
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
-    /* Option/Alt is a held chord layer, but never at the expense of ordinary
-     * OS hotkeys. The FocalPoint layer maps only documented controls; an
-     * unrecognized next key is forwarded with the native modifier. A solo
-     * one-second hold also emits the native modifier for modifier-only tools. */
+    /* Option/Alt is native first, then becomes a FocalPoint chord layer. This
+     * lets macOS see a lone modifier immediately while a recognized control
+     * removes it before its Raw HID event. Transparent keys remain normal
+     * Option/Alt shortcuts. */
     if (keycode == VK_FP_MAC_OPTION || keycode == VK_FP_WIN_ALT) {
         if (record->event.pressed) {
             vk_option_down = true;
-            vk_option_passthrough = false;
-            vk_option_sent = false;
-            vk_option_command = false;
-            vk_option_pressed_at = timer_read();
             vk_option_modifier = keycode == VK_FP_MAC_OPTION ? KC_LOPTN : KC_LALT;
+            register_code16(vk_option_modifier);
+            vk_option_sent = true;
             layer_on(FOCALPOINT);
         } else {
             if (vk_option_sent) unregister_code16(vk_option_modifier);
             layer_off(FOCALPOINT);
             vk_option_down = false;
-            vk_option_passthrough = false;
             vk_option_sent = false;
-            vk_option_command = false;
         }
         return false;
     }
 
     uint8_t control = vk_control_for(keycode);
     if (vk_option_down && record->event.pressed && control == 0xFF) {
-        /* The layer is transparent here, so QMK will emit this normal key.
-         * Register Option/Alt immediately before it reaches the host. */
+        /* A preceding FocalPoint command suppressed the modifier. Restore it
+         * before a later transparent key so normal shortcuts still work. */
         if (!vk_option_sent) {
             register_code16(vk_option_modifier);
             vk_option_sent = true;
         }
-        vk_option_passthrough = true;
-        layer_off(FOCALPOINT);
     }
     if (control != 0xFF) {
         /* FocalPoint control key. When a daemon is attached (host mode on) emit a
@@ -176,7 +166,6 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
         if (vk_host_mode_on()) {
             vk_send_key_event(control, record->event.pressed);
         }
-        vk_option_command = true;
         return false;  /* consume: never types */
     }
 
@@ -187,17 +176,13 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     return true;
 }
 
-void matrix_scan_user(void) {
-    if (vk_option_down && !vk_option_passthrough && !vk_option_command
-        && !vk_option_sent && timer_elapsed(vk_option_pressed_at) >= 1000) {
-        register_code16(vk_option_modifier);
-        vk_option_sent = true;
-    }
-}
-
 #if defined(ENCODER_ENABLE)
 bool encoder_update_user(uint8_t index, bool clockwise) {
     if (index == 0 && vk_host_mode_on() && layer_state_is(FOCALPOINT)) {
+        if (vk_option_sent) {
+            unregister_code16(vk_option_modifier);
+            vk_option_sent = false;
+        }
         vk_send_dial(clockwise ? 1 : -1);
         return false;  /* consume: suppress the volume encoder_map entry */
     }

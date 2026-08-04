@@ -13,12 +13,11 @@ Target board: `keychron/v1_max/ansi_encoder` (the knob variant).
 ## What it does
 
 - **Normal keyboard, always.** The left **Option** in Mac mode or **Alt** in
-  Windows mode holds the FocalPoint chord layer. Hold it with a documented
-  FocalPoint control key to invoke FocalPoint; any unrecognized chord is sent
-  normally as an Option/Alt shortcut. A one-second solo hold also emits the
-  native modifier for modifier-only hotkey tools. Mac mode swaps the physical
-  left Control and Command positions. Wireless (Bluetooth / 2.4 GHz) is
-  untouched.
+  Windows mode is sent to the host immediately and also holds the FocalPoint
+  chord layer. A documented FocalPoint chord suppresses its native modifier
+  before emitting Raw HID; unrecognized chords remain normal Option/Alt
+  shortcuts. Mac mode swaps the physical left Control and Command positions.
+  Wireless (Bluetooth / 2.4 GHz) is untouched.
 - **RGB status painting** (over whatever RGB effect you run), via
   `rgb_matrix_indicators_advanced_user`:
   - Number-row keys `1 2 3 4 5 6 7 8 9 0 - =` are **session slots 1–12**
@@ -35,7 +34,7 @@ Target board: `keychron/v1_max/ansi_encoder` (the knob variant).
 - **FocalPoint control layer** (hold Option/Alt with a control key):
   - number keys `1`–`=` → `KEY_EVENT` for user keys 1–12 (control IDs 4–15)
   - `A` / `R` / `N` → accept / reject / new-task (control IDs 0 / 1 / 2)
-  - `Space` → push-to-talk (control ID 3, sends **press and release**)
+  - `Option` + `Space` is deliberately transparent for macOS speech-to-text.
   - knob rotation → `DIAL` (±1); knob press → dial-press (control ID 16)
   - arrows: Right / Left = next / previous attention; Down / Up = next /
     previous session in slot order.
@@ -64,7 +63,7 @@ Option/Alt with another normal key therefore preserves the OS shortcut:
 | `A` | `VK_ACC` | `KEY_EVENT` control 0 (accept) |
 | `R` | `VK_REJ` | `KEY_EVENT` control 1 (reject) |
 | `N` | `VK_NEW` | `KEY_EVENT` control 2 (new-task) |
-| `Space` | `VK_PTT` | `KEY_EVENT` control 3, press **and** release |
+| `Space` | transparent | native Option+Space (macOS speech-to-text) |
 | knob turn | (encoder) | `DIAL` ±1 |
 | knob press | `VK_DIALP` | `KEY_EVENT` control 16 (dial press) |
 | Right / Left | `VK_ATT_NEXT` / `VK_ATT_PREV` | attention next / previous (17 / 18) |
