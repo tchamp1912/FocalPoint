@@ -16,8 +16,8 @@
 #   UserPromptSubmit    → thinking
 #   PreToolUse          → running
 #   PostToolUse         → thinking
-#   Notification        → waiting (filtered to permission_prompt/idle_prompt
-#                         by the matcher in settings-fragment.json)
+#   Notification        → approval for permission_prompt; waiting for
+#                         idle_prompt (filtered by settings-fragment.json)
 #   Stop                → done
 #   SessionEnd          → end-session (falls back to sessionless `idle` if
 #                         no session_id could be extracted); the CLI's
@@ -210,7 +210,7 @@ notification_type=$(extract_field "notification_type")
 [ -n "$notification_type" ] || notification_type=$(extract_field "notificationType")
 
 # Permission notifications can be transient when Claude's auto-approval
-# accepts the tool immediately. Delay only that flavor of waiting state; an
+# accepts the tool immediately. Delay only that flavor of approval state; an
 # idle/input prompt is a real human block and remains immediate.
 defer_permission_wait=0
 if [ "$event" = "Notification" ] && [ "$notification_type" = "permission_prompt" ] \
@@ -333,10 +333,14 @@ case "$event" in
     exit 0
     ;;
   Notification)
-    # Type filtering happens via the matcher in settings-fragment.json
-    # (permission_prompt|idle_prompt); anything that reaches us means
-    # the agent is blocked on the user.
-    state="waiting"
+    # The matcher limits this to permission_prompt|idle_prompt. Keep the two
+    # user-visible blocks distinct: a tool approval is actionable in the
+    # terminal, while idle_prompt means Claude finished and needs a new task.
+    case "$notification_type" in
+      permission_prompt) state="approval" ;;
+      idle_prompt)       state="waiting" ;;
+      *) exit 0 ;;
+    esac
     ;;
   PreCompact)
     # Compaction is always a session-lifecycle transition in Claude Code

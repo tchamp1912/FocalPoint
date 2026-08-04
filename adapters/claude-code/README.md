@@ -34,7 +34,8 @@ The hooks block wires five Claude Code events to the dispatcher:
 | `PreToolUse` | `running` | Claude is about to execute a tool (Bash, Write, etc.) |
 | `PostToolUse` | `thinking` | Tool execution finished; Claude is reasoning about results |
 | `Stop` | `done` | Claude's response is complete |
-| `Notification` (permission/input) | `waiting` | Awaiting user approval (permission prompt) or input |
+| `Notification` (`idle_prompt`) | `waiting` | Claude finished and awaits your next prompt |
+| `Notification` (`permission_prompt`) | `approval` | A tool use awaits your approval |
 | `SessionEnd` | `end-session` | Session ended; its numbered-key slot is freed |
 
 ### Subscription usage monitor (optional)
@@ -86,8 +87,8 @@ instead of `set-state idle`, so the slot frees immediately rather than
 waiting on the TTL.
 
 Permission notifications use a two-second cancelable grace period. If Claude
-auto-approves and proceeds to `PreToolUse`, `waiting` is never published;
-idle/input prompts remain immediate. `FOCALPOINT_APPROVAL_GRACE_SECS` can
+auto-approves and proceeds to `PreToolUse`, `approval` is never published;
+idle/input prompts remain immediate as `waiting`. `FOCALPOINT_APPROVAL_GRACE_SECS` can
 override the grace period for testing.
 
 If `session_id` can't be extracted for any reason, the adapter falls back to
