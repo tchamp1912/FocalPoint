@@ -346,7 +346,7 @@ bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
      * restoring its tiny set of indicators. */
     (void)led_min;
     (void)led_max;
-    for (uint8_t idx = 0; idx < DRIVER_LED_TOTAL; idx++) rgb_matrix_set_color(idx, 0, 0, 0);
+    for (uint8_t idx = 0; idx < RGB_MATRIX_LED_COUNT; idx++) rgb_matrix_set_color(idx, 0, 0, 0);
 
     /* Esc = aggregate state (idle paints nothing). */
     vk_paint_state(VK_LED_ESC, vk_aggregate, true);
