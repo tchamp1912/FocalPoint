@@ -125,6 +125,8 @@ enum SessionStat: String, CaseIterable, Identifiable {
     case turns = "turns"
     case subagents = "subagents"
     case cost = "cost_usd"
+    case compactions = "compactions"
+    case planCompactions = "plan_compactions"
 
     var id: String { rawValue }
 
@@ -136,6 +138,8 @@ enum SessionStat: String, CaseIterable, Identifiable {
         case .turns:     return "Turns"
         case .subagents: return "Subagents"
         case .cost:      return "Cost"
+        case .compactions: return "Compactions"
+        case .planCompactions: return "Plan compactions"
         }
     }
 
@@ -147,13 +151,14 @@ enum SessionStat: String, CaseIterable, Identifiable {
         case .turns:     return "arrow.triangle.2.circlepath"
         case .subagents: return "person.2"
         case .cost:      return "dollarsign.circle"
+        case .compactions, .planCompactions: return "arrow.triangle.2.circlepath"
         }
     }
 
     /// Compact display for a badge: "12.4k" instead of "12421".
     func format(_ value: Double) -> String {
         switch self {
-        case .tokensIn, .tokensOut, .toolCalls, .turns, .subagents:
+        case .tokensIn, .tokensOut, .toolCalls, .turns, .subagents, .compactions, .planCompactions:
             return compactCount(value)
         case .cost:
             // Below a cent, "$0.00" reads as "free" — show the extra digit.
@@ -254,7 +259,18 @@ struct SessionInfo: Identifiable, Equatable {
 
     /// Single source of truth for managed-ness presentation.
     var isManaged: Bool { managed }
-    var isOrchestrator: Bool { orchestrationRole == "orchestrator" }
+    /// A managed launch always has a stable task id.  Older launchers (and
+    /// sessions that registered during a launcher upgrade) can omit the role
+    /// on their first event, though.  Such a root task has no manager, so keep
+    /// its orchestrator badge rather than making the badge depend on one
+    /// optional display field arriving first.  A worker with an explicit
+    /// `worker` role and no manager remains an independent worker.
+    var isOrchestrator: Bool {
+        orchestrationRole == "orchestrator"
+            || (orchestrationRole == nil
+                && !(orchestratorTaskID ?? "").isEmpty
+                && managerTaskID == nil)
+    }
 
     /// Display precedence per PROTOCOL.md §3: name → label → kind.
     var title: String {

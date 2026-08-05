@@ -26,7 +26,11 @@
 #   PreCompact          → compacting (transient, greyed-out state — see
 #                         comment above the case below; the daemon reunites
 #                         it with its continuation instead of leaving a
-#                         zombie duplicate, PROTOCOL.md §3)
+#                         zombie duplicate, PROTOCOL.md §3). The event's
+#                         trigger and permission_mode are carried through so
+#                         plan-mode compactions are recorded separately.
+#   PostCompact         → thinking (the context is available again; later
+#                         lifecycle events will refine this normally)
 #
 # Claude Code's hook JSON includes "session_id" and "cwd" fields (see
 # https://code.claude.com/docs/en/hooks). When present, every set-state call
@@ -210,6 +214,8 @@ cwd=$(extract_field "cwd")
 transcript_path=$(extract_field "transcript_path")
 notification_type=$(extract_field "notification_type")
 [ -n "$notification_type" ] || notification_type=$(extract_field "notificationType")
+compaction_trigger=$(extract_field "trigger")
+permission_mode=$(extract_field "permission_mode")
 
 # Permission notifications can be transient when Claude's auto-approval
 # accepts the tool immediately. Delay only that flavor of approval state; an
@@ -366,11 +372,21 @@ case "$event" in
     # cumulative stats (turns/tool_calls/tokens/cost) rather than resetting
     # them (session.rs's cumulative-meta carry-forward). Either way, a
     # session stuck `compacting` for more than a few minutes — compaction
-    # was cancelled, or the continuation never appears — is demoted to a
-    # recoverable (not lost) tombstone by the daemon's own
-    # compacting-timeout sweep, independent of session_ttl_minutes.
+    # was cancelled, it remains visibly compacting until a later lifecycle
+    # event updates it.
+    #
+    # Newer Claude Code includes `permission_mode` here. Pass it along with
+    # the trigger so focalpointd can count this real compaction immediately,
+    # including the important `permission_mode=plan` case. Counting at
+    # PreCompact (rather than waiting for a new session id) also covers
+    # foreground compactions, which retain their session id.
     if [ -n "${session_id:-}" ]; then
       precompact_args=(compacting --session "$session_id" --kind claude --cwd "$cwd")
+      precompact_args+=(--meta "compaction_event=precompact")
+      [ -n "${compaction_trigger:-}" ] && \
+        precompact_args+=(--meta "compaction_trigger=$compaction_trigger")
+      [ -n "${permission_mode:-}" ] && \
+        precompact_args+=(--meta "compaction_permission_mode=$permission_mode")
       [ -n "${FOCALPOINT_RELAUNCH_ID:-}" ] && \
         precompact_args+=(--meta "relaunch_id=$FOCALPOINT_RELAUNCH_ID")
       [ -n "${FOCALPOINT_RESUME_SESSION_ID:-}" ] && \
@@ -378,6 +394,12 @@ case "$event" in
       "$FOCALPOINT" set-state "${precompact_args[@]}" 2>/dev/null || true
     fi
     exit 0
+    ;;
+  PostCompact)
+    # Claude Code emits this after both automatic and manual compactions.
+    # It clears the transient indicator even when no tool call or prompt
+    # follows immediately (a common plan-mode path).
+    state="thinking"
     ;;
   *)
     # Unknown event, ignore

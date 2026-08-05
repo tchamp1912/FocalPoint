@@ -88,10 +88,26 @@ silently continues if either the CLI or daemon is unavailable.
 - **The `done`/`error` state is immediately followed by `end-session`.** This
   frees the numbered key at process end, but a terminal state may be brief.
 
-Managed/launchable support such as `fpctl-agent launch --provider cursor` is a
-follow-up. It depends on launch infrastructure that currently lives on the
-unmerged orchestration branch; this adapter intentionally does not add a
-Cursor launch provider.
+## Managed launches
+
+`fpctl-agent launch --provider cursor` supports two Cursor CLI modes:
+
+```bash
+# Default: stream-tracked, non-interactive Cursor agent.
+fpctl-agent launch --provider cursor --cursor-mode headless --cwd /absolute/path \
+  --task 'Implement the authorized change.' --task-id cursor-task-1
+
+# Normal interactive Cursor terminal UI in FocalPoint's managed tmux pane.
+fpctl-agent launch --provider cursor --cursor-mode attachable --cwd /absolute/path \
+  --task 'Implement this with my approvals.' --task-id cursor-task-2
+```
+
+`headless` is the default and requires the installed wrapper named above. It
+uses `--print --output-format stream-json`, registers the real Cursor chat id,
+and propagates managed-launch/channel metadata. `attachable` invokes Cursor's
+normal chat mode in the terminal so a person can type follow-ups and approve
+commands; Cursor does not expose lifecycle events in that mode, therefore it
+cannot be tracked or joined to a FocalPoint channel.
 
 ## Verification
 

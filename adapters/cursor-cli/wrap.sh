@@ -73,6 +73,17 @@ load_field() {
 
 emit_state() {
   local state="$1" session cwd model label
+  # A Cursor headless stream is the first point at which Cursor gives us its
+  # real chat id. Carry the managed-launch identity through that registration
+  # so `fpctl-agent` channel and ownership operations work exactly like the
+  # Claude/Codex managed adapters.
+  local -a meta_args
+  meta_args=()
+  [ -n "${FOCALPOINT_MANAGED:-}" ] && meta_args+=(--meta "managed=${FOCALPOINT_MANAGED}")
+  [ -n "${FOCALPOINT_ORCHESTRATOR_TASK_ID:-}" ] && meta_args+=(--meta "orchestrator_task_id=${FOCALPOINT_ORCHESTRATOR_TASK_ID}")
+  [ -n "${FOCALPOINT_ORCHESTRATION_ROLE:-}" ] && meta_args+=(--meta "orchestration_role=${FOCALPOINT_ORCHESTRATION_ROLE}")
+  [ -n "${FOCALPOINT_MANAGER_TASK_ID:-}" ] && meta_args+=(--meta "manager_task_id=${FOCALPOINT_MANAGER_TASK_ID}")
+  [ -n "${FOCALPOINT_CHANNEL_ID:-}" ] && meta_args+=(--meta "channel_id=${FOCALPOINT_CHANNEL_ID}")
   session=$(load_field 1)
   cwd=$(load_field 2)
   model=$(load_field 3)
@@ -80,10 +91,10 @@ emit_state() {
   label="Cursor CLI · $(basename "${cwd:-.}")"
   if [ -n "$model" ]; then
     "$FOCALPOINT" set-state "$state" --session "$session" --kind cursor-cli \
-      --cwd "$cwd" --label "$label" --meta "model=$model" >/dev/null 2>&1 || true
+      --cwd "$cwd" --label "$label" --meta "model=$model" "${meta_args[@]}" >/dev/null 2>&1 || true
   else
     "$FOCALPOINT" set-state "$state" --session "$session" --kind cursor-cli \
-      --cwd "$cwd" --label "$label" >/dev/null 2>&1 || true
+      --cwd "$cwd" --label "$label" "${meta_args[@]}" >/dev/null 2>&1 || true
   fi
 }
 

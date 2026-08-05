@@ -34,3 +34,25 @@ for expected in 'set-state thinking' 'turns=1' 'tool_calls=1' 'tokens_in=100' 't
 done
 
 echo "PASS: PostToolUse publishes transcript stats"
+
+# Claude Code supplies permission_mode on PreCompact. Ensure plan-mode
+# compactions carry the lifecycle marker and mode into the daemon rather than
+# relying on a later, possibly same-id SessionStart/rekey to infer it.
+: > "$capture"
+printf '%s' '{"hook_event_name":"PreCompact","session_id":"session-1","cwd":"/tmp/project","trigger":"auto","permission_mode":"plan"}' \
+  | FOCALPOINT_PATH="$fake_focalpoint" FOCALPOINT_CAPTURE="$capture" "$hook"
+
+line=$(cat "$capture")
+for expected in 'set-state compacting' 'compaction_event=precompact' 'compaction_trigger=auto' 'compaction_permission_mode=plan'; do
+  [[ "$line" == *"$expected"* ]] || { echo "missing $expected in: $line" >&2; exit 1; }
+done
+
+echo "PASS: PreCompact carries plan-mode tracking metadata"
+
+: > "$capture"
+printf '%s' '{"hook_event_name":"PostCompact","session_id":"session-1","cwd":"/tmp/project"}' \
+  | FOCALPOINT_PATH="$fake_focalpoint" FOCALPOINT_CAPTURE="$capture" "$hook"
+[[ "$(cat "$capture")" == *'set-state thinking'* ]] \
+  || { echo "PostCompact did not clear compacting state" >&2; exit 1; }
+
+echo "PASS: PostCompact restores active state"

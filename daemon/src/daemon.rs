@@ -71,6 +71,7 @@ pub enum Request {
         provider: String,
         cwd: String,
         model: Option<String>,
+        cursor_mode: Option<String>,
         task: String,
         task_id: String,
         role: Option<String>,
@@ -610,6 +611,39 @@ fn orchestrated_provider_command(provider_bin: &Path, model: Option<&str>, promp
         .join(" ")
 }
 
+/// Cursor has two materially different CLI modes.  Interactive mode is kept
+/// attachable in the managed tmux pane; headless mode goes through the
+/// installed stream wrapper so FocalPoint receives lifecycle events.
+#[cfg(unix)]
+fn cursor_provider_command(
+    provider_bin: &Path,
+    model: Option<&str>,
+    prompt: &str,
+    mode: &str,
+    cursor_wrapper: Option<&Path>,
+) -> Result<String, String> {
+    let mut args: Vec<String> = if mode == "headless" {
+        let wrapper = cursor_wrapper.ok_or_else(|| {
+            "Cursor headless adapter is not installed: ~/.config/focalpoint/adapters/cursor-cli-focalpoint.sh".to_string()
+        })?;
+        vec![wrapper.display().to_string()]
+    } else {
+        let mut direct = vec![provider_bin.display().to_string()];
+        // Cursor's current primary entrypoint is `cursor agent`; retain the
+        // older dedicated `cursor-agent` binary when that is what we found.
+        if provider_bin.file_name().and_then(|name| name.to_str()) == Some("cursor") {
+            direct.push("agent".into());
+        }
+        direct
+    };
+    if let Some(model) = model {
+        args.push("--model".into());
+        args.push(model.into());
+    }
+    args.push(prompt.into());
+    Ok(args.iter().map(|arg| shell_quote(arg)).collect::<Vec<_>>().join(" "))
+}
+
 #[cfg(unix)]
 const DEFAULT_TERMINAL_BUNDLE_ID: &str = "com.apple.Terminal";
 
@@ -657,6 +691,7 @@ fn preferred_terminal_bundle_id() -> String {
 fn launch_orchestrated_session(
     provider: &str,
     model: Option<&str>,
+    cursor_mode: Option<&str>,
     cwd: &str,
     task: &str,
     task_id: &str,
@@ -666,8 +701,8 @@ fn launch_orchestrated_session(
 ) -> Result<serde_json::Value, String> {
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
-    if !matches!(provider, "claude" | "codex") {
-        return Err("provider must be 'claude' or 'codex'".into());
+    if !matches!(provider, "claude" | "codex" | "cursor") {
+        return Err("provider must be 'claude', 'codex', or 'cursor'".into());
     }
     if !valid_orchestrator_task_id(task_id) {
         return Err("task_id must be 1-64 letters, digits, dots, underscores, or dashes".into());
@@ -687,7 +722,18 @@ fn launch_orchestrated_session(
     }
     let cwd =
         std::fs::canonicalize(requested_cwd).map_err(|e| format!("cannot resolve cwd: {e}"))?;
-    let provider_bin = executable_named(provider)
+    if provider != "cursor" && cursor_mode.is_some() {
+        return Err("cursor_mode is only valid with provider 'cursor'".into());
+    }
+    let cursor_mode = cursor_mode.unwrap_or("headless");
+    if provider == "cursor" && !matches!(cursor_mode, "headless" | "attachable") {
+        return Err("cursor_mode must be 'headless' or 'attachable'".into());
+    }
+    let provider_bin = if provider == "cursor" {
+        executable_named("cursor-agent").or_else(|| executable_named("cursor"))
+    } else {
+        executable_named(provider)
+    }
         .ok_or_else(|| format!("{provider} is not installed"))?
         .canonicalize()
         .map_err(|e| format!("cannot resolve provider executable: {e}"))?;
@@ -738,6 +784,7 @@ fn launch_orchestrated_session(
     let receipt_value = serde_json::json!({
         "task_id": task_id,
         "provider": provider,
+        "cursor_mode": (provider == "cursor").then_some(cursor_mode),
         "model": model,
         "cwd": cwd,
         "terminal_bundle_id": terminal_bundle_id.clone(),
@@ -761,7 +808,19 @@ fn launch_orchestrated_session(
         return Err(format!("task id already has a pending launcher: {task_id}"));
     }
     let prompt = format!("Task:\n{task}");
-    let provider_command = orchestrated_provider_command(&provider_bin, model, &prompt);
+    let cursor_wrapper = home.join(".config/focalpoint/adapters/cursor-cli-focalpoint.sh");
+    let provider_command = if provider == "cursor" {
+        cursor_provider_command(
+            &provider_bin,
+            model,
+            &prompt,
+            cursor_mode,
+            (cursor_mode == "headless" && cursor_wrapper.is_file() && is_executable(&cursor_wrapper))
+                .then_some(cursor_wrapper.as_path()),
+        )?
+    } else {
+        orchestrated_provider_command(&provider_bin, model, &prompt)
+    };
     let manager_export = manager_task_id
         .map(|id| format!("export FOCALPOINT_MANAGER_TASK_ID={}\n", shell_quote(id)))
         .unwrap_or_default();
@@ -813,6 +872,7 @@ fn launch_orchestrated_session(
         "task_id": task_id,
         "provider": provider,
         "model": model,
+        "cursor_mode": (provider == "cursor").then_some(cursor_mode),
         "cwd": cwd,
         "role": role,
         "manager_task_id": manager_task_id,
@@ -2836,7 +2896,7 @@ fn dispatch(
             }
             Dispatch::Reply(Response::Json(serde_json::json!({ "ok": true, "session": selected })))
         }
-        Request::LaunchSession { provider, cwd, model, task, task_id, role, manager_task_id, channel_id } => {
+        Request::LaunchSession { provider, cwd, model, cursor_mode, task, task_id, role, manager_task_id, channel_id } => {
             let role = role.as_deref().unwrap_or("worker");
             if let Err(message) = validate_orchestration_relationship(
                 &shared.lock().unwrap().registry,
@@ -2855,6 +2915,7 @@ fn dispatch(
             match launch_orchestrated_session(
                 &provider,
                 model.as_deref(),
+                cursor_mode.as_deref(),
                 &cwd,
                 &task,
                 &task_id,
@@ -3153,6 +3214,48 @@ mod tests {
             ),
             "'/opt/homebrew/bin/codex' 'Task:\nInspect it.'"
         );
+    }
+
+    #[test]
+    fn cursor_launch_modes_use_the_right_entrypoint() {
+        assert_eq!(
+            cursor_provider_command(
+                Path::new("/opt/homebrew/bin/cursor-agent"),
+                Some("gpt-5"),
+                "Task:\nInspect it.",
+                "attachable",
+                None,
+            )
+            .unwrap(),
+            "'/opt/homebrew/bin/cursor-agent' '--model' 'gpt-5' 'Task:\nInspect it.'"
+        );
+        assert_eq!(
+            cursor_provider_command(
+                Path::new("/opt/homebrew/bin/cursor"),
+                None,
+                "Task:\nInspect it.",
+                "attachable",
+                None,
+            )
+            .unwrap(),
+            "'/opt/homebrew/bin/cursor' 'agent' 'Task:\nInspect it.'"
+        );
+        assert_eq!(
+            cursor_provider_command(
+                Path::new("/opt/homebrew/bin/cursor-agent"),
+                None,
+                "Task:\nInspect it.",
+                "headless",
+                Some(Path::new("/Users/me/.config/focalpoint/adapters/cursor-cli-focalpoint.sh")),
+            )
+            .unwrap(),
+            "'/Users/me/.config/focalpoint/adapters/cursor-cli-focalpoint.sh' 'Task:\nInspect it.'"
+        );
+        assert!(cursor_provider_command(
+            Path::new("/opt/homebrew/bin/cursor-agent"), None, "Task", "headless", None,
+        )
+        .unwrap_err()
+        .contains("headless adapter is not installed"));
     }
 
     #[test]

@@ -96,6 +96,12 @@ must be a live managed orchestrator. `--model` is optional. Before launch,
 consult `status` usage: missing usage is unknown, not free capacity; prefer
 comparable providers with available reported headroom.
 
+For Cursor, use `--cursor-mode headless` (the default) when FocalPoint
+telemetry and channels matter. It uses Cursor's stream wrapper. Use
+`--cursor-mode attachable` only when a human needs Cursor's interactive UI in
+the managed tmux pane; Cursor does not provide lifecycle events in that mode,
+so it is not a live FocalPoint session and cannot participate in channels.
+
 ## Guardrails
 
 - Never answer approvals, inject model-authored text, use raw socket commands,

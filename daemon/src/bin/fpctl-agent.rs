@@ -67,6 +67,10 @@ enum AgentCommand {
         /// Join the launched worker to this channel at its current tail.
         #[arg(long)]
         channel: Option<String>,
+        /// Cursor only: headless streams structured lifecycle events; attachable
+        /// opens Cursor's normal interactive terminal UI.
+        #[arg(long, value_enum, default_value_t = CursorLaunchMode::Headless)]
+        cursor_mode: CursorLaunchMode,
     },
     /// Pull-first mailbox operations for the current managed agent task.
     Channel { #[command(subcommand)] command: ChannelCommand },
@@ -105,6 +109,25 @@ enum ChannelCommand {
 enum Provider {
     Claude,
     Codex,
+    Cursor,
+}
+
+#[derive(Copy, Clone, Debug, Default, ValueEnum)]
+enum CursorLaunchMode {
+    /// Run Cursor in print/stream-json mode, tracked by FocalPoint's wrapper.
+    #[default]
+    Headless,
+    /// Open Cursor's interactive terminal UI in the managed tmux pane.
+    Attachable,
+}
+
+impl CursorLaunchMode {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Headless => "headless",
+            Self::Attachable => "attachable",
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Default, ValueEnum)]
@@ -128,6 +151,7 @@ impl Provider {
         match self {
             Self::Claude => "claude",
             Self::Codex => "codex",
+            Self::Cursor => "cursor",
         }
     }
 }
@@ -307,10 +331,12 @@ fn run(command: AgentCommand) -> Result<(), String> {
             role,
             manager_task_id,
             channel,
+            cursor_mode,
         } => request(json!({
             "cmd": "launch-session", "provider": provider.name(), "cwd": cwd,
             "model": model, "task": task, "task_id": task_id,
             "role": role.name(), "manager_task_id": manager_task_id, "channel_id": channel,
+            "cursor_mode": matches!(provider, Provider::Cursor).then(|| cursor_mode.name()),
         }))?,
         AgentCommand::Channel { command } => {
             let task_id = std::env::var("FOCALPOINT_ORCHESTRATOR_TASK_ID")
@@ -412,6 +438,22 @@ mod tests {
                 assert_eq!(model.as_deref(), Some("sonnet"));
                 assert!(matches!(role, OrchestrationRole::Worker));
                 assert!(manager_task_id.is_none());
+            }
+            _ => panic!("expected launch"),
+        }
+    }
+
+    #[test]
+    fn launch_accepts_cursor_mode() {
+        let parsed = Cli::try_parse_from([
+            "fpctl-agent", "launch", "--provider", "cursor", "--cursor-mode",
+            "attachable", "--cwd", "/tmp", "--task", "Inspect it.", "--task-id",
+            "cursor-1",
+        ])
+        .unwrap();
+        match parsed.command {
+            AgentCommand::Launch { cursor_mode, .. } => {
+                assert!(matches!(cursor_mode, CursorLaunchMode::Attachable));
             }
             _ => panic!("expected launch"),
         }

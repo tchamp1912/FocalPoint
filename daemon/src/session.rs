@@ -92,6 +92,10 @@ pub const METRICS: &[MetricSpec] = &[
     MetricSpec { key: "tokens_out", accumulation: Accumulation::CumulativeSegments },
     MetricSpec { key: "cost_usd", accumulation: Accumulation::CumulativeSegments },
     MetricSpec { key: "compactions", accumulation: Accumulation::CumulativeLineage },
+    // A subset of Claude's compactions. The daemon increments this from a
+    // trusted PreCompact lifecycle marker, so it is already a lineage total
+    // when a Claude continuation rekeys to a new session id.
+    MetricSpec { key: "plan_compactions", accumulation: Accumulation::CumulativeLineage },
 ];
 
 /// Look up `key`'s accumulation kind in `METRICS`, defaulting to `Gauge` for
@@ -143,6 +147,66 @@ fn apply_meta_update(
             continue;
         }
         meta.insert(k, v);
+    }
+}
+
+/// Consume Claude Code's explicit `PreCompact` marker and record the event
+/// on the session lineage. A normal foreground compaction keeps the same
+/// session id, so counting only at rekey time misses it. Conversely, a
+/// background compaction can rekey to a new id, where `last_compaction_event`
+/// tells the rekey path not to synthesize the same increment a second time.
+///
+/// `compaction_event` is transport-only and deliberately not exposed in
+/// session metadata; the useful, durable facts are the count, trigger, and
+/// permission mode of the latest compaction.
+fn record_claude_precompact(
+    session_meta: &mut Map<String, Value>,
+    incoming_meta: &mut Map<String, Value>,
+    state: State,
+    is_claude: bool,
+) {
+    let is_precompact = incoming_meta
+        .remove("compaction_event")
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .as_deref()
+        == Some("precompact");
+    if !is_precompact || state != State::Compacting || !is_claude {
+        return;
+    }
+
+    let compactions = session_meta
+        .get("compactions")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        + 1;
+    session_meta.insert("compactions".to_string(), Value::from(compactions));
+    session_meta.insert(
+        "last_compaction_event".to_string(),
+        Value::from("precompact"),
+    );
+
+    if let Some(trigger) = incoming_meta.get("compaction_trigger").cloned() {
+        session_meta.insert("last_compaction_trigger".to_string(), trigger);
+    }
+    let permission_mode = incoming_meta
+        .get("compaction_permission_mode")
+        .and_then(Value::as_str);
+    if let Some(permission_mode) = permission_mode {
+        session_meta.insert(
+            "last_compaction_permission_mode".to_string(),
+            Value::from(permission_mode),
+        );
+        if permission_mode == "plan" {
+            let plan_compactions = session_meta
+                .get("plan_compactions")
+                .and_then(Value::as_u64)
+                .unwrap_or(0)
+                + 1;
+            session_meta.insert(
+                "plan_compactions".to_string(),
+                Value::from(plan_compactions),
+            );
+        }
     }
 }
 
@@ -851,7 +915,9 @@ impl Registry {
                         .expect("matched relaunch exists");
                     self.relaunch_guards.remove(&source_id);
                     if let Some(mut sess) = self.sessions.remove(&source_id) {
-                        let incoming_meta = meta.unwrap_or_default();
+                        let mut incoming_meta = meta.unwrap_or_default();
+                        let is_claude = kind.as_deref() == Some("claude")
+                            || sess.kind.as_deref() == Some("claude");
                         sess.id = id.to_string();
                         sess.state = state;
                         if kind.is_some() {
@@ -860,6 +926,12 @@ impl Registry {
                         if label.is_some() {
                             sess.label = label;
                         }
+                        record_claude_precompact(
+                            &mut sess.meta,
+                            &mut incoming_meta,
+                            state,
+                            is_claude,
+                        );
                         apply_meta_update(&mut sess.meta, &sess.carry, incoming_meta);
                         sess.last_update = now;
                         if source_id != id {
@@ -893,6 +965,8 @@ impl Registry {
                 }
                 if let Some(sess) = self.sessions.get_mut(id) {
                     // Update + merge.
+                    let is_claude = kind.as_deref() == Some("claude")
+                        || sess.kind.as_deref() == Some("claude");
                     sess.state = state;
                     if kind.is_some() {
                         sess.kind = kind;
@@ -900,7 +974,8 @@ impl Registry {
                     if label.is_some() {
                         sess.label = label;
                     }
-                    if let Some(m) = meta {
+                    if let Some(mut m) = meta {
+                        record_claude_precompact(&mut sess.meta, &mut m, state, is_claude);
                         apply_meta_update(&mut sess.meta, &sess.carry, m);
                     }
                     sess.last_update = now;
@@ -927,7 +1002,7 @@ impl Registry {
                     // matches on a pooled set of signals instead — see its
                     // own doc comment for why pid/tty/cwd/label are each in
                     // the pool and why ≥2 must agree.
-                    let incoming_meta = meta.unwrap_or_default();
+                    let mut incoming_meta = meta.unwrap_or_default();
                     let incoming_cwd = incoming_meta
                         .get("cwd")
                         .and_then(|v| v.as_str())
@@ -1041,7 +1116,20 @@ impl Registry {
                             // the adapter's value as-is — never stack a
                             // daemon increment on top of an adapter's own
                             // recount.
-                            if !incoming_meta.contains_key("compactions") {
+                            // Suppress only the rekey directly following the
+                            // PreCompact marker. A session that subsequently
+                            // resumed normal work may compact again even if a
+                            // hook was lost, and must not be suppressed by an
+                            // old marker retained for display/diagnostics.
+                            let already_recorded_at_precompact = sess.state == State::Compacting
+                                && sess
+                                    .meta
+                                    .get("last_compaction_event")
+                                    .and_then(Value::as_str)
+                                    == Some("precompact");
+                            if !incoming_meta.contains_key("compactions")
+                                && !already_recorded_at_precompact
+                            {
                                 let compactions = sess
                                     .meta
                                     .get("compactions")
@@ -1053,6 +1141,8 @@ impl Registry {
                             }
                         }
 
+                        let is_claude = kind.as_deref() == Some("claude")
+                            || sess.kind.as_deref() == Some("claude");
                         sess.id = id.to_string();
                         sess.state = state;
                         if kind.is_some() {
@@ -1061,6 +1151,12 @@ impl Registry {
                         if label.is_some() {
                             sess.label = label;
                         }
+                        record_claude_precompact(
+                            &mut sess.meta,
+                            &mut incoming_meta,
+                            state,
+                            is_claude,
+                        );
                         apply_meta_update(&mut sess.meta, &sess.carry, incoming_meta);
                         sess.last_update = now;
                         effects.push(Effect::SessionRekeyed {
@@ -1080,12 +1176,20 @@ impl Registry {
                     } else {
                         // Register.
                         let slot = self.lowest_free_slot();
+                        let mut session_meta = Map::new();
+                        record_claude_precompact(
+                            &mut session_meta,
+                            &mut incoming_meta,
+                            state,
+                            kind.as_deref() == Some("claude"),
+                        );
+                        apply_meta_update(&mut session_meta, &Map::new(), incoming_meta);
                         let sess = Session {
                             id: id.to_string(),
                             kind,
                             label,
                             name: None,
-                            meta: incoming_meta,
+                            meta: session_meta,
                             carry: Map::new(),
                             slot,
                             state,
@@ -2169,6 +2273,69 @@ mod tests {
 
         let s = r.session_by_slot(1).expect("slot 1 occupied");
         assert_eq!(s.meta.get("compactions"), Some(&Value::from(1u64)));
+    }
+
+    #[test]
+    fn claude_plan_precompact_is_recorded_without_a_rekey_or_double_count() {
+        // Claude foreground compaction (including from plan mode) keeps the
+        // same session id. PreCompact must therefore record it immediately;
+        // when a background continuation does rekey, that already-recorded
+        // event must not become a second generic compaction.
+        let mut r = Registry::new(None);
+        let now = t0();
+        r.set_state(
+            Some("old"),
+            State::Running,
+            Some("claude".into()),
+            Some("Plan the migration".into()),
+            Some(meta("/repo", "/dev/ttys004")),
+            now,
+        );
+
+        let mut precompact = meta("/repo", "/dev/ttys004");
+        precompact.insert("compaction_event".into(), Value::from("precompact"));
+        precompact.insert("compaction_trigger".into(), Value::from("auto"));
+        precompact.insert(
+            "compaction_permission_mode".into(),
+            Value::from("plan"),
+        );
+        r.set_state(
+            Some("old"),
+            State::Compacting,
+            Some("claude".into()),
+            None,
+            Some(precompact),
+            now,
+        );
+        let s = r.session_by_slot(1).unwrap();
+        assert_eq!(s.meta.get("compactions"), Some(&Value::from(1u64)));
+        assert_eq!(s.meta.get("plan_compactions"), Some(&Value::from(1u64)));
+        assert_eq!(s.meta.get("last_compaction_trigger"), Some(&Value::from("auto")));
+        assert_eq!(
+            s.meta.get("last_compaction_permission_mode"),
+            Some(&Value::from("plan"))
+        );
+        assert!(
+            s.meta.get("compaction_event").is_none(),
+            "the transport marker must not leak into displayed metadata"
+        );
+
+        let later = now.checked_add(Duration::from_secs(1)).unwrap();
+        let effects = r.set_state(
+            Some("new"),
+            State::Thinking,
+            Some("claude".into()),
+            Some("Plan the migration".into()),
+            Some(meta("/repo", "/dev/ttys004")),
+            later,
+        );
+        assert!(effects.contains(&Effect::SessionRekeyed {
+            old_id: "old".into(),
+            new_id: "new".into(),
+        }));
+        let s = r.session_by_slot(1).unwrap();
+        assert_eq!(s.meta.get("compactions"), Some(&Value::from(1u64)));
+        assert_eq!(s.meta.get("plan_compactions"), Some(&Value::from(1u64)));
     }
 
     #[test]

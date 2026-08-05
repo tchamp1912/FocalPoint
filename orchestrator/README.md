@@ -65,7 +65,7 @@ fpctl-agent launch \
   --task-id stable-task-id
 ```
 
-It opens the literal task in Claude or Codex at that exact directory and tags
+It opens the literal task in Claude, Codex, or Cursor at that exact directory and tags
 the resulting session for correlation. The visible managed session opens in
 the terminal selected under FocalPoint Settings; changing the preference takes
 effect on the next launch. It does not create worktrees, install
@@ -75,6 +75,22 @@ Those decisions belong to the supervising orchestrator before `launch`.
 
 `--model` accepts a provider model id or alias and is optional; omitting it
 uses the provider's configured default.
+
+Cursor adds a launch-mode choice. The default is `headless`, which invokes the
+installed Cursor stream wrapper and is therefore visible to FocalPoint with
+lifecycle updates. Use `--cursor-mode attachable` to open Cursor's normal
+interactive terminal UI in the managed tmux pane, where prompts and command
+approvals can be handled directly. Cursor does not publish lifecycle events in
+interactive mode, so attachable launches are intentionally not registered as
+live FocalPoint sessions; choose headless when session telemetry or channels
+are required.
+
+```sh
+fpctl-agent launch --provider cursor --cursor-mode headless --cwd /absolute/path \
+  --task 'Run the authorized task.' --task-id cursor-headless-1
+fpctl-agent launch --provider cursor --cursor-mode attachable --cwd /absolute/path \
+  --task 'Run the authorized task interactively.' --task-id cursor-interactive-1
+```
 
 The native `fpctl-agent` controller communicates with `focalpointd` over the
 same Unix-socket JSON API used by the app and adapters. Its guarded interface

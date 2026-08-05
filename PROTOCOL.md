@@ -118,6 +118,8 @@ Requests:
 {"cmd": "launch-session", "provider": "codex", "model": "gpt-5.6-sol", "cwd": "/prepared/path",
  "task": "Implement and test the assigned task.", "task_id": "stable-task-id",
  "role": "worker", "manager_task_id": "project-orchestrator", "channel_id": "ch-1"}
+{"cmd": "launch-session", "provider": "cursor", "cursor_mode": "headless", "cwd": "/prepared/path",
+ "task": "Implement and test the assigned task.", "task_id": "cursor-task"}
 {"cmd": "channel-create", "task_id": "project-orchestrator"}
 {"cmd": "channel-post", "task_id": "worker-task", "channel": "ch-1", "kind": "blocker", "body": "Need a decision.", "to": "channel"}
 {"cmd": "channel-read", "task_id": "worker-task", "channel": "ch-1", "since": 12, "tail": 20}
@@ -361,7 +363,7 @@ then approval, then waiting, then slot and id. `focus-next-attention` and
 sessions and reply with `{"ok":true,"session":"id"}` or `session:null`.
 
 `launch-session` is the daemon's narrow managed-process primitive. It accepts
-only `claude` or `codex`, an optional provider model id/alias, an existing
+`claude`, `codex`, or `cursor`, an optional provider model id/alias, an existing
 absolute working directory, a literal
 non-empty task of at most 16384 UTF-8 bytes, and a stable task id of 1–64
 letters, digits, dots, underscores, or dashes. The daemon rejects duplicate
@@ -372,6 +374,12 @@ daemon restart; a missing or invalid preference falls back to Terminal. It
 does not create worktrees, prepare environments, install
 dependencies, decompose work, answer approvals, or accept arbitrary shell
 commands.
+
+For Cursor, optional `cursor_mode` is `headless` (the default) or `attachable`.
+Headless uses the installed stream wrapper and is registered/tracked normally.
+Attachable opens Cursor's interactive terminal UI in managed tmux; Cursor does
+not emit an interactive lifecycle feed, so that mode is not a live FocalPoint
+session and cannot use channels.
 
 The optional `role` is `worker` (the default) or `orchestrator`. A worker may
 name a live managed orchestrator's stable task id in `manager_task_id`; an
@@ -527,11 +535,14 @@ focalpoint usage [--json]
 values that parse as a number are stored numerically, everything else as a
 string. Well-known numeric keys the menu bar app renders as optional stat
 badges next to a session's elapsed time: `tokens_in`, `tokens_out`,
-`tool_calls`, `turns`, `cost_usd`, `compactions`. Any adapter may send some,
+`tool_calls`, `turns`, `cost_usd`, `compactions`, `plan_compactions`. Any adapter may send some,
 all, or none of them — the UI simply omits a badge whose key is absent for a
 given session. `compactions` counts how many times a conversation's context
-has been compacted (Claude Code: daemon-side on rekey/recovery; Codex:
+has been compacted (Claude Code: daemon-side on PreCompact/rekey/recovery; Codex:
 adapter-side transcript scan — same cumulative key, different source).
+`plan_compactions` is the Claude Code subset whose `PreCompact` event reported
+`permission_mode=plan`; it is counted immediately, including foreground
+compactions that keep the same session id.
 `cost_usd` is a real running total in US dollars (not an estimate), rendered
 as a `$0.42`-style badge; the Claude Code status-line hook is the only
 adapter that reports it today (via `set-meta`, since cost arrives on the
