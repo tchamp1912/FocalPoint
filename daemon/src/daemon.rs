@@ -1428,8 +1428,10 @@ fn styles_json(table: &StyleTable) -> StyleMap {
     StyleMap(styles)
 }
 
-/// The full set of device commands to (re)send on connect: all six styles,
-/// the aggregate `SET_STATE`, then each occupied slot's `SET_KEY_STATE`.
+/// The full set of device commands to (re)send on connect: all styles, the
+/// aggregate `SET_STATE`, then all twelve slot states. Sending explicit empty
+/// values is essential: firmware RAM survives a daemon reconnect, so replaying
+/// occupied slots alone leaves any previously occupied key illuminated.
 #[cfg(unix)]
 fn replay_state_cmds(shared: &Mutex<Shared>) -> Vec<HostCmd> {
     let s = shared.lock().unwrap();
@@ -1438,10 +1440,11 @@ fn replay_state_cmds(shared: &Mutex<Shared>) -> Vec<HostCmd> {
         cmds.push(style.to_host_cmd(state));
     }
     cmds.push(HostCmd::SetState(s.registry.aggregate()));
-    for (key, state) in s.registry.slot_states() {
+    let slot_states: HashMap<u8, State> = s.registry.slot_states().into_iter().collect();
+    for key in 1..=12 {
         cmds.push(HostCmd::SetKeyState {
             key,
-            state: Some(state),
+            state: slot_states.get(&key).copied(),
         });
     }
     cmds.push(HostCmd::SetNavState(s.registry.next_attention_state()));
@@ -1463,6 +1466,7 @@ fn apply_effects(
     for effect in effects {
         match effect {
             Effect::SlotCleared { slot } => {
+                eprintln!("[session] clear vacated slot={slot}");
                 let _ = host_tx.send(HostCmd::SetKeyState {
                     key: slot,
                     state: None,
@@ -2027,10 +2031,21 @@ fn run_hid_device(mut host_rx: tokio::sync::mpsc::UnboundedReceiver<HostCmd>, ct
                 ctx.shared.lock().unwrap().device_present = true;
 
                 // On connect: attach as host, then replay the full remembered
-                // state — all six styles, the aggregate, and every occupied
-                // slot.
+                // state — all styles, the aggregate, and all twelve slots
+                // (including explicit empty values).
                 let _ = hid_write(&device, HostCmd::SetHostMode(true).encode());
-                for cmd in replay_state_cmds(&ctx.shared) {
+                let replay = replay_state_cmds(&ctx.shared);
+                let occupied = replay
+                    .iter()
+                    .filter(|cmd| matches!(cmd, HostCmd::SetKeyState { state: Some(_), .. }))
+                    .count();
+                eprintln!(
+                    "[device] replaying {} commands; key_slots=12 occupied={} empty={}",
+                    replay.len(),
+                    occupied,
+                    12 - occupied
+                );
+                for cmd in replay {
                     let _ = hid_write(&device, cmd.encode());
                 }
                 let _ = hid_write(&device, HostCmd::Ping.encode());
@@ -2119,7 +2134,14 @@ fn hid_write(
     let mut framed = [0u8; crate::protocol::REPORT_LEN + 1];
     framed[1..].copy_from_slice(&report);
     match device.write(&framed) {
-        Ok(_) => Ok(()),
+        Ok(written) if written == framed.len() => Ok(()),
+        Ok(written) => {
+            eprintln!(
+                "[device] short write: wrote {written} of {} report bytes",
+                framed.len()
+            );
+            Err(())
+        }
         Err(e) => {
             eprintln!("[device] write error: {e}");
             Err(())
@@ -2140,7 +2162,7 @@ fn run_mock_device(host_rx: tokio::sync::mpsc::UnboundedReceiver<HostCmd>, ctx: 
     eprintln!("[mock]   joy north        (joystick gesture: north|east|south|west|press)");
 
     // Emulate a device connect: replay the full remembered state (host mode,
-    // all six styles, aggregate, and any occupied slots).
+    // all styles, aggregate, and all twelve slots including explicit empties).
     log_host_cmd(&HostCmd::SetHostMode(true));
     for cmd in replay_state_cmds(&ctx.shared) {
         log_host_cmd(&cmd);
@@ -3291,6 +3313,49 @@ mod tests {
         assert!(replay_state_cmds(&shared)
             .iter()
             .any(|cmd| matches!(cmd, HostCmd::SetNavState(Some(State::Waiting)))));
+    }
+
+    #[test]
+    fn replay_explicitly_clears_every_unoccupied_key() {
+        let mut registry = Registry::new(None);
+        registry.set_state(
+            Some("only-session"),
+            State::Running,
+            None,
+            None,
+            None,
+            Instant::now(),
+        );
+        let shared = Mutex::new(Shared {
+            registry,
+            usage: HashMap::new(),
+            styles: StyleTable::default(),
+            channels: Channels::default(),
+            channel_wake_last: HashMap::new(),
+            device_present: false,
+        });
+
+        let key_cmds: Vec<HostCmd> = replay_state_cmds(&shared)
+            .into_iter()
+            .filter(|cmd| matches!(cmd, HostCmd::SetKeyState { .. }))
+            .collect();
+        assert_eq!(key_cmds.len(), 12);
+        assert_eq!(
+            key_cmds[0],
+            HostCmd::SetKeyState {
+                key: 1,
+                state: Some(State::Running),
+            }
+        );
+        for (index, cmd) in key_cmds.iter().enumerate().skip(1) {
+            assert_eq!(
+                *cmd,
+                HostCmd::SetKeyState {
+                    key: index as u8 + 1,
+                    state: None,
+                }
+            );
+        }
     }
 
     #[test]

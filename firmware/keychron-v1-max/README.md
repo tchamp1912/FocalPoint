@@ -131,7 +131,8 @@ attaches.
 **`SET_LED (0x02)` — implemented (minimal).** `index` is interpreted as a
 user-key number `1–12` (same numbering as `SET_KEY_STATE`) and paints that
 number-row key; `index == 0xFF` paints all twelve. The override persists until
-the next `SET_STATE`, per the protocol note. Indices outside `1–12`/`0xFF` are
+the next `SET_STATE`, per the protocol note, or until that key receives an
+empty `SET_KEY_STATE` lifecycle clear. Indices outside `1–12`/`0xFF` are
 ignored.
 
 ### VIA is disabled (trade-off)

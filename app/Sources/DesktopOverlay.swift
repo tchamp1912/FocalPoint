@@ -375,15 +375,16 @@ struct DesktopWidgetView: View {
         }
     }
 
-    // MARK: Horizontal layout (one-line ticker strip, for top/bottom screen edges)
+    // MARK: Horizontal layout (macropad key strip, for top/bottom screen edges)
     //
-    // The strip is NOT the vertical card turned sideways: it's a single-row
-    // ticker. One-line session chips (slot · state · name · elapsed), the
-    // aggregate as a compact status segment on the left (doubling as the
-    // drag handle), parked sessions dimmed behind a tray glyph, and account
-    // usage compressed to a trailing summary line. Stats badges and the
-    // model badge stay exclusive to the roomier vertical rows (and the
-    // dropdown).
+    // The strip renders the pad itself: one keycap per active session, lit
+    // with its state color, slot number inside — parked sessions trail as
+    // small dots behind a hairline. No text, no meters, no usage on the
+    // bar: name/state/elapsed live in each key's hover tooltip, the
+    // aggregate in the mark's. Click a key to focus its session;
+    // right-click for the full session menu (rename opens a popover — the
+    // strip has no text field of its own). The whole bar drags; the corner
+    // grip still pins a width per orientation.
 
     private var horizontalBody: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -396,222 +397,150 @@ struct DesktopWidgetView: View {
                 .padding(.horizontal, 7)
                 .padding(.top, 5)
             }
-            HStack(spacing: 0) {
-                statusSegment
-                Divider().padding(.vertical, 5)
+            HStack(spacing: 7) {
+                FocalPointMark(color: model.connected ? model.aggregateStyle.color : Color.red.opacity(0.85),
+                               assetName: "focalpoint-mark-widget")
+                    .frame(width: 18, height: 12)
+                    .help(model.connected ? "FocalPoint · \(model.aggregate.display)" : "FocalPoint · Offline")
                 horizontalSessionsArea
-                usageTail
             }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+            .background(WindowDragHandle())
         }
-        .padding(.vertical, 5)
         .frame(width: widthOverride, alignment: .leading)
-    }
-
-    /// Compact left segment — brand mark + aggregate state, no title text
-    /// (the mark is the identity; strip width is for sessions). Doubles as
-    /// the drag handle, same WindowDragHandle mechanism as the vertical
-    /// header bar.
-    private var statusSegment: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.tertiary)
-            FocalPointMark(color: model.aggregateStyle.color, assetName: "focalpoint-mark-widget")
-                .frame(width: 20, height: 13)
-            Text(model.connected ? model.aggregate.display : "Offline")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(model.connected ? (model.aggregate == .idle ? Color.secondary : Color.primary) : Color.red.opacity(0.85))
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 4)
-        .contentShape(Rectangle())
-        .background(WindowDragHandle())
     }
 
     @ViewBuilder
     private var horizontalSessionsArea: some View {
         if model.sessions.isEmpty {
-            // Spacers are zero-width while auto-sized but center the empty
-            // state across a user-pinned width.
-            Spacer(minLength: 8)
-            emptyState
-            Spacer(minLength: 8)
+            // The mark stands alone; auto-hide usually covers this case.
+            EmptyView()
         } else if widthOverride != nil {
-            ScrollView(.horizontal) { chipStrip }
+            ScrollView(.horizontal) { keyStrip }
         } else {
             // Auto-sized width grows with the session count; the settings
             // copy points at the grip as the way to cap it.
-            chipStrip
+            keyStrip
         }
     }
 
-    private var chipStrip: some View {
-        HStack(spacing: 3) {
+    private var keyStrip: some View {
+        HStack(spacing: 5) {
             ForEach(model.activeSessions) { s in
-                sessionChipButton(s)
+                sessionKeyButton(s)
             }
-            // Parked sessions trail the active chips, dimmed, behind a tray
-            // glyph — same backlog semantics as the vertical section.
+            // Parked sessions trail the pad, dimmed, behind a hairline —
+            // same backlog semantics as the vertical section.
             if !model.backlogSessions.isEmpty {
-                HStack(spacing: 3) {
-                    Image(systemName: "tray")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                    Text("\(model.backlogSessions.count)")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                }
-                .padding(.horizontal, 4)
+                Rectangle()
+                    .fill(Color.primary.opacity(0.18))
+                    .frame(width: 1, height: 12)
+                    .padding(.horizontal, 3)
                 ForEach(model.backlogSessions) { s in
-                    sessionChipButton(s)
+                    sessionKeyButton(s)
                 }
-                .opacity(0.65)
+                .opacity(0.55)
             }
         }
-        .padding(.horizontal, 4)
-    }
-
-    /// Trailing one-line account-usage summary: only the numbers survive
-    /// here ("Claude 5h 42% · Wk 18%"); the full meter bars and reset
-    /// times stay in the vertical layout and the dropdown.
-    @ViewBuilder
-    private var usageTail: some View {
-        if model.showUsage, !model.usage.isEmpty {
-            Divider().padding(.vertical, 5)
-            HStack(spacing: 10) {
-                ForEach(model.usage) { u in
-                    Text(usageTailText(u))
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .fixedSize()
-                }
-            }
-            .padding(.horizontal, 8)
-            .help("Account usage — percentage of each window used. Meter bars and reset times are in the dropdown and the vertical widget.")
-        }
-    }
-
-    private func usageTailText(_ u: ProviderUsage) -> String {
-        var parts: [String] = []
-        if let p = u.fiveHourUsed { parts.append("5h \(Int(p.rounded()))%") }
-        if let p = u.sevenDayUsed { parts.append("Wk \(Int(p.rounded()))%") }
-        if let p = u.primaryUsed { parts.append("\(u.primaryMeterLabel) \(Int(p.rounded()))%") }
-        if let p = u.secondaryUsed { parts.append("\(u.secondaryMeterLabel) \(Int(p.rounded()))%") }
-        if let spend = model.trackedAPISpend(for: u) {
-            parts.append("$\(spend.formatted(.number.precision(.fractionLength(2))))")
-        }
-        return parts.isEmpty ? u.displayName : "\(u.displayName) \(parts.joined(separator: " · "))"
     }
 
     @ViewBuilder
-    private func sessionChipButton(_ s: SessionInfo) -> some View {
-        // Same rename-outside-Button, attention, focus-outline, hover and
-        // context-menu treatment as sessionRowButton above.
+    private func sessionKeyButton(_ s: SessionInfo) -> some View {
         Group {
             if renamingID == s.id {
-                sessionChip(s)
+                // No in-place field on a text-free strip — rename happens in
+                // the popover below; the key stays put under it.
+                sessionKeyCap(s)
             } else {
                 Button { model.focusSession(s) } label: {
-                    sessionChip(s)
+                    sessionKeyCap(s)
                 }
                 .buttonStyle(.plain)
                 .disabled(s.connected && s.slot == nil && !s.backlogged)
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(attentionColor(for: s).opacity(
-                    shouldHighlightAttention(s) ? 0.22 : 0
-                ))
-        )
         .overlay(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .strokeBorder(Color.accentColor, lineWidth: 1.5)
                 .shadow(color: Color.accentColor.opacity(0.8), radius: 3)
+                .frame(width: s.backlogged ? 15 : 22, height: s.backlogged ? 15 : 22)
                 .opacity(s.id == model.focusedSessionID ? 1 : 0)
         )
         .hoverHighlight(cornerRadius: 6)
+        .help(keyTooltip(s))
         .contextMenu { sessionContextMenu(s) }
+        .popover(isPresented: renameBinding(for: s), arrowEdge: .bottom) {
+            SessionTitleField(session: s, model: model,
+                              editingID: $renamingID, font: .system(size: 12))
+                .frame(width: 170)
+                .padding(10)
+        }
     }
 
-    /// One-line ticker chip: slot · state · name · elapsed — everything a
-    /// glance needs, nothing else. The context meter survives only as a
-    /// hairline under the chip (and still yields to the compact-rows
-    /// toggle); stats and model badges stay exclusive to vertical rows.
-    /// Same stale/compacting/dimmed and budget-warning heuristics as
-    /// sessionRow — see that function and MenuContentView for the rationale.
-    private func sessionChip(_ s: SessionInfo) -> some View {
+    /// A single macropad key: a 16pt keycap filled with the session's state
+    /// color, slot number inside (state glyph when slotless). Backlogged
+    /// sessions shrink to a plain dot — off the pad. Needs-attention keys
+    /// glow in their state color; stale/compacting/disconnected/reopening
+    /// keys dim. Same heuristics as sessionRow — see that function and
+    /// MenuContentView for the rationale.
+    private func sessionKeyCap(_ s: SessionInfo) -> some View {
         let overBudget = model.isOverBudget(s)
         let stale = model.isStale(s)
         let displayState: AgentState = stale ? .idle : s.state
         let dimmed = stale || s.state == .compacting || !s.connected || s.pendingReopen
-        let swatchColor = overBudget ? budgetWarningColor : (model.styles[displayState] ?? defaultStyle(displayState)).color
-        let meterFraction = model.compactWidgetRows ? nil
-            : s.contextFraction(kindOverride: model.contextWindowOverride(for: s.kind))
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 5) {
-                Text(s.slot.map(String.init) ?? "—")
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                if s.pendingReopen {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 8)).foregroundStyle(.secondary)
-                        .help("Reopening — waiting for the resumed agent to reconnect")
-                } else if !s.connected {
-                    FocalPointMark(color: .secondary, assetName: "focalpoint-disconnected")
-                        .frame(width: 10, height: 10)
-                        .help("Disconnected — no update in a while. Click to try to reopen its terminal, or dismiss it.")
+        let keyColor = overBudget ? budgetWarningColor
+            : (model.styles[displayState] ?? defaultStyle(displayState)).color
+        return ZStack {
+            if s.backlogged {
+                Circle().fill(keyColor)
+            } else {
+                RoundedRectangle(cornerRadius: 4.5, style: .continuous).fill(keyColor)
+                if let slot = s.slot {
+                    Text(String(slot))
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
                 } else {
-                    StateSwatch(state: displayState, color: swatchColor, size: 8)
-                        .help(stale ? "No update in a while — shown as idle since the agent may have died without a clean shutdown"
-                              : s.state == .compacting ? "Compacting — momentarily between session identities, not agent activity"
-                              : "")
+                    Image(systemName: displayState.symbolName)
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.white)
                 }
-                SessionTitleField(session: s, model: model,
-                                  editingID: $renamingID, font: .system(size: 11))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: 120, alignment: .leading)
-                orchestrationBadge(s)
-                if s.isManaged {
-                    Image(systemName: "terminal.fill")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(Color.accentColor.opacity(0.12)))
-                        .fixedSize()
-                        .help("Managed session — FocalPoint can route attention and input to it precisely in the background")
-                }
-                if overBudget {
-                    Image(systemName: "exclamationmark.circle.fill")
-                        .font(.system(size: 9))
-                        .foregroundStyle(budgetWarningColor)
-                        .help("Over the configured token/cost budget")
-                }
-                Text(elapsedString(since: s.lastChange))
-                    .font(.system(size: 9)).foregroundStyle(overBudget ? budgetWarningColor : .secondary)
-                    .id(model.tick)
-            }
-            .padding(.horizontal, 7)
-            .padding(.top, 4)
-            .padding(.bottom, meterFraction != nil ? 2 : 4)
-            if let fraction = meterFraction {
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.primary.opacity(0.08))
-                    GeometryReader { geo in
-                        Capsule().fill(swatchColor.opacity(0.7))
-                            .frame(width: max(2, geo.size.width * fraction))
-                    }
-                }
-                .frame(height: 2.5)
-                .padding(.horizontal, 7)
-                .padding(.bottom, 3)
             }
         }
-        .contentShape(Rectangle())
-        .opacity(dimmed ? 0.55 : 1)
+        .frame(width: s.backlogged ? 9 : 16, height: s.backlogged ? 9 : 16)
+        .shadow(color: keyColor.opacity(shouldHighlightAttention(s) ? 0.85 : 0), radius: 3.5)
+        .opacity(dimmed ? 0.45 : 1)
+        .padding(.vertical, 3)   // even strip height across key sizes
+    }
+
+    private func renameBinding(for s: SessionInfo) -> Binding<Bool> {
+        Binding(get: { renamingID == s.id }, set: { if !$0 { renamingID = nil } })
+    }
+
+    /// Everything the old chips showed inline, moved to the hover tooltip:
+    /// name, state with the stale/disconnected caveats, elapsed, and the
+    /// managed/orchestration/budget flags.
+    private func keyTooltip(_ s: SessionInfo) -> String {
+        var lines = [s.title]
+        let status: String
+        if s.pendingReopen {
+            status = "Reopening"
+        } else if !s.connected {
+            status = "Disconnected"
+        } else if model.isStale(s) {
+            status = "\(AgentState.idle.display) — no update in a while"
+        } else {
+            status = s.state.display
+        }
+        lines.append("\(status) · \(elapsedString(since: s.lastChange))")
+        if let n = model.orchestratorNumber(for: s) {
+            lines.append("Orchestrator O\(n) · \(model.managedSessionCount(for: s)) workers")
+        }
+        if s.isManaged { lines.append("Managed session") }
+        if model.isOverBudget(s) { lines.append("Over the configured token/cost budget") }
+        if s.backlogged { lines.append("In backlog — right-click for Move to Active") }
+        return lines.joined(separator: "\n")
     }
 
     private func usageRow(_ provider: String, label: String, percent: Double, reset: Date?) -> some View {

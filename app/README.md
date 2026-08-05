@@ -26,12 +26,12 @@ edit the per-state render styles — all over the `focalpointd` unix-socket prot
   behavior toggles.
 - Floating **desktop widget**: a draggable HUD mirroring the aggregate state
   and sessions, with clickable rows (click focuses the session). Two
-  orientations — a vertical card or a one-line horizontal **ticker strip**
-  of session chips (slot · state · name · elapsed, a hairline context
-  meter, usage as a trailing summary) — selectable in Settings → Behavior →
-  Orientation or the
-  widget's right-click menu. Drag the bottom-right corner grip to set its
-  width (height always fits the content; horizontal chips scroll when they
+  orientations — a vertical card or a minimal horizontal **key strip**
+  rendering the pad itself (one state-lit keycap per session, slot number
+  inside, name/state/elapsed on hover) — selectable in Settings → Behavior →
+  Orientation or the widget's right-click menu. Drag the bottom-right corner
+  grip to set its
+  width (height always fits the content; horizontal keys scroll when they
   overflow a pinned width); widths are remembered per orientation, and
   *Reset Widget Width* (context menu or Settings) returns to automatic
   sizing. Content changes re-anchor the window on the screen edge it's

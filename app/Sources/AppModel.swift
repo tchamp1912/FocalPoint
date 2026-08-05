@@ -26,9 +26,9 @@ enum DesktopWidgetMode: String, CaseIterable, Identifiable {
 }
 
 /// Layout direction for the desktop widget. Vertical is the original tall
-/// card (header on top, sessions stacked); horizontal is a short wide strip
-/// (header segment on the left, compact session cells in a row) that sits
-/// naturally along a screen's top/bottom edge.
+/// card (header on top, sessions stacked); horizontal is a minimal strip
+/// rendering the pad itself — one state-lit keycap per session, details on
+/// hover — that sits naturally along a screen's top/bottom edge.
 enum DesktopWidgetOrientation: String, CaseIterable, Identifiable {
     case vertical
     case horizontal

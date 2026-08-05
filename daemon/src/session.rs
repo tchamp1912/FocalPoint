@@ -957,8 +957,27 @@ impl Registry {
             .filter_map(|reservation| reservation.slot)
             .collect();
         let mut available = (1..=12).filter(|slot| !reserved.contains(slot));
-        for (id, old_slot) in ordered {
-            let new_slot = available.next();
+        let assignments: Vec<(String, Option<u8>, Option<u8>)> = ordered
+            .into_iter()
+            .map(|(id, old_slot)| (id, old_slot, available.next()))
+            .collect();
+
+        // Moving sessions downward repaints their destinations, but nothing
+        // implicitly erases their old source LEDs. Clear only source slots
+        // which are absent from the final map, and do it before repainting.
+        // Example: [1:a, 2:b, 3:c] - b => clear 3, then paint c at 2.
+        let final_slots: std::collections::HashSet<u8> =
+            assignments.iter().filter_map(|(_, _, slot)| *slot).collect();
+        let mut vacated: Vec<u8> = assignments
+            .iter()
+            .filter_map(|(_, old_slot, _)| *old_slot)
+            .filter(|old_slot| !final_slots.contains(old_slot))
+            .collect();
+        vacated.sort_unstable();
+        vacated.dedup();
+        effects.extend(vacated.into_iter().map(|slot| Effect::SlotCleared { slot }));
+
+        for (id, old_slot, new_slot) in assignments {
             if old_slot == new_slot {
                 continue;
             }
@@ -2070,6 +2089,17 @@ mod tests {
             id: "b".into(),
             slot: Some(2),
         }));
+        let clear_source = e
+            .iter()
+            .position(|effect| matches!(effect, Effect::SlotCleared { slot: 3 }))
+            .expect("compaction clears c's old source slot");
+        let repaint_destination = e
+            .iter()
+            .position(|effect| matches!(effect,
+                Effect::SessionUpsert { id, slot: Some(2), .. } if id == "c"
+            ))
+            .expect("compaction repaints c at its destination slot");
+        assert!(clear_source < repaint_destination);
         assert_eq!(r.session_by_slot(2).unwrap().id, "c");
         r.set_state(Some("d"), State::Running, None, None, None, now);
         assert_eq!(r.session_by_slot(3).unwrap().id, "d");
@@ -2087,6 +2117,7 @@ mod tests {
 
         let effects = r.set_backlogged("b", true).unwrap();
         assert!(effects.contains(&Effect::SlotCleared { slot: 2 }));
+        assert!(effects.contains(&Effect::SlotCleared { slot: 3 }));
         let backlogged = r.session_or_tombstone("b").expect("still live/focusable");
         assert!(backlogged.is_backlogged());
         assert_eq!(backlogged.slot, None);

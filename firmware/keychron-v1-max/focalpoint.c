@@ -277,6 +277,10 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
             uint8_t slot = data[1];  /* 1..12 */
             if (slot >= 1 && slot <= VK_USER_KEY_COUNT) {
                 vk_key_state[slot - 1] = data[2];  /* state id or 0xFF empty */
+                /* Empty is an authoritative lifecycle clear. A prior
+                 * diagnostic SET_LED override must not keep an ended
+                 * session illuminated after its slot is gone. */
+                if (data[2] == VK_STATE_EMPTY) vk_override[slot - 1].active = false;
             }
             return;
         }

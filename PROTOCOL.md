@@ -51,7 +51,7 @@ above waiting in the aggregate and attention fallback.
 | `0x01` | `SET_STATE` | byte 1: state ID (table above). The AGGREGATE state; firmware renders it on the ambient zone (status bar / dedicated keys), NOT on numbered keys that have a `SET_KEY_STATE`. |
 | `0x02` | `SET_LED` | byte 1: LED index (0xFF = all), bytes 2–4: R,G,B. Overrides effect until next `SET_STATE`. |
 | `0x03` | `SET_HOST_MODE` | byte 1: 1 = daemon attached (keys report via HID events), 0 = detached (keys send their fallback keycodes) |
-| `0x04` | `SET_KEY_STATE` | byte 1: user-key number 1–12, byte 2: state ID, or `0xFF` = slot empty (key returns to ambient/off). Firmware renders that state's effect on that key's LED only. |
+| `0x04` | `SET_KEY_STATE` | byte 1: user-key number 1–12, byte 2: state ID, or `0xFF` = slot empty (key returns to ambient/off and clears any `SET_LED` override on that key). Firmware renders that state's effect on that key's LED only. |
 | `0x05` | `SET_STATE_STYLE` | byte 1: state ID, bytes 2–4: R,G,B, byte 5: pattern (0 solid, 1 breathe, 2 blink, 3 strobe, 4 off), bytes 6–7: period in ms (little-endian u16). Overrides that state's default effect everywhere it renders (aggregate and per-key). Stored in RAM; defaults restored on power cycle. The daemon pushes all eight styles on device connect. |
 | `0x06` | `SET_NAV_STATE` | byte 1: state ID of the next attention session, or `0xFF` when none. Firmware renders it on its dedicated next-attention indicator (Right Arrow on the Keychron V1 Max). |
 
