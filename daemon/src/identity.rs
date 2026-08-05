@@ -68,6 +68,22 @@ impl ProcessSource for SysinfoProcessSource {
     }
 }
 
+/// Claude Code 2.1.222+ execs a versioned self-update binary. On macOS its
+/// process `comm` is the version itself (for example `2.1.222`), rather than
+/// `claude`. Accept that form only when argv still identifies Claude Code; a
+/// bare version-looking ancestor is never sufficient.
+fn is_versioned_claude_binary(base: &str, args: &[String]) -> bool {
+    let versioned_name = base.split('.').count() >= 3
+        && base
+            .split('.')
+            .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()));
+    versioned_name
+        && args.iter().any(|arg| {
+            let normalized = arg.replace('\\', "/").to_ascii_lowercase();
+            normalized.contains("claude")
+        })
+}
+
 /// Walk from `start_pid` up through parents, remembering the OUTERMOST
 /// (nearest-to-terminal/login) ancestor whose comm matches `target_comm` —
 /// not the first hit climbing up — since transient helpers (Claude Code's
@@ -86,11 +102,11 @@ pub fn resolve_pid(source: &impl ProcessSource, start_pid: i32, target_comm: &st
         }
         if let Some(comm) = source.comm(pid) {
             let base = comm.rsplit('/').next().unwrap_or(&comm);
-            if base == target_comm {
-                let is_transient = source
-                    .cmd(pid)
-                    .map(|args| args.join(" ").contains("daemon run"))
-                    .unwrap_or(false);
+            let args = source.cmd(pid).unwrap_or_default();
+            let target_matches = base == target_comm
+                || (target_comm == "claude" && is_versioned_claude_binary(base, &args));
+            if target_matches {
+                let is_transient = args.join(" ").contains("daemon run");
                 if !is_transient {
                     found = Some(pid);
                 }
@@ -220,7 +236,9 @@ pub fn remove_identity(session_id: &str) {
 }
 
 /// Resolve (or load the cached) identity for `session_id`. `target_comm` is
-/// the process name to search for (`"claude"`, `"codex"`); `refresh` forces
+/// the process name to search for (`"claude"`, `"codex"`). Claude's versioned
+/// self-update binaries are recognized from their Claude-identifying argv;
+/// `refresh` forces
 /// a fresh walk + cache overwrite instead of trusting an existing cache —
 /// callers pass this on `SessionStart`, the one point a process instance for
 /// this session_id is known to have just begun.
@@ -323,6 +341,34 @@ mod tests {
         src.insert(2, Some(1), "zsh", &["-zsh"]);
 
         assert_eq!(resolve_pid(&src, 300, "claude"), Some(100));
+    }
+
+    #[test]
+    fn claude_versioned_self_update_binary_resolves_from_argv() {
+        // Claude Code 2.1.222+ may exec its self-update binary directly, so
+        // macOS reports `comm` as the version string instead of `claude`.
+        let mut src = FakeProcessSource::default();
+        src.insert(300, Some(200), "focalpoint", &["focalpoint", "set-state"]);
+        src.insert(200, Some(100), "bash", &["bash", "hooks.sh"]);
+        src.insert(
+            100,
+            Some(2),
+            "2.1.222",
+            &["/Users/example/.local/share/claude/versions/2.1.222"],
+        );
+        src.insert(2, Some(1), "zsh", &["-zsh"]);
+
+        assert_eq!(resolve_pid(&src, 300, "claude"), Some(100));
+    }
+
+    #[test]
+    fn version_looking_non_claude_process_is_not_matched() {
+        let mut src = FakeProcessSource::default();
+        src.insert(200, Some(100), "bash", &["bash"]);
+        src.insert(100, Some(2), "2.1.222", &["/opt/example/versions/2.1.222"]);
+        src.insert(2, Some(1), "zsh", &["-zsh"]);
+
+        assert_eq!(resolve_pid(&src, 200, "claude"), None);
     }
 
     #[test]
