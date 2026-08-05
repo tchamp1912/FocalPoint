@@ -83,8 +83,8 @@ enum AgentCommand {
         session: String,
         #[arg(long)]
         task_id: String,
-        /// Number of matching messages to return (1-100).
-        #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u16).range(1..=100))]
+        /// Number of matching messages to return (1-8000).
+        #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u16).range(1..=8_000))]
         tail: u16,
         /// Optional case-insensitive text filter.
         #[arg(long)]
@@ -490,18 +490,29 @@ mod tests {
             "--task-id",
             "task-1",
             "--tail",
-            "12",
+            "8000",
             "--search",
             "failed",
         ])
         .unwrap();
         match parsed.command {
             AgentCommand::Transcript { tail, search, .. } => {
-                assert_eq!(tail, 12);
+                assert_eq!(tail, 8_000);
                 assert_eq!(search.as_deref(), Some("failed"));
             }
             _ => panic!("expected transcript"),
         }
+        assert!(Cli::try_parse_from([
+            "fpctl-agent",
+            "transcript",
+            "--session",
+            "s1",
+            "--task-id",
+            "task-1",
+            "--tail",
+            "8001",
+        ])
+        .is_err());
     }
 
     #[test]

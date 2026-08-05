@@ -2585,8 +2585,8 @@ fn dispatch(
         }
         Request::ReadSessionTranscript { session: id, task_id, tail, search } => {
             let tail = tail.unwrap_or(20);
-            if !(1..=100).contains(&tail) {
-                return err("read-session-transcript 'tail' must be 1-100");
+            if !(1..=8_000).contains(&tail) {
+                return err("read-session-transcript 'tail' must be 1-8000");
             }
             let search = match search.as_deref() {
                 None => None,

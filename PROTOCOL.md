@@ -383,7 +383,7 @@ independent orchestration groups without inferring them from labels.
 `read-session-transcript` and `stop-orchestrated-session` require the session
 id and its matching stable orchestrator task id. The daemon also requires the
 session to be managed and Claude/Codex-owned. Transcript reads
-accept a tail of 1–100 and an optional bounded case-insensitive search, return
+accept a tail of 1–8000 and an optional bounded case-insensitive search, return
 normalized user/assistant/tool messages, omit reasoning blocks and raw tool
 inputs, and resolve adapter-reported paths only within the provider's local
 transcript directory. Stop requests use the same graceful SIGINT-to-SIGTERM

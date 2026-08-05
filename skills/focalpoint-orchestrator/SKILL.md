@@ -24,7 +24,7 @@ are not live. Inspect the smallest useful normalized transcript before routing
 owned managed work:
 
 ```sh
-fpctl-agent transcript --session ID --task-id STABLE_ID --tail 20
+fpctl-agent transcript --session ID --task-id STABLE_ID --tail 20  # 1–8000 messages
 fpctl-agent stop --session ID --task-id STABLE_ID
 ```
 
