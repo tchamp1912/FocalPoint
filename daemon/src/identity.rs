@@ -178,6 +178,18 @@ fn resolve_tty(pid: Option<i32>) -> Option<String> {
         .or_else(|| own_tty().and_then(|t| usable_tty(&t)))
 }
 
+fn select_resolved_pid(
+    walked_pid: Option<i32>,
+    cached_pid: Option<i32>,
+    refresh: bool,
+) -> Option<i32> {
+    if refresh {
+        walked_pid
+    } else {
+        walked_pid.or(cached_pid)
+    }
+}
+
 fn repair_cached_identity(session_id: &str, mut identity: Identity) -> Identity {
     let tty_bad = identity
         .tty
@@ -228,6 +240,19 @@ fn save_identity(session_id: &str, identity: &Identity) {
     }
 }
 
+/// Cache a usable resolution. A completely empty result is deliberately not
+/// cached: absence of an identity is usually a startup race, not a stable
+/// fact. Leaving the per-session cache absent re-arms every later hook call
+/// for this same process instance, allowing it to self-heal as soon as the
+/// agent appears in the process table.
+fn save_identity_or_rearm(session_id: &str, identity: &Identity) {
+    if identity.pid.is_none() && identity.tty.is_none() {
+        remove_identity(session_id);
+    } else {
+        save_identity(session_id, identity);
+    }
+}
+
 /// Remove a session's cached identity — called on `end-session` (the one
 /// chokepoint every adapter's `SessionEnd` already goes through), so a
 /// reused session_id (shouldn't happen, but) never inherits a stale cache.
@@ -271,14 +296,17 @@ pub fn resolve_identity(session_id: &str, target_comm: &str, refresh: bool) -> I
     }
     let source = SysinfoProcessSource::new();
     let walked_pid = resolve_pid(&source, std::process::id() as i32, target_comm);
-    // A manual `set-meta --refresh-identity` from a normal shell isn't under
-    // the agent's ancestry — keep the cached pid and just refresh its tty.
-    let pid = walked_pid.or(cached_pid);
+    // `refresh` means a new process instance is known to have started. Never
+    // fall back to the previous instance's cached PID in that case: if the
+    // fresh walk loses a startup race, return empty and remain re-armed for
+    // the next hook. Non-refresh calls may retain a prior usable PID while
+    // repairing its tty.
+    let pid = select_resolved_pid(walked_pid, cached_pid, refresh);
     let identity = Identity {
         tty: resolve_tty(pid),
         pid,
     };
-    save_identity(session_id, &identity);
+    save_identity_or_rearm(session_id, &identity);
     identity
 }
 
@@ -286,6 +314,9 @@ pub fn resolve_identity(session_id: &str, target_comm: &str, refresh: bool) -> I
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    static IDENTITY_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     /// A fixed, fake process tree for deterministic walk tests — no real
     /// process spawning required.
@@ -408,6 +439,13 @@ mod tests {
     }
 
     #[test]
+    fn fresh_instance_never_reuses_previous_cached_pid() {
+        assert_eq!(select_resolved_pid(None, Some(42), true), None);
+        assert_eq!(select_resolved_pid(Some(84), Some(42), true), Some(84));
+        assert_eq!(select_resolved_pid(None, Some(42), false), Some(42));
+    }
+
+    #[test]
     fn multiple_matches_keeps_climbing_to_outermost() {
         // inner(300, claude) -> mid(200, claude) -> outer(100, claude) -> zsh(2)
         // The real interactive process is the outermost one, nearest the
@@ -431,6 +469,7 @@ mod tests {
 
     #[test]
     fn empty_negative_cache_is_not_trusted_and_rewalks() {
+        let _environment_guard = IDENTITY_ENV_LOCK.lock().unwrap();
         // Isolate from other tests / the real user's state dir.
         let tmp =
             std::env::temp_dir().join(format!("focalpoint-identity-poison-{}", std::process::id()));
@@ -458,6 +497,12 @@ mod tests {
         // trusted cache path never re-walks, but also never changes it), and
         // must not panic.
         assert_eq!(resolved.pid, None);
+        if resolved.tty.is_none() {
+            assert!(
+                load_identity(id).is_none(),
+                "a none/none result must leave identity resolution re-armed"
+            );
+        }
 
         let _ = std::fs::remove_dir_all(&tmp);
         std::env::remove_var("XDG_STATE_HOME");
@@ -465,6 +510,7 @@ mod tests {
 
     #[test]
     fn identity_cache_round_trips() {
+        let _environment_guard = IDENTITY_ENV_LOCK.lock().unwrap();
         // Isolate from other tests / the real user's state dir.
         let tmp =
             std::env::temp_dir().join(format!("focalpoint-identity-test-{}", std::process::id()));
@@ -480,7 +526,7 @@ mod tests {
         save_identity(id, &identity);
         assert_eq!(load_identity(id), Some(identity));
 
-        remove_identity(id);
+        save_identity_or_rearm(id, &Identity::default());
         assert!(load_identity(id).is_none());
 
         let _ = std::fs::remove_dir_all(&tmp);

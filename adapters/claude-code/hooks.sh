@@ -287,7 +287,10 @@ case "$event" in
     # just began (startup, --resume, /clear, or the fork-after-compact case
     # all fire this), so any previously-cached identity is from a
     # *different*, possibly-dead process (the process behind a --resume'd
-    # session_id is never the same pid twice). set-meta doesn't require the
+    # session_id is never the same pid twice). If this first walk races the
+    # new versioned launcher and returns no pid/tty, identity.rs leaves the
+    # session re-armed: every later hook below passes --kind claude and retries
+    # until it self-heals. set-meta doesn't require the
     # session to already be registered (an unknown id is a harmless no-op
     # daemon-side), and causes no visible state change — a session merely
     # starting/resuming isn't itself a state transition worth reporting.

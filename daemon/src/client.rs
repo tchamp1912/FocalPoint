@@ -80,7 +80,9 @@ fn expect_ok(resp: &serde_json::Value) -> Result<(), CliError> {
 /// value. Only applies to kinds whose adapter wants ancestry-derived
 /// identity (`claude`, `codex`) — skipped for everything else (`cursor`,
 /// `generic`, unknown), matching the reasoning bash used before this moved
-/// into Rust (SESSION-IDENTITY-PERSISTENCE-PLAN.md Part 1).
+/// into Rust (SESSION-IDENTITY-PERSISTENCE-PLAN.md Part 1). A fully empty
+/// resolution is not cached, so subsequent hooks for the same instance
+/// automatically retry and self-heal.
 #[cfg(unix)]
 fn apply_identity(
     meta_obj: &mut serde_json::Map<String, serde_json::Value>,

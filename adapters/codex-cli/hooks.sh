@@ -10,7 +10,8 @@
 # set-state/set-meta resolve+cache tty/pid automatically whenever --session
 # and --kind claude|codex are given and no explicit --meta tty=/pid= was
 # passed; --refresh-identity (passed below on SessionStart) forces a fresh
-# walk instead of trusting the cache. See
+# walk instead of trusting the cache. A none/none result is intentionally not
+# cached, so subsequent hooks for that process instance keep retrying. See
 # SESSION-IDENTITY-PERSISTENCE-PLAN.md Part 1.
 #
 # Compaction: unlike Claude Code, Codex has no PreCompact-equivalent hook,
