@@ -135,6 +135,33 @@ struct GeneralSettingsView: View {
                         .pickerStyle(.radioGroup)
                         Text("Auto-hide keeps the desktop widget out of the way while every session is idle; it reappears the moment something needs attention.")
                             .font(.caption).foregroundStyle(.secondary)
+                        HStack {
+                            Text("Orientation")
+                            Spacer()
+                            Picker("", selection: $model.desktopWidgetOrientation) {
+                                ForEach(DesktopWidgetOrientation.allCases) { option in
+                                    Text(option.display).tag(option)
+                                }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.segmented)
+                            .frame(width: 190)
+                        }
+                        .padding(.top, 4)
+                        if let size = model.widgetSize(for: model.desktopWidgetOrientation) {
+                            HStack {
+                                Text("Size")
+                                Spacer()
+                                Text("\(Int(size.width)) × \(Int(size.height))")
+                                    .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                                Button("Reset to Automatic") {
+                                    model.resetWidgetSize(for: model.desktopWidgetOrientation)
+                                }
+                                .controlSize(.small)
+                            }
+                        }
+                        Text("Horizontal lays sessions out as a wide strip for a screen's top or bottom edge; its width grows with the session count until you resize it. Drag the widget's bottom-right corner to resize — the size is remembered per orientation.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                     Divider()
                     VStack(alignment: .leading, spacing: 6) {

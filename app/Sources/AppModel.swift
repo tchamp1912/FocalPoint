@@ -25,6 +25,39 @@ enum DesktopWidgetMode: String, CaseIterable, Identifiable {
     }
 }
 
+/// Layout direction for the desktop widget. Vertical is the original tall
+/// card (header on top, sessions stacked); horizontal is a short wide strip
+/// (header segment on the left, compact session cells in a row) that sits
+/// naturally along a screen's top/bottom edge.
+enum DesktopWidgetOrientation: String, CaseIterable, Identifiable {
+    case vertical
+    case horizontal
+
+    var id: String { rawValue }
+
+    var display: String {
+        switch self {
+        case .vertical:   return "Vertical"
+        case .horizontal: return "Horizontal"
+        }
+    }
+
+    /// Guardrails for the corner-grip resize. Mins keep the header plus one
+    /// session legible; maxes keep the widget a HUD, not a window.
+    var minWidgetSize: CGSize {
+        switch self {
+        case .vertical:   return CGSize(width: 200, height: 110)
+        case .horizontal: return CGSize(width: 360, height: 76)
+        }
+    }
+    var maxWidgetSize: CGSize {
+        switch self {
+        case .vertical:   return CGSize(width: 560, height: 1000)
+        case .horizontal: return CGSize(width: 1600, height: 220)
+        }
+    }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     static let shared = AppModel()
@@ -131,6 +164,21 @@ final class AppModel: ObservableObject {
     @Published var desktopWidgetMode: DesktopWidgetMode {
         didSet { UserDefaults.standard.set(desktopWidgetMode.rawValue, forKey: "desktopWidgetMode") }
     }
+    /// Desktop widget layout direction (vertical card vs. horizontal strip).
+    @Published var desktopWidgetOrientation: DesktopWidgetOrientation {
+        didSet {
+            UserDefaults.standard.set(desktopWidgetOrientation.rawValue,
+                                      forKey: "desktopWidgetOrientation")
+        }
+    }
+    /// User-chosen widget size from the corner resize grip, per orientation.
+    /// nil = auto-size to content (the pre-grip behavior: fixed 260pt width /
+    /// content-fitted height for vertical, fully content-fitted horizontal).
+    /// Once set, the widget's root frame is pinned to this size and the
+    /// session area scrolls when content exceeds it. Persisted as four
+    /// doubles because UserDefaults has no CGSize bridging.
+    @Published private(set) var widgetSizeVertical: CGSize?
+    @Published private(set) var widgetSizeHorizontal: CGSize?
     /// Runtime-only override toggled by the "Toggle Widget" hotkey — hides
     /// the widget on demand without touching the persisted `desktopWidgetMode`
     /// setting. Deliberately not persisted: it resets on relaunch so the
@@ -228,6 +276,68 @@ final class AppModel: ObservableObject {
         contextWindowByKind[kind.lowercased()]
     }
 
+    // MARK: Widget size overrides (corner-grip resize)
+
+    func widgetSize(for orientation: DesktopWidgetOrientation) -> CGSize? {
+        switch orientation {
+        case .vertical:   return widgetSizeVertical
+        case .horizontal: return widgetSizeHorizontal
+        }
+    }
+
+    func setWidgetSize(_ size: CGSize, for orientation: DesktopWidgetOrientation) {
+        previewWidgetSize(size, for: orientation)
+        guard let clamped = widgetSize(for: orientation) else { return }
+        let d = UserDefaults.standard
+        d.set(Double(clamped.width), forKey: Self.widgetSizeKeys(for: orientation).width)
+        d.set(Double(clamped.height), forKey: Self.widgetSizeKeys(for: orientation).height)
+    }
+
+    /// Live grip-drag updates: in-memory only (UserDefaults writes wait for
+    /// mouse-up in setWidgetSize). Keeping the root SwiftUI frame in lockstep
+    /// with the dragged window frame prevents the clear-background window
+    /// from showing a gap between content and window edge mid-drag.
+    func previewWidgetSize(_ size: CGSize, for orientation: DesktopWidgetOrientation) {
+        let clamped = CGSize(
+            width: min(max(size.width, orientation.minWidgetSize.width), orientation.maxWidgetSize.width),
+            height: min(max(size.height, orientation.minWidgetSize.height), orientation.maxWidgetSize.height))
+        switch orientation {
+        case .vertical:   widgetSizeVertical = clamped
+        case .horizontal: widgetSizeHorizontal = clamped
+        }
+    }
+
+    /// Back to content-fitted sizing for this orientation.
+    func resetWidgetSize(for orientation: DesktopWidgetOrientation) {
+        switch orientation {
+        case .vertical:   widgetSizeVertical = nil
+        case .horizontal: widgetSizeHorizontal = nil
+        }
+        let keys = Self.widgetSizeKeys(for: orientation)
+        UserDefaults.standard.removeObject(forKey: keys.width)
+        UserDefaults.standard.removeObject(forKey: keys.height)
+    }
+
+    private static func widgetSizeKeys(for orientation: DesktopWidgetOrientation)
+        -> (width: String, height: String) {
+        switch orientation {
+        case .vertical:   return ("desktopWidgetSizeVW", "desktopWidgetSizeVH")
+        case .horizontal: return ("desktopWidgetSizeHW", "desktopWidgetSizeHH")
+        }
+    }
+
+    private static func loadWidgetSize(for orientation: DesktopWidgetOrientation) -> CGSize? {
+        let d = UserDefaults.standard
+        let keys = widgetSizeKeys(for: orientation)
+        // object(forKey:) (not double(forKey:)) so "never resized" is
+        // distinguishable from a stored 0, which would be invalid anyway.
+        guard d.object(forKey: keys.width) != nil, d.object(forKey: keys.height) != nil else { return nil }
+        let size = CGSize(width: d.double(forKey: keys.width), height: d.double(forKey: keys.height))
+        guard size.width >= orientation.minWidgetSize.width,
+              size.height >= orientation.minWidgetSize.height else { return nil }
+        return size
+    }
+
     // Wiring set by the app delegate.
     var onHotkeysToggled: ((Bool) -> Void)?
     var onHotkeyBindingsChanged: (([HotkeyActionID: HotkeyBinding]) -> Void)?
@@ -262,6 +372,10 @@ final class AppModel: ObservableObject {
         } else {
             desktopWidgetMode = .always
         }
+        desktopWidgetOrientation = DesktopWidgetOrientation(
+            rawValue: d.string(forKey: "desktopWidgetOrientation") ?? "") ?? .vertical
+        widgetSizeVertical = Self.loadWidgetSize(for: .vertical)
+        widgetSizeHorizontal = Self.loadWidgetSize(for: .horizontal)
         interfaceTranslucency = d.object(forKey: "interfaceTranslucency") as? Double ?? 0.35
         if let raw = d.array(forKey: "visibleStats") as? [String] {
             visibleStats = Set(raw.compactMap(SessionStat.init(rawValue:)))

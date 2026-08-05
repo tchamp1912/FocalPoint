@@ -19,8 +19,14 @@ edit the per-state render styles — all over the `focalpointd` unix-socket prot
   `rename-session` in [`PROTOCOL.md`](../PROTOCOL.md) §3).
 - Settings window: per-state style editor (color, pattern, period) and
   behavior toggles.
-- Transparent **desktop overlay**: a click-through HUD in the top-right of the
-  screen mirroring the aggregate state and sessions.
+- Floating **desktop widget**: a draggable HUD mirroring the aggregate state
+  and sessions, with clickable rows (click focuses the session). Two
+  orientations — a vertical card or a wide horizontal strip with compact
+  session cells — selectable in Settings → Behavior → Orientation or the
+  widget's right-click menu. Drag the bottom-right corner grip to resize it;
+  sizes are remembered per orientation, sessions scroll when they overflow a
+  pinned size, and *Reset Widget Size* (context menu or Settings) returns to
+  content-fitted sizing.
 - Global hotkeys via Carbon (no Accessibility permission needed).
 
 Requires **macOS 14+, Apple Silicon**.
