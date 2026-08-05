@@ -348,8 +348,10 @@ final class AppModel: ObservableObject {
     /// Last session focused by the all-session navigation hotkeys, so the next
     /// press advances relative to it. Attention navigation is daemon-owned.
     private var lastSessionFocusID: String?
-    /// Guards a connect-time response from overwriting a newer stream event.
-    private var attentionOrderRevision: UInt64 = 0
+    /// Non-nil while focalpointd is delivering an authoritative reconnect
+    /// snapshot. The generation pairs begin/end markers and lets a malformed
+    /// or interrupted snapshot be discarded by the subsequent reconnect.
+    private var activeSnapshotGeneration: UInt64?
 
     private init() {
         let d = UserDefaults.standard
@@ -536,9 +538,6 @@ final class AppModel: ObservableObject {
             onStatus: { up in
                 Task { @MainActor in AppModel.shared.setConnected(up) }
             },
-            onConnect: {
-                Task { @MainActor in AppModel.shared.refreshOnConnect() }
-            },
             onEvent: { obj in
                 Task { @MainActor in AppModel.shared.handleEvent(obj) }
             }
@@ -564,31 +563,7 @@ final class AppModel: ObservableObject {
             aggregate = .idle
             usage = []
             attentionOrder = []
-            attentionOrderRevision &+= 1
-        }
-    }
-
-    /// On (re)connect, refresh styles and sessions via one-shot requests.
-    /// Older daemons return "unknown cmd"; we detect that and use defaults.
-    private func refreshOnConnect() {
-        let resyncID = String(DispatchTime.now().uptimeNanoseconds, radix: 16)
-        let started = DispatchTime.now().uptimeNanoseconds
-        let expectedAttentionRevision = attentionOrderRevision
-        log("resync begin id=\(resyncID)")
-        let client = self.client
-        DispatchQueue.global(qos: .userInitiated).async {
-            let stylesResp = client.request(["cmd": "get-styles"])
-            let sessResp = client.request(["cmd": "list-sessions"])
-            let usageResp = client.request(["cmd": "get-usage"])
-            let attentionResp = client.request(["cmd": "get-attention-order"])
-            Task { @MainActor in
-                self.applyStylesResponse(stylesResp)
-                let elapsedMs = (DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
-                self.applySessionsResponse(sessResp, resyncID: resyncID, elapsedMs: elapsedMs)
-                self.applyUsageResponse(usageResp)
-                self.applyAttentionOrderResponse(attentionResp,
-                                                 expectedRevision: expectedAttentionRevision)
-            }
+            activeSnapshotGeneration = nil
         }
     }
 
@@ -601,6 +576,30 @@ final class AppModel: ObservableObject {
             logEventSummary(e, event: ev)
         }
         switch ev {
+        case "snapshot-begin":
+            guard let generation = (e["generation"] as? NSNumber)?.uint64Value else { return }
+            activeSnapshotGeneration = generation
+            // The daemon closes a lagged stream instead of attempting to
+            // continue with missing deltas, so every begin marker is a full
+            // replacement. Clear collections that may legitimately be empty;
+            // styles remain last-known until their eight replacement events
+            // arrive immediately below this marker.
+            sessions = []
+            usage = []
+            attentionOrder = []
+            aggregate = .idle
+            sessionsSupported = true
+            usageSupported = true
+            stylesSupported = true
+            log("snapshot begin generation=\(generation)")
+        case "snapshot-end":
+            guard let generation = (e["generation"] as? NSNumber)?.uint64Value,
+                  activeSnapshotGeneration == generation else {
+                log("snapshot end ignored reason=generation-mismatch")
+                return
+            }
+            activeSnapshotGeneration = nil
+            log("snapshot complete generation=\(generation) rows=\(sessions.count) usage=\(usage.count)")
         case "state":
             if let s = e["state"] as? String, let st = AgentState(rawValue: s) {
                 aggregate = st
@@ -674,7 +673,7 @@ final class AppModel: ObservableObject {
     /// routing. Deliberately do not serialize the event or its full `meta`.
     private func logEventSummary(_ event: [String: Any], event name: String) {
         let meta = event["meta"] as? [String: Any]
-        log("event=\(boundedLogField(name)) id=\(boundedLogField(event["session"])) state=\(boundedLogField(event["state"])) slot=\(boundedLogField(event["slot"])) kind=\(boundedLogField(event["kind"])) pid=\(boundedLogField(meta?["pid"])) tty=\(boundedLogField(meta?["tty"])) mux=\(boundedLogField(meta?["mux_pane"])) managed=\(boundedLogField(meta?["managed"])) role=\(boundedLogField(meta?["orchestration_role"])) manager=\(boundedLogField(meta?["manager_task_id"])) old=\(boundedLogField(event["old_session"])) new=\(boundedLogField(event["new_session"])) status=\(boundedLogField(event["status"])) launch=\(boundedLogField(event["launch_id"]))")
+        log("event=\(boundedLogField(name)) id=\(boundedLogField(event["session"])) state=\(boundedLogField(event["state"])) slot=\(boundedLogField(event["slot"])) kind=\(boundedLogField(event["kind"])) title=\(boundedLogField(event["label"])) task_id=\(boundedLogField(meta?["orchestrator_task_id"])) role=\(boundedLogField(meta?["orchestration_role"])) manager=\(boundedLogField(meta?["manager_task_id"])) pid=\(boundedLogField(meta?["pid"])) tty=\(boundedLogField(meta?["tty"])) mux_server=\(boundedLogField(meta?["mux_server"])) mux_session=\(boundedLogField(meta?["mux_session"])) mux_pane=\(boundedLogField(meta?["mux_pane"])) managed=\(boundedLogField(meta?["managed"])) reregistered=\(boundedLogField(meta?["reregistered"])) old=\(boundedLogField(event["old_session"])) new=\(boundedLogField(event["new_session"])) status=\(boundedLogField(event["status"])) launch=\(boundedLogField(event["launch_id"]))")
     }
 
     private func upsertSession(_ e: [String: Any]) {
@@ -759,7 +758,7 @@ final class AppModel: ObservableObject {
             s.backlogged = backlogged
             sessions.append(s)
         }
-        log("row \(operation) id=\(boundedLogField(id)) slot=\(slot.map(String.init) ?? "-") state=\(newState.rawValue) connected=\(connected) managed=\(managed.map(String.init) ?? "-") role=\(boundedLogField(orchestrationRole)) manager=\(boundedLogField(managerTaskID)) pid=\(boundedLogField(meta?["pid"])) tty=\(boundedLogField(meta?["tty"])) mux=\(boundedLogField(meta?["mux_pane"]))")
+        log("row \(operation) id=\(boundedLogField(id)) title=\(boundedLogField(label)) task_id=\(boundedLogField(orchestratorTaskID)) slot=\(slot.map(String.init) ?? "-") requested_slot=\(boundedLogField(meta?["requested_slot"])) state=\(newState.rawValue) connected=\(connected) managed=\(managed.map(String.init) ?? "-") role=\(boundedLogField(orchestrationRole)) manager=\(boundedLogField(managerTaskID)) pid=\(boundedLogField(meta?["pid"])) tty=\(boundedLogField(meta?["tty"])) mux_server=\(boundedLogField(meta?["mux_server"])) mux_session=\(boundedLogField(meta?["mux_session"])) mux_pane=\(boundedLogField(meta?["mux_pane"])) reregistered=\(boundedLogField(meta?["reregistered"]))")
         sortSessions()
     }
 
@@ -840,79 +839,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    // MARK: - One-shot response parsing
-
-    private func applyStylesResponse(_ resp: [String: Any]?) {
-        guard let resp = resp, (resp["ok"] as? Bool) == true,
-              let arr = resp["styles"] as? [[String: Any]] else {
-            // Unknown cmd / error / offline: keep defaults, mark unsupported.
-            stylesSupported = false
-            return
-        }
-        stylesSupported = true
-        for item in arr {
-            if let s = item["state"] as? String, let st = AgentState(rawValue: s),
-               let style = Self.parseStyle(item) {
-                styles[st] = style
-            }
-        }
-    }
-
-    private func applySessionsResponse(_ resp: [String: Any]?, resyncID: String, elapsedMs: UInt64) {
-        guard let resp = resp, (resp["ok"] as? Bool) == true,
-              let arr = resp["sessions"] as? [[String: Any]] else {
-            log("resync sessions unavailable id=\(resyncID) elapsed_ms=\(elapsedMs)")
-            return
-        }
-        let before = Set(sessions.map(\.id))
-        sessionsSupported = true
-        var seen = Set<String>()
-        for item in arr {
-            var e = item
-            e["session"] = item["session"]
-            upsertSession(e)
-            if let id = item["session"] as? String { seen.insert(id) }
-        }
-        // Drop any session no longer present — but keep optimistic
-        // "Reopening…" placeholders, which the daemon doesn't know about yet
-        // (their own timeout in `optimisticallyReopen` clears them if the
-        // resumed agent never registers).
-        sessions.removeAll { !seen.contains($0.id) && !$0.pendingReopen }
-        sortSessions()
-        let after = Set(sessions.map(\.id))
-        let removed = before.subtracting(after).sorted().map { boundedLogField($0, limit: 80) }.joined(separator: ",")
-        log("resync sessions complete id=\(resyncID) elapsed_ms=\(elapsedMs) received=\(arr.count) rows=\(sessions.count) removed=[\(String(removed.prefix(1_000)))]")
-    }
-
-    private func applyUsageResponse(_ response: [String: Any]?) {
-        guard let response,
-              (response["ok"] as? Bool) == true,
-              let snapshots = response["usage"] as? [String: [String: Any]] else {
-            usageSupported = false
-            return
-        }
-        usageSupported = true
-        usage = snapshots.compactMap { provider, snapshot in
-            guard let values = Self.parseUsage(snapshot) else { return nil }
-            return ProviderUsage(provider: provider, values: values, updatedAt: Date())
-        }
-        .sorted { $0.provider < $1.provider }
-        usage.filter(\.isAPIAccount).forEach(captureAPIUsageBaselineIfNeeded)
-    }
-
-    private func applyAttentionOrderResponse(_ response: [String: Any]?,
-                                             expectedRevision: UInt64) {
-        guard attentionOrderRevision == expectedRevision else {
-            log("attention order response ignored reason=newer-event revision=\(attentionOrderRevision) expected=\(expectedRevision)")
-            return
-        }
-        guard let response, (response["ok"] as? Bool) == true else {
-            log("attention order unavailable error=\(boundedLogField(response?["error"]))")
-            return
-        }
-        applyAttentionOrder(response["sessions"], source: "resync")
-    }
-
     /// Accept only a bounded, unique list of non-empty IDs. This keeps a
     /// malformed peer from driving unbounded UI/log work and avoids logging
     /// arbitrary response fields.
@@ -933,7 +859,6 @@ final class AppModel: ObservableObject {
             order.append(id)
         }
         attentionOrder = order
-        attentionOrderRevision &+= 1
         let preview = order.prefix(12).map { boundedLogField($0, limit: 80) }.joined(separator: ",")
         log("attention order applied source=\(source) count=\(order.count) ids=[\(preview)]")
     }
@@ -1198,16 +1123,20 @@ final class AppModel: ObservableObject {
     /// chosen terminal — or Apple Terminal when none is set / it's no longer
     /// installed. Explicitly choosing Terminal prevents a user's `.command`
     /// file association (for example, Script Editor) from intercepting the
-    /// managed-session launcher. Plain `NSWorkspace`, not `osascript` UI-scripting:
+    /// managed-session launcher. Requesting a new application instance makes
+    /// each managed agent a distinct terminal window even when the terminal's
+    /// normal preference is to reuse the current window as a tab or pane.
+    /// Plain `NSWorkspace`, not `osascript` UI-scripting:
     /// the latter needs Accessibility access this app doesn't (and shouldn't
     /// have to) request.
     private func openWithTerminal(_ file: URL) {
         let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = true
         let terminal = preferredTerminalURL()
             ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal")
         if let app = terminal {
             let bundleID = Bundle(url: app)?.bundleIdentifier ?? app.lastPathComponent
-            log("terminal open requested file=\(boundedLogField(file.lastPathComponent)) terminal=\(boundedLogField(bundleID))")
+            log("terminal open requested file=\(boundedLogField(file.lastPathComponent)) terminal=\(boundedLogField(bundleID)) mode=new-application-instance")
             NSWorkspace.shared.open([file], withApplicationAt: app, configuration: config) { application, error in
                 log("terminal open completed file=\(boundedLogField(file.lastPathComponent)) accepted=\(application != nil) pid=\(application?.processIdentifier.description ?? "-") error=\(boundedLogField(error?.localizedDescription))")
             }
@@ -1322,7 +1251,7 @@ final class AppModel: ObservableObject {
     private func handleManagedRelaunchEvent(_ event: [String: Any]) {
         guard let id = event["session"] as? String,
               let status = event["status"] as? String else { return }
-        log("managed relaunch event id=\(boundedLogField(id)) status=\(boundedLogField(status)) launch=\(boundedLogField(event["launch_id"])) tmux=\(boundedLogField(event["tmux_session"])) error=\(boundedLogField(event["error"]))")
+        log("managed relaunch event id=\(boundedLogField(id)) status=\(boundedLogField(status)) launch=\(boundedLogField(event["launch_id"])) tmux_server=\(boundedLogField(event["tmux_server"])) tmux_session=\(boundedLogField(event["tmux_session"])) error=\(boundedLogField(event["error"]))")
         switch status {
         case "quitting":
             setManagedRelaunchStatus(
@@ -1335,6 +1264,7 @@ final class AppModel: ObservableObject {
                 detail: "Waiting for the resumed agent to reconnect."
             )
             guard let launchID = event["launch_id"] as? String,
+                  let tmuxServer = event["tmux_server"] as? String,
                   let tmuxSession = event["tmux_session"] as? String else {
                 clearManagedRelaunch(id)
                 setManagedRelaunchStatus(
@@ -1344,7 +1274,9 @@ final class AppModel: ObservableObject {
                 return
             }
             if attachedManagedRelaunches.insert(launchID).inserted {
-                openManagedTmuxSession(tmuxSession, launchID: launchID)
+                openManagedTmuxSession(
+                    tmuxSession, tmuxServer: tmuxServer, launchID: launchID
+                )
             }
         case "complete":
             clearManagedRelaunch(id)
@@ -1390,15 +1322,18 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func openManagedTmuxSession(_ tmuxSession: String, launchID: String) {
+    private func openManagedTmuxSession(
+        _ tmuxSession: String, tmuxServer: String, launchID: String
+    ) {
         let quotedSession = "'" + tmuxSession.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        let quotedServer = "'" + tmuxServer.replacingOccurrences(of: "'", with: "'\\''") + "'"
         let script = """
         #!/bin/zsh -l
         TMUX_BIN=$(command -v tmux)
         if [ -z "$TMUX_BIN" ] && [ -x /opt/homebrew/bin/tmux ]; then TMUX_BIN=/opt/homebrew/bin/tmux; fi
         if [ -z "$TMUX_BIN" ] && [ -x /usr/local/bin/tmux ]; then TMUX_BIN=/usr/local/bin/tmux; fi
         if [ -z "$TMUX_BIN" ]; then print -u2 'tmux is not installed.'; exit 1; fi
-        exec "$TMUX_BIN" attach-session -t \(quotedSession)
+        exec "$TMUX_BIN" -L \(quotedServer) attach-session -t \(quotedSession)
         """
         let launcher = FileManager.default.temporaryDirectory
             .appendingPathComponent("focalpoint-attach-\(launchID).command")
@@ -1406,6 +1341,7 @@ final class AppModel: ObservableObject {
             try script.write(to: launcher, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o700],
                                                   ofItemAtPath: launcher.path)
+            log("managed relaunch attach requested launch=\(boundedLogField(launchID)) tmux_server=\(boundedLogField(tmuxServer)) tmux_session=\(boundedLogField(tmuxSession)) mode=new-window")
             openWithTerminal(launcher)
         } catch {
             log("openManagedTmuxSession: failed to write launcher: \(error)")
@@ -1493,6 +1429,45 @@ final class AppModel: ObservableObject {
     func copyToPasteboard(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    /// A pane-local recovery command for a managed terminal whose normal
+    /// provider hook was missed. The CLI independently verifies the private
+    /// tmux server/pane before registering, so copying this string is safe;
+    /// running it in an unrelated shell fails closed.
+    func reRegisterCommand(for session: SessionInfo) -> String? {
+        guard session.managed,
+              ["claude", "codex", "cursor", "cursor-cli"].contains(session.kind)
+        else { return nil }
+        func quoted(_ value: String) -> String {
+            "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        }
+        var fields = [
+            "focalpoint", "re-register",
+            "--session", quoted(session.id),
+            "--kind", quoted(session.kind),
+            "--title", quoted(session.title),
+            "--state", "thinking",
+        ]
+        if let taskID = session.orchestratorTaskID {
+            fields += ["--task-id", quoted(taskID)]
+        }
+        if let role = session.orchestrationRole {
+            fields += ["--role", quoted(role)]
+        }
+        if let manager = session.managerTaskID {
+            fields += ["--manager-task-id", quoted(manager)]
+        }
+        if let slot = session.slot {
+            fields += ["--slot", String(slot)]
+        }
+        return fields.joined(separator: " ")
+    }
+
+    func copyReRegisterCommand(for session: SessionInfo) {
+        guard let command = reRegisterCommand(for: session) else { return }
+        copyToPasteboard(command)
+        log("copied re-register command id=\(boundedLogField(session.id)) title=\(boundedLogField(session.title)) task_id=\(boundedLogField(session.orchestratorTaskID))")
     }
 
     /// Send set-style for one state (debounced by the caller).

@@ -51,9 +51,11 @@
 # tty/pid can't (see identity.rs's doc comment for why those can't always).
 #
 # Session stats (tokens/tool-calls/turns/subagents): computed from the same
-# transcript on Stop and PostToolUse. Claude Code runs these hooks
-# asynchronously, so the latter provides a fresh snapshot during a long tool
-# loop without delaying the agent. The final Stop recount remains authoritative.
+# transcript on Stop and, at most once per short throttle window, PostToolUse.
+# Claude Code runs these hooks asynchronously, so the latter provides a fresh
+# snapshot during a long tool loop without delaying the agent or rescanning the
+# full transcript for every tightly-spaced tool event. The final Stop recount
+# remains authoritative.
 # Both are sent via --meta (PROTOCOL.md §4). Optional end-to-end: skipped
 # without jq, and the menu bar app only shows a badge for stats it actually
 # receives (Settings → Claude & Codex). The daemon adds these on top of
@@ -106,6 +108,7 @@ fi
 
 # Path to focalpoint CLI
 FOCALPOINT="${FOCALPOINT_PATH:-focalpoint}"
+JQ_BIN=$(command -v jq 2>/dev/null || true)
 
 # Pull is intentionally separate from the daemon's optional wake. The body is
 # returned only through this hook boundary; it is never typed into a pane.
@@ -123,8 +126,8 @@ hook_json=$(cat 2>/dev/null) || exit 0
 # adapter and the other FocalPoint adapters).
 extract_field() {
   local field="$1"
-  if command -v jq >/dev/null 2>&1; then
-    printf '%s' "$hook_json" | jq -r --arg f "$field" '.[$f] // empty' 2>/dev/null
+  if [ -n "$JQ_BIN" ]; then
+    printf '%s' "$hook_json" | "$JQ_BIN" -r --arg f "$field" '.[$f] // empty' 2>/dev/null
   else
     printf '%s' "$hook_json" \
       | sed -n "s/.*\"${field}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" \
@@ -136,12 +139,22 @@ extract_field() {
 # transcript, or Claude Code hasn't generated one yet this session).
 extract_title() {
   local transcript="$1"
+  local cache="${2:-}"
+  if [ -n "$cache" ] && [ -s "$cache" ]; then
+    cat "$cache" 2>/dev/null
+    return 0
+  fi
   [ -n "$transcript" ] && [ -f "$transcript" ] || return 0
-  command -v jq >/dev/null 2>&1 || return 0
-  local line
+  [ -n "$JQ_BIN" ] || return 0
+  local line title
   line=$(grep -o '"type": *"ai-title"[^}]*}' "$transcript" 2>/dev/null | tail -n1)
   [ -n "$line" ] || return 0
-  printf '{%s' "$line" | jq -r '.aiTitle // empty' 2>/dev/null
+  title=$(printf '{%s' "$line" | "$JQ_BIN" -r '.aiTitle // empty' 2>/dev/null)
+  if [ -n "$title" ] && [ -n "$cache" ]; then
+    mkdir -p "${cache%/*}" 2>/dev/null || true
+    printf '%s' "$title" > "$cache" 2>/dev/null || true
+  fi
+  printf '%s' "$title"
 }
 
 # Cumulative "turns tool_calls tokens_in tokens_out model" as a TSV line, or
@@ -171,8 +184,8 @@ extract_title() {
 extract_stats() {
   local transcript="$1"
   [ -n "$transcript" ] && [ -f "$transcript" ] || return 0
-  command -v jq >/dev/null 2>&1 || return 0
-  jq -r -s '
+  [ -n "$JQ_BIN" ] || return 0
+  "$JQ_BIN" -r -s '
     def usage_in(u):
       ((u.input_tokens // 0) + (u.cache_creation_input_tokens // 0) + (u.cache_read_input_tokens // 0));
     def user_turns:
@@ -202,20 +215,30 @@ extract_stats() {
       ),
       model: ([.[] | select(.type=="assistant") | .message.model] | last // ""),
       context_tokens: (assistants_with_usage | if length == 0 then 0 else (last | usage_in(.message.usage)) end)
-    } | [.turns, .tool_calls, .subagents, .tokens_in, .tokens_out, .model, .context_tokens] | @tsv
+    } | [.turns, .tool_calls, .subagents, .tokens_in, .tokens_out, .model, .context_tokens]
+      | map(tostring) | join("\u001f")
   ' "$transcript" 2>/dev/null
 }
 
-event=$(extract_field "hook_event_name")
+if [ -n "$JQ_BIN" ]; then
+  parsed=$(printf '%s' "$hook_json" | "$JQ_BIN" -r '
+    [ .hook_event_name // "", .session_id // "", .cwd // "",
+      .transcript_path // "", .notification_type // .notificationType // "",
+      .trigger // "", .permission_mode // "" ] | join("\u001f")
+  ' 2>/dev/null) || exit 0
+  IFS=$'\x1f' read -r event session_id cwd transcript_path notification_type \
+    compaction_trigger permission_mode <<< "$parsed"
+else
+  event=$(extract_field "hook_event_name")
+  session_id=$(extract_field "session_id")
+  cwd=$(extract_field "cwd")
+  transcript_path=$(extract_field "transcript_path")
+  notification_type=$(extract_field "notification_type")
+  [ -n "$notification_type" ] || notification_type=$(extract_field "notificationType")
+  compaction_trigger=$(extract_field "trigger")
+  permission_mode=$(extract_field "permission_mode")
+fi
 [ -n "${event:-}" ] || exit 0
-
-session_id=$(extract_field "session_id")
-cwd=$(extract_field "cwd")
-transcript_path=$(extract_field "transcript_path")
-notification_type=$(extract_field "notification_type")
-[ -n "$notification_type" ] || notification_type=$(extract_field "notificationType")
-compaction_trigger=$(extract_field "trigger")
-permission_mode=$(extract_field "permission_mode")
 
 # Permission notifications can be transient when Claude's auto-approval
 # accepts the tool immediately. Delay only that flavor of approval state; an
@@ -230,6 +253,7 @@ approval_pending_file=""
 approval_lock_dir=""
 if [ -n "${session_id:-}" ]; then
   safe_session_id=$(printf '%s' "$session_id" | tr -c 'A-Za-z0-9._-' '_')
+  title_cache="${XDG_STATE_HOME:-$HOME/.local/state}/focalpoint/claude/$safe_session_id.title"
   approval_dir="${XDG_STATE_HOME:-$HOME/.local/state}/focalpoint/approval-pending"
   approval_pending_file="$approval_dir/claude-$safe_session_id.token"
   approval_lock_dir="$approval_dir/claude-$safe_session_id.lock"
@@ -338,6 +362,7 @@ case "$event" in
     # also drops this session's cached identity (identity.rs).
     if [ -n "${session_id:-}" ]; then
       "$FOCALPOINT" end-session "$session_id" 2>/dev/null || true
+      rm -f "$title_cache" 2>/dev/null || true
     else
       "$FOCALPOINT" set-state idle 2>/dev/null || true
     fi
@@ -415,7 +440,8 @@ esac
 # daemon's sessionless default still participates in the aggregate state).
 args=("$state")
 if [ -n "${session_id:-}" ]; then
-  label=$(extract_title "$transcript_path")
+  label="${FOCALPOINT_SESSION_TITLE:-}"
+  [ -n "$label" ] || label=$(extract_title "$transcript_path" "$title_cache")
   [ -n "$label" ] || label="$(basename "${cwd:-.}")"
   args+=(--session "$session_id" --kind claude --cwd "$cwd" --label "$label")
   args+=(--meta "managed=$managed_value" --meta "mux_pane=$mux_pane" --meta "mux_session=$mux_session" --meta "mux_server=$mux_server")
@@ -426,27 +452,64 @@ if [ -n "${session_id:-}" ]; then
     args+=(--meta "resume_session_id=$FOCALPOINT_RESUME_SESSION_ID")
   [ -n "${FOCALPOINT_ORCHESTRATOR_TASK_ID:-}" ] && \
     args+=(--meta "orchestrator_task_id=$FOCALPOINT_ORCHESTRATOR_TASK_ID")
+  [ -n "${FOCALPOINT_SESSION_TITLE:-}" ] && \
+    args+=(--meta "session_title=$FOCALPOINT_SESSION_TITLE")
+  [ -n "${FOCALPOINT_SESSION_SLOT:-}" ] && \
+    args+=(--meta "requested_slot=$FOCALPOINT_SESSION_SLOT")
   [ -n "${FOCALPOINT_ORCHESTRATION_ROLE:-}" ] && \
     args+=(--meta "orchestration_role=$FOCALPOINT_ORCHESTRATION_ROLE")
   [ -n "${FOCALPOINT_MANAGER_TASK_ID:-}" ] && \
     args+=(--meta "manager_task_id=$FOCALPOINT_MANAGER_TASK_ID")
   [ -n "${FOCALPOINT_CHANNEL_ID:-}" ] && args+=(--meta "channel_id=$FOCALPOINT_CHANNEL_ID")
 
-  # Claude's hook configuration marks PostToolUse asynchronous. Publishing a
-  # whole-transcript snapshot here makes token/tool/turn badges appear during
-  # a multi-tool turn instead of waiting for the final Stop. Repeated segment
-  # totals are safe: focalpointd overwrites the current segment reading until
-  # an actual compaction fork establishes a new carry baseline.
+  # State is latency-sensitive and lifecycle-ordered; transcript telemetry is
+  # neither. Publish the state before scanning a potentially large JSONL file,
+  # then merge statistics independently with set-meta. This prevents an older
+  # asynchronous PostToolUse scan from delaying the visible transition behind
+  # a newer hook.
   if [ "$event" = "Stop" ] || [ "$event" = "PostToolUse" ]; then
+    "$FOCALPOINT" set-state "${args[@]}" 2>/dev/null || true
+    telemetry_lock=""
+    if [ "$event" = "PostToolUse" ]; then
+      telemetry_dir="${XDG_STATE_HOME:-$HOME/.local/state}/focalpoint/telemetry"
+      telemetry_stamp="$telemetry_dir/claude-$safe_session_id.stamp"
+      telemetry_lock="$telemetry_stamp.lock"
+      mkdir -p "$telemetry_dir" 2>/dev/null || exit 0
+      # Async PostToolUse hooks can overlap. One lock holder performs the
+      # whole-transcript recount; the rest have already published state and
+      # return immediately. The interval bounds repeated O(transcript) work
+      # during dense tool loops without sacrificing an authoritative Stop
+      # recount.
+      mkdir "$telemetry_lock" 2>/dev/null || exit 0
+      trap 'rmdir "$telemetry_lock" 2>/dev/null || true' EXIT
+      now=$(date +%s)
+      last=$(cat "$telemetry_stamp" 2>/dev/null || echo 0)
+      interval="${FOCALPOINT_TELEMETRY_INTERVAL_SECS:-5}"
+      case "$last:$interval" in
+        *[!0-9:]*|:*) last=0; interval=5 ;;
+      esac
+      if [ $((now - last)) -lt "$interval" ]; then
+        exit 0
+      fi
+      printf '%s' "$now" > "$telemetry_stamp" 2>/dev/null || true
+    fi
     stats=$(extract_stats "$transcript_path")
     if [ -n "$stats" ]; then
-      IFS=$'\t' read -r turns tool_calls subagents tokens_in tokens_out model context_tokens <<< "$stats"
-      args+=(--meta "turns=$turns" --meta "tool_calls=$tool_calls" \
-             --meta "subagents=$subagents" \
-             --meta "tokens_in=$tokens_in" --meta "tokens_out=$tokens_out")
-      [ -n "$model" ] && args+=(--meta "model=$model")
-      [ -n "$context_tokens" ] && args+=(--meta "context_tokens=$context_tokens")
+      IFS=$'\x1f' read -r turns tool_calls subagents tokens_in tokens_out model context_tokens <<< "$stats"
+      meta_args=(--session "$session_id" --kind claude \
+        --meta "turns=$turns" --meta "tool_calls=$tool_calls" \
+        --meta "subagents=$subagents" --meta "tokens_in=$tokens_in" \
+        --meta "tokens_out=$tokens_out")
+      [ -n "$model" ] && meta_args+=(--meta "model=$model")
+      [ -n "$context_tokens" ] && meta_args+=(--meta "context_tokens=$context_tokens")
+      "$FOCALPOINT" set-meta "${meta_args[@]}" 2>/dev/null || true
     fi
+    if [ -n "$telemetry_lock" ]; then
+      rmdir "$telemetry_lock" 2>/dev/null || true
+      trap - EXIT
+    fi
+    if [ "$event" = "Stop" ]; then channel_pull; fi
+    exit 0
   fi
 fi
 

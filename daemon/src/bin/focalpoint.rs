@@ -70,6 +70,35 @@ enum Cmd {
         #[arg(long)]
         refresh_identity: bool,
     },
+    /// Re-register the managed agent owning the current tmux pane. Intended
+    /// as a copy/paste recovery command when a launch window exists but its
+    /// normal provider hook was missed.
+    ReRegister {
+        /// Exact provider conversation/session id from the orphaned row.
+        #[arg(long)]
+        session: String,
+        /// claude | codex | cursor | cursor-cli
+        #[arg(long)]
+        kind: String,
+        /// Human-readable FocalPoint title.
+        #[arg(long)]
+        title: Option<String>,
+        /// Stable orchestrator task id. Defaults to the managed environment.
+        #[arg(long)]
+        task_id: Option<String>,
+        /// orchestrator | worker. Defaults to the managed environment.
+        #[arg(long)]
+        role: Option<String>,
+        /// Stable task id of this worker's manager.
+        #[arg(long)]
+        manager_task_id: Option<String>,
+        /// Reserved numbered slot originally returned by launch.
+        #[arg(long)]
+        slot: Option<u8>,
+        /// State to publish while recovering. Defaults to thinking.
+        #[arg(long, default_value = "thinking")]
+        state: String,
+    },
     /// Record a provider-wide account usage snapshot. Values must be numeric.
     SetUsage {
         /// Provider identifier, e.g. claude or codex.
@@ -245,6 +274,25 @@ fn main() {
             label.as_deref(),
             &meta,
             refresh_identity,
+        ),
+        Cmd::ReRegister {
+            session,
+            kind,
+            title,
+            task_id,
+            role,
+            manager_task_id,
+            slot,
+            state,
+        } => client::re_register(
+            &session,
+            &kind,
+            title.as_deref(),
+            task_id.as_deref(),
+            role.as_deref(),
+            manager_task_id.as_deref(),
+            slot,
+            &state,
         ),
         Cmd::SetUsage { provider, meta } => client::set_usage(&provider, &meta),
         Cmd::Usage { json } => client::usage(json),

@@ -62,6 +62,7 @@ fpctl-agent channel create
 # record the returned channel_id, e.g. ch-1
 fpctl-agent launch --provider codex --cwd /absolute/prepared/path \
   --task 'Implement and test the assigned slice.' --task-id worker-id \
+  --title 'Parser implementation' \
   --role worker --manager-task-id orchestrator-id --channel ch-1
 ```
 
@@ -88,6 +89,7 @@ work with a unique stable task id:
 ```sh
 fpctl-agent launch --provider codex --cwd /absolute/prepared/path \
   --task 'Implement and test the assigned slice.' --task-id worker-id \
+  --title 'Parser implementation' \
   --role worker --manager-task-id orchestrator-id
 ```
 
@@ -95,6 +97,39 @@ Top-level work uses `--role orchestrator` and no manager. A worker's manager
 must be a live managed orchestrator. `--model` is optional. Before launch,
 consult `status` usage: missing usage is unknown, not free capacity; prefer
 comparable providers with available reported headroom.
+
+Always pass a short, descriptive `--title` that is unique within the current
+work group. The daemon atomically reserves the worker's numbered slot before
+opening its terminal and prepends both identities to its initial task (for
+example, `session #4`, title `Parser implementation`). Record the returned
+`slot`, `title`, and `task_id`; use the number and title in channel directives
+and status summaries so the human and worker can identify the same terminal.
+If all twelve numbered slots are occupied, the response explicitly reports an
+overflow session instead of inventing a number.
+
+`launch` opens a new terminal application instance/window for every task. Do
+not attach a worker inside the orchestrator's existing terminal window or add
+it to an existing shared tmux session as another pane/window. Each worker owns
+a private `fp-*` tmux server;
+that server, task id, title, and reserved slot are the correlation fields to
+use when diagnosing an orphan.
+
+If a managed terminal is alive but its row is disconnected or missing, ask the
+human to use the app's **Copy Re-register Command** action for that row and
+paste the command into that exact agent. The command has this bounded shape:
+
+```sh
+focalpoint re-register --session SESSION_ID --kind codex \
+  --title 'Parser implementation' --task-id worker-id --role worker \
+  --manager-task-id orchestrator-id --slot 4 --state thinking
+```
+
+It succeeds only from a pane on a private FocalPoint `fp-*` tmux server and
+verifies the pane with tmux before publishing state. Never improvise a raw
+`set-state`, guess a provider session id, or run a copied recovery command in a
+different terminal. After recovery, confirm `status` reports the exact session
+id, task id, title, and current slot; the slot can legitimately differ if its
+old one was reclaimed while it was disconnected.
 
 For Cursor, use `--cursor-mode headless` (the default) when FocalPoint
 telemetry and channels matter. It uses Cursor's stream wrapper. Use

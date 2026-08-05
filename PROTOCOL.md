@@ -119,6 +119,7 @@ Requests:
 {"cmd": "focus-session", "session": "id"}
 {"cmd": "launch-session", "provider": "codex", "model": "gpt-5.6-sol", "cwd": "/prepared/path",
  "task": "Implement and test the assigned task.", "task_id": "stable-task-id",
+ "title": "Parser implementation",
  "role": "worker", "manager_task_id": "project-orchestrator", "channel_id": "ch-1"}
 {"cmd": "launch-session", "provider": "cursor", "cursor_mode": "headless", "cwd": "/prepared/path",
  "task": "Implement and test the assigned task.", "task_id": "cursor-task"}
@@ -306,7 +307,9 @@ drives an age-based session removal.
 - **Persisted state.** The daemon writes a snapshot to
   `$XDG_STATE_HOME/focalpoint/state.json` (falling back to
   `~/.local/state/focalpoint/state.json`) on every session-affecting change
-  and on `set-usage`. The file holds live sessions, tombstones, and usage
+  and on `set-usage`. Each replacement is written to a sibling temporary file
+  and atomically renamed, so interruption cannot expose a partially-written
+  JSON document. The file holds live sessions, tombstones, and usage
   snapshots and the optional explicit attention order; on startup the daemon
   loads it instead of starting empty,
   reconstructs internal timestamps from the saved wall-clock anchor, and
@@ -363,6 +366,9 @@ contains an opaque `launch_id`. Progress is broadcast as a
 `failed`. Only a replacement hook carrying the matching `meta.relaunch_id`
 completes the handoff. A launch or registration failure becomes a recoverable
 disconnected session; it never falls back to an unmanaged duplicate.
+The `launched` event includes both `tmux_server` and `tmux_session`; clients
+must attach with both because managed relaunches never use tmux's default
+server.
 
 `focus-session` (`{"cmd":"focus-session","session":"id"}`) runs that same
 `[session] focus` action for a session looked up **by id** rather than by a
@@ -395,7 +401,13 @@ absolute working directory, a literal
 non-empty task of at most 16384 UTF-8 bytes, and a stable task id of 1–64
 letters, digits, dots, underscores, or dashes. The daemon rejects duplicate
 task ids and starts the provider through the installed managed-session
-launcher in the terminal selected by the FocalPoint menu-bar app. The daemon
+launcher in a new application instance/window of the terminal selected by the
+FocalPoint menu-bar app. An optional printable `title` (defaulting to
+`task_id`) supplies the stable human identity. The daemon reserves the next
+numbered slot before opening the terminal, returns `slot` and `title`, and
+prepends both to the provider's initial task. Reservations are consumed by the
+first hook carrying the matching task id and expire after 120 seconds if no
+registration arrives. The daemon
 reads that preference for each launch, so changing terminals requires no
 daemon restart; a missing or invalid preference falls back to Terminal. It
 does not create worktrees, prepare environments, install
@@ -530,10 +542,19 @@ returns all eight. Renderers (firmware, menu bar, backlight) MUST honor styles
 where physically possible (single-color channels use pattern + brightness and
 ignore hue). The `subscribe` snapshot includes one `style` event per state.
 
-On `subscribe`, the daemon immediately sends the current aggregate as a
-`state` event plus one `session` event per live session, then streams: every
-aggregate change, every session change (registration included), session ends,
-and every device event (real or injected).
+On `subscribe`, the daemon sends an authoritative snapshot framed by
+`{"event":"snapshot-begin","generation":N}` and
+`{"event":"snapshot-end","generation":N}`. Between them are the current
+aggregate `state`, one `session` event per live **and disconnected/tombstoned**
+session (`connected` distinguishes them), the attention order, usage records,
+and all eight styles. It then streams every aggregate/session/style/usage
+change, session end, and device event (real or injected). The daemon subscribes
+to deltas before capturing the snapshot, so changes cannot slip through the
+boundary. If a subscriber falls behind the bounded event buffer, the daemon
+closes that stream; reconnecting yields a complete replacement snapshot rather
+than silently continuing after lost deltas. Clients that predate the framing
+events may ignore unknown event names and continue consuming the enclosed
+state/session/style events.
 
 State names in JSON are the lowercase names from §1 (`running` not
 `running-tool`).

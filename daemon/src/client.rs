@@ -217,6 +217,211 @@ pub fn set_meta(
     Ok(())
 }
 
+#[cfg(unix)]
+fn managed_tmux_server() -> Option<String> {
+    std::env::var("FOCALPOINT_TMUX_SERVER")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            // TMUX is `<socket>,<server-pid>,<client-id>`. For `tmux -L
+            // fp-...`, the socket basename is the private server name.
+            let socket = std::env::var("TMUX").ok()?.split(',').next()?.to_string();
+            std::path::Path::new(&socket)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_string)
+        })
+}
+
+#[cfg(unix)]
+fn valid_managed_tmux_field(value: &str, max: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= max
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | '%' | '/'))
+}
+
+#[cfg(unix)]
+fn valid_managed_id(value: &str, max: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= max
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+}
+
+/// `focalpoint re-register ...` is deliberately pane-local recovery, not an
+/// arbitrary session-registration shortcut. It proves that the caller is in
+/// a FocalPoint-owned private tmux server, reads the exact pane identity from
+/// tmux, and then sends the same bounded metadata a normal provider hook does.
+#[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
+pub fn re_register(
+    session: &str,
+    kind: &str,
+    title: Option<&str>,
+    task_id: Option<&str>,
+    role: Option<&str>,
+    manager_task_id: Option<&str>,
+    slot: Option<u8>,
+    state: &str,
+) -> Result<(), CliError> {
+    if session.is_empty() || session.len() > 512 || session.chars().any(char::is_control) {
+        return Err(CliError::new("--session must be a bounded printable id", 2));
+    }
+    if !matches!(kind, "claude" | "codex" | "cursor" | "cursor-cli") {
+        return Err(CliError::new(
+            "--kind must be claude, codex, cursor, or cursor-cli",
+            2,
+        ));
+    }
+    if State::from_name(state).is_none() {
+        return Err(CliError::new("--state is not a valid FocalPoint state", 2));
+    }
+    if slot.is_some_and(|value| !(1..=12).contains(&value)) {
+        return Err(CliError::new("--slot must be 1-12", 2));
+    }
+    if role.is_some_and(|value| !matches!(value, "orchestrator" | "worker")) {
+        return Err(CliError::new("--role must be orchestrator or worker", 2));
+    }
+
+    let env_task_id = std::env::var("FOCALPOINT_ORCHESTRATOR_TASK_ID").ok();
+    if let (Some(requested), Some(environment)) = (task_id, env_task_id.as_deref()) {
+        if requested != environment {
+            return Err(CliError::new(
+                "--task-id does not match this managed pane's task id",
+                2,
+            ));
+        }
+    }
+    let task_id = task_id
+        .map(str::to_string)
+        .or(env_task_id)
+        .filter(|value| valid_managed_id(value, 64));
+    let role = role
+        .map(str::to_string)
+        .or_else(|| std::env::var("FOCALPOINT_ORCHESTRATION_ROLE").ok());
+    let manager_task_id = manager_task_id
+        .map(str::to_string)
+        .or_else(|| std::env::var("FOCALPOINT_MANAGER_TASK_ID").ok());
+    let slot = slot.or_else(|| {
+        std::env::var("FOCALPOINT_SESSION_SLOT")
+            .ok()
+            .and_then(|value| value.parse::<u8>().ok())
+            .filter(|value| (1..=12).contains(value))
+    });
+    let title = title
+        .map(str::to_string)
+        .or_else(|| std::env::var("FOCALPOINT_SESSION_TITLE").ok())
+        .or_else(|| task_id.clone())
+        .unwrap_or_else(|| format!("Recovered {kind} session"));
+    if title.is_empty() || title.chars().count() > 120 || title.chars().any(char::is_control) {
+        return Err(CliError::new("--title must contain 1-120 printable characters", 2));
+    }
+
+    let server = managed_tmux_server().ok_or_else(|| {
+        CliError::new("not inside a managed tmux session (TMUX is missing)", 1)
+    })?;
+    if !server.starts_with("fp-")
+        || server.len() > 96
+        || !server
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
+    {
+        return Err(CliError::new(
+            "refusing to re-register from a non-FocalPoint tmux server",
+            1,
+        ));
+    }
+    let pane = std::env::var("TMUX_PANE").map_err(|_| {
+        CliError::new("cannot identify this tmux pane (TMUX_PANE is missing)", 1)
+    })?;
+    if pane.len() < 2
+        || pane.len() > 32
+        || !pane.starts_with('%')
+        || !pane[1..].chars().all(|ch| ch.is_ascii_digit())
+    {
+        return Err(CliError::new("invalid managed tmux pane identity", 1));
+    }
+    let tmux = [
+        std::env::var_os("FOCALPOINT_TMUX_BIN").map(std::path::PathBuf::from),
+        Some(std::path::PathBuf::from("tmux")),
+        Some(std::path::PathBuf::from("/opt/homebrew/bin/tmux")),
+        Some(std::path::PathBuf::from("/usr/local/bin/tmux")),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|candidate| {
+        candidate.as_os_str() == "tmux" || candidate.is_file()
+    })
+    .ok_or_else(|| CliError::new("tmux is not installed", 1))?;
+    let output = std::process::Command::new(tmux)
+        .args([
+            "-L",
+            &server,
+            "display-message",
+            "-p",
+            "-t",
+            &pane,
+            "#{session_name}\t#{pane_id}\t#{pane_tty}",
+        ])
+        .output()
+        .map_err(|error| CliError::new(format!("cannot inspect managed pane: {error}"), 1))?;
+    if !output.status.success() {
+        return Err(CliError::new(
+            "the private tmux server no longer owns this pane",
+            1,
+        ));
+    }
+    let identity = String::from_utf8(output.stdout)
+        .map_err(|_| CliError::new("tmux returned invalid pane identity", 1))?;
+    let mut fields = identity.trim().split('\t');
+    let mux_session = fields.next().unwrap_or("");
+    let mux_pane = fields.next().unwrap_or("");
+    let tty = fields.next().unwrap_or("");
+    if fields.next().is_some()
+        || !valid_managed_id(mux_session, 128)
+        || mux_pane != pane
+        || !tty.starts_with("/dev/")
+        || !valid_managed_tmux_field(tty, 256)
+    {
+        return Err(CliError::new("tmux pane ownership check failed", 1));
+    }
+
+    let mut meta = vec![
+        "managed=true".to_string(),
+        format!("mux_server={server}"),
+        format!("mux_session={mux_session}"),
+        format!("mux_pane={mux_pane}"),
+        format!("tty={tty}"),
+        "reregistered=true".to_string(),
+    ];
+    if let Some(value) = task_id { meta.push(format!("orchestrator_task_id={value}")); }
+    if let Some(value) = role { meta.push(format!("orchestration_role={value}")); }
+    if let Some(value) = manager_task_id { meta.push(format!("manager_task_id={value}")); }
+    if let Some(value) = slot { meta.push(format!("requested_slot={value}")); }
+    meta.push(format!("session_title={title}"));
+    if let Ok(value) = std::env::var("FOCALPOINT_CHANNEL_ID") {
+        if valid_managed_id(&value, 64) { meta.push(format!("channel_id={value}")); }
+    }
+    let cwd = std::env::current_dir().ok();
+    set_state(
+        state,
+        Some(session),
+        Some(kind),
+        Some(&title),
+        cwd.as_deref().and_then(std::path::Path::to_str),
+        &meta,
+        true,
+    )?;
+    eprintln!(
+        "re-registered {session} as {} · {title} on {server}/{mux_session}/{mux_pane}",
+        slot.map(|value| format!("session #{value}")).unwrap_or_else(|| "an unnumbered session".into())
+    );
+    Ok(())
+}
+
 /// `focalpoint set-usage <provider> --meta key=value...`
 #[cfg(unix)]
 pub fn set_usage(provider: &str, meta: &[String]) -> Result<(), CliError> {

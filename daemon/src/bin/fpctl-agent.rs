@@ -58,6 +58,10 @@ enum AgentCommand {
         task: String,
         #[arg(long)]
         task_id: String,
+        /// Short, human-readable identity shown in FocalPoint and embedded in
+        /// the worker's initial prompt. Defaults to the stable task id.
+        #[arg(long)]
+        title: Option<String>,
         /// Relationship shown by FocalPoint. Defaults to a normal worker.
         #[arg(long, value_enum, default_value_t = OrchestrationRole::Worker)]
         role: OrchestrationRole,
@@ -328,6 +332,7 @@ fn run(command: AgentCommand) -> Result<(), String> {
             cwd,
             task,
             task_id,
+            title,
             role,
             manager_task_id,
             channel,
@@ -335,6 +340,7 @@ fn run(command: AgentCommand) -> Result<(), String> {
         } => request(json!({
             "cmd": "launch-session", "provider": provider.name(), "cwd": cwd,
             "model": model, "task": task, "task_id": task_id,
+            "title": title,
             "role": role.name(), "manager_task_id": manager_task_id, "channel_id": channel,
             "cursor_mode": matches!(provider, Provider::Cursor).then(|| cursor_mode.name()),
         }))?,
@@ -426,16 +432,20 @@ mod tests {
             "Inspect it.",
             "--task-id",
             "inspect-1",
+            "--title",
+            "Inspection worker",
         ])
         .unwrap();
         match parsed.command {
             AgentCommand::Launch {
                 model,
+                title,
                 role,
                 manager_task_id,
                 ..
             } => {
                 assert_eq!(model.as_deref(), Some("sonnet"));
+                assert_eq!(title.as_deref(), Some("Inspection worker"));
                 assert!(matches!(role, OrchestrationRole::Worker));
                 assert!(manager_task_id.is_none());
             }

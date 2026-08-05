@@ -289,6 +289,11 @@ struct DesktopWidgetView: View {
             model.relaunchAsManaged(s)
         }
         .disabled(!model.canRelaunchAsManaged(s))
+        if model.reRegisterCommand(for: s) != nil {
+            Button("Copy Re-register Command") {
+                model.copyReRegisterCommand(for: s)
+            }
+        }
         // Same parking action as the dropdown (PROTOCOL.md §3
         // set-session-backlogged); live sessions only.
         if s.backlogged {

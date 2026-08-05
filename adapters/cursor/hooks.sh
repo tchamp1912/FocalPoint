@@ -48,6 +48,7 @@ set -u
 
 # Path to focalpoint CLI
 FOCALPOINT="${FOCALPOINT_PATH:-focalpoint}"
+JQ_BIN=$(command -v jq 2>/dev/null || true)
 
 # Read the full hook JSON from stdin; if anything fails, silently exit 0
 hook_json=$(cat 2>/dev/null) || exit 0
@@ -57,8 +58,8 @@ hook_json=$(cat 2>/dev/null) || exit 0
 # other FocalPoint adapters).
 extract_field() {
   local field="$1"
-  if command -v jq >/dev/null 2>&1; then
-    printf '%s' "$hook_json" | jq -r --arg f "$field" '.[$f] // empty' 2>/dev/null
+  if [ -n "$JQ_BIN" ]; then
+    printf '%s' "$hook_json" | "$JQ_BIN" -r --arg f "$field" '.[$f] // empty' 2>/dev/null
   else
     printf '%s' "$hook_json" \
       | sed -n "s/.*\"${field}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" \
@@ -74,8 +75,8 @@ extract_root() {
     printf '%s' "$CURSOR_PROJECT_DIR"
     return 0
   fi
-  if command -v jq >/dev/null 2>&1; then
-    printf '%s' "$hook_json" | jq -r '.workspace_roots[0] // .cwd // empty' 2>/dev/null
+  if [ -n "$JQ_BIN" ]; then
+    printf '%s' "$hook_json" | "$JQ_BIN" -r '.workspace_roots[0] // .cwd // empty' 2>/dev/null
     return 0
   fi
   extract_field "cwd"
@@ -97,8 +98,8 @@ extract_root() {
 extract_stats() {
   local transcript="$1"
   [ -n "$transcript" ] && [ -f "$transcript" ] || return 0
-  command -v jq >/dev/null 2>&1 || return 0
-  jq -r -s '
+  [ -n "$JQ_BIN" ] || return 0
+  "$JQ_BIN" -r -s '
     def tool_uses:
       [.[]
        | select(.role == "assistant")
@@ -113,19 +114,31 @@ extract_stats() {
   ' "$transcript" 2>/dev/null
 }
 
-event=$(extract_field "hook_event_name")
+if [ -n "$JQ_BIN" ]; then
+  parsed=$(printf '%s' "$hook_json" | "$JQ_BIN" -r '
+    [ .hook_event_name // "", .conversation_id // .session_id // "",
+      .workspace_roots[0] // .cwd // "", .transcript_path // "", .model // "",
+      .prompt // "", .generation_id // "", .status // "",
+      .input_tokens // "", .output_tokens // "" ]
+    | map(tostring) | join("\u001f")
+  ' 2>/dev/null) || exit 0
+  IFS=$'\x1f' read -r event session_id root transcript_path model prompt \
+    generation_id stop_status input_tokens output_tokens <<< "$parsed"
+  [ -n "${CURSOR_PROJECT_DIR:-}" ] && root="$CURSOR_PROJECT_DIR"
+else
+  event=$(extract_field "hook_event_name")
+  session_id=$(extract_field "conversation_id")
+  [ -n "$session_id" ] || session_id=$(extract_field "session_id")
+  root=$(extract_root)
+  transcript_path=$(extract_field "transcript_path")
+  model=$(extract_field "model")
+  prompt=$(extract_field "prompt")
+  generation_id=$(extract_field "generation_id")
+  stop_status=$(extract_field "status")
+  input_tokens=$(extract_field "input_tokens")
+  output_tokens=$(extract_field "output_tokens")
+fi
 [ -n "${event:-}" ] || exit 0
-
-# conversation_id is on every agent hook; sessionStart/sessionEnd call the
-# same identifier session_id.
-session_id=$(extract_field "conversation_id")
-[ -n "$session_id" ] || session_id=$(extract_field "session_id")
-
-root=$(extract_root)
-transcript_path=$(extract_field "transcript_path")
-model=$(extract_field "model")
-prompt=$(extract_field "prompt")
-generation_id=$(extract_field "generation_id")
 
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/focalpoint/cursor"
 label_file="$state_dir/$session_id.label"
@@ -157,7 +170,7 @@ case "$event" in
   stop)
     # "completed" is a clean finish; "aborted" (user stopped the agent) and
     # "error" both leave the session needing attention.
-    if [ "$(extract_field "status")" = "completed" ]; then
+    if [ "$stop_status" = "completed" ]; then
       state="done"
     else
       state="error"
@@ -181,13 +194,27 @@ esac
 # to a plain sessionless set-state, which still drives the aggregate.
 args=("$state")
 if [ -n "${session_id:-}" ]; then
-  if [ -s "$label_file" ]; then
+  if [ -n "${FOCALPOINT_SESSION_TITLE:-}" ]; then
+    label="$FOCALPOINT_SESSION_TITLE"
+  elif [ -s "$label_file" ]; then
     label=$(cat "$label_file" 2>/dev/null)
   else
     label="Cursor · $(basename "${root:-.}")"
   fi
   args+=(--session "$session_id" --kind cursor --cwd "$root" \
          --label "$label")
+  [ -n "${FOCALPOINT_ORCHESTRATOR_TASK_ID:-}" ] && \
+    args+=(--meta "orchestrator_task_id=$FOCALPOINT_ORCHESTRATOR_TASK_ID")
+  [ -n "${FOCALPOINT_SESSION_TITLE:-}" ] && \
+    args+=(--meta "session_title=$FOCALPOINT_SESSION_TITLE")
+  [ -n "${FOCALPOINT_SESSION_SLOT:-}" ] && \
+    args+=(--meta "requested_slot=$FOCALPOINT_SESSION_SLOT")
+  [ -n "${FOCALPOINT_ORCHESTRATION_ROLE:-}" ] && \
+    args+=(--meta "orchestration_role=$FOCALPOINT_ORCHESTRATION_ROLE")
+  [ -n "${FOCALPOINT_MANAGER_TASK_ID:-}" ] && \
+    args+=(--meta "manager_task_id=$FOCALPOINT_MANAGER_TASK_ID")
+  [ -n "${FOCALPOINT_CHANNEL_ID:-}" ] && \
+    args+=(--meta "channel_id=$FOCALPOINT_CHANNEL_ID")
   [ -n "${model:-}" ] && args+=(--meta "model=$model")
 
   if [ "$event" = "stop" ]; then
@@ -200,14 +227,12 @@ if [ -n "${session_id:-}" ]; then
 
     # Cursor 3.13+ reports per-generation usage directly on `stop`. Accumulate
     # once per generation id; older Cursor versions simply omit these fields.
-    input_tokens=$(extract_field "input_tokens")
-    output_tokens=$(extract_field "output_tokens")
     if [ -n "${generation_id:-}" ] && [ -n "${input_tokens:-}" ] && [ -n "${output_tokens:-}" ] \
-       && command -v jq >/dev/null 2>&1; then
+       && [ -n "$JQ_BIN" ]; then
       mkdir -p "$state_dir" 2>/dev/null
       current='{"generations":[],"tokens_in":0,"tokens_out":0}'
       [ -s "$stats_file" ] && current=$(cat "$stats_file" 2>/dev/null)
-      updated=$(printf '%s' "$current" | jq -c --arg generation "$generation_id" \
+      updated=$(printf '%s' "$current" | "$JQ_BIN" -c --arg generation "$generation_id" \
         --argjson tokens_in "$input_tokens" --argjson tokens_out "$output_tokens" '
           if (.generations // [] | index($generation)) != null then .
           else
@@ -218,8 +243,8 @@ if [ -n "${session_id:-}" ]; then
         ' 2>/dev/null)
       if [ -n "$updated" ]; then
         printf '%s' "$updated" > "$stats_file" 2>/dev/null
-        cumulative_in=$(printf '%s' "$updated" | jq -r '.tokens_in')
-        cumulative_out=$(printf '%s' "$updated" | jq -r '.tokens_out')
+        cumulative_in=$(printf '%s' "$updated" | "$JQ_BIN" -r '.tokens_in')
+        cumulative_out=$(printf '%s' "$updated" | "$JQ_BIN" -r '.tokens_out')
         args+=(--meta "tokens_in=$cumulative_in" --meta "tokens_out=$cumulative_out")
       fi
     fi

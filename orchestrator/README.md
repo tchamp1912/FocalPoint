@@ -62,11 +62,15 @@ fpctl-agent launch \
   --model gpt-5.6-sol \
   --cwd /absolute/path/already/prepared/by/the/orchestrator \
   --task 'Implement and test the assigned task.' \
-  --task-id stable-task-id
+  --task-id stable-task-id \
+  --title 'Parser implementation'
 ```
 
 It opens the literal task in Claude, Codex, or Cursor at that exact directory and tags
-the resulting session for correlation. The visible managed session opens in
+the resulting session for correlation. Before opening the terminal, the daemon
+reserves its numbered slot and tells the agent both that number and `--title`
+in its initial task. The visible managed session opens in a new application
+instance/window of
 the terminal selected under FocalPoint Settings; changing the preference takes
 effect on the next launch. It does not create worktrees, install
 dependencies, run setup commands, choose sandbox or approval settings,
@@ -87,9 +91,10 @@ are required.
 
 ```sh
 fpctl-agent launch --provider cursor --cursor-mode headless --cwd /absolute/path \
-  --task 'Run the authorized task.' --task-id cursor-headless-1
+  --task 'Run the authorized task.' --task-id cursor-headless-1 --title 'Cursor audit'
 fpctl-agent launch --provider cursor --cursor-mode attachable --cwd /absolute/path \
-  --task 'Run the authorized task interactively.' --task-id cursor-interactive-1
+  --task 'Run the authorized task interactively.' --task-id cursor-interactive-1 \
+  --title 'Interactive Cursor audit'
 ```
 
 The native `fpctl-agent` controller communicates with `focalpointd` over the
@@ -166,6 +171,15 @@ uses the managed launcher when available.
 
 Managed focus is exact. Unmanaged focus remains best-effort because the daemon
 must locate and raise an existing terminal window without a pane identity.
+
+If a managed terminal survives but its normal hook registration does not, use
+**Copy Re-register Command** on its FocalPoint row and paste the command into
+that exact agent. `focalpoint re-register` refuses to run outside a private
+`fp-*` tmux server, verifies the exact pane/server/session tuple, and republishes
+the provider session id, title, task relationship, tty, and managed ownership.
+The wrapper transport log is `~/.local/state/focalpoint/managed-launch.log`;
+daemon logs use `[managed-launch]`, `[managed-relaunch]`, and `[session]` fields
+with task, title, slot, and private tmux identity for correlation.
 
 ## Approval noise
 

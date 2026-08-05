@@ -23,10 +23,35 @@
 
 set -u
 
+# A small append-only transport log survives cases where LaunchServices opens
+# a window but the provider never reaches its first hook. Never record task
+# text or command arguments; identity and tmux ownership are enough to trace
+# collisions and orphaned launches.
+LAUNCH_LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/focalpoint"
+LAUNCH_LOG="$LAUNCH_LOG_DIR/managed-launch.log"
+LAUNCH_COMMAND=""
+log_field() { printf '%s' "${1:-}" | tr '\r\n\t' '   ' | cut -c1-160; }
+launch_log() {
+  mkdir -p "$LAUNCH_LOG_DIR" 2>/dev/null || return 0
+  chmod 700 "$LAUNCH_LOG_DIR" 2>/dev/null || true
+  printf 'time=%s event=%s wrapper_pid=%s task_id=%s title=%s slot=%s role=%s layout=%s tmux_server=%s command=%s\n' \
+    "$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || printf unknown)" \
+    "$(log_field "$1")" "$$" \
+    "$(log_field "${FOCALPOINT_ORCHESTRATOR_TASK_ID:-}")" \
+    "$(log_field "${FOCALPOINT_SESSION_TITLE:-}")" \
+    "$(log_field "${FOCALPOINT_SESSION_SLOT:-}")" \
+    "$(log_field "${FOCALPOINT_ORCHESTRATION_ROLE:-}")" \
+    "$(log_field "${LAYOUT:-}")" \
+    "$(log_field "${TMUX_SERVER:-}")" \
+    "$(log_field "${CMD_NAME:-$LAUNCH_COMMAND}")" >> "$LAUNCH_LOG" 2>/dev/null || true
+  chmod 600 "$LAUNCH_LOG" 2>/dev/null || true
+}
+
 if [ "$#" -eq 0 ]; then
   echo "usage: focalpoint-run.sh <command> [args...]" >&2
   exit 1
 fi
+LAUNCH_COMMAND="$(basename "$1" 2>/dev/null)"
 
 # A History recovery is an explicit resume, not a brand-new session. Preserve
 # the provider's requested conversation id so adapter hooks can tell the
@@ -70,6 +95,7 @@ fi
 # available. Falls straight through to running the command unmanaged,
 # identical to today's behavior with no wrapper at all.
 if [ -z "$TMUX_BIN" ] || [ ! -x "$TMUX_BIN" ]; then
+  launch_log "unmanaged-no-tmux"
   exec "$@"
 fi
 
@@ -77,6 +103,7 @@ fi
 # also covers a user manually re-running focalpoint-run.sh from inside an
 # already-managed session.
 if [ -n "${TMUX:-}" ]; then
+  launch_log "nested-existing-tmux"
   exec "$@"
 fi
 
@@ -122,6 +149,10 @@ TMUX_ENV_ARGS+=(-e "FOCALPOINT_TMUX_SERVER=$TMUX_SERVER")
   TMUX_ENV_ARGS+=(-e "FOCALPOINT_MANAGER_TASK_ID=$FOCALPOINT_MANAGER_TASK_ID")
 [ -n "${FOCALPOINT_CHANNEL_ID:-}" ] && \
   TMUX_ENV_ARGS+=(-e "FOCALPOINT_CHANNEL_ID=$FOCALPOINT_CHANNEL_ID")
+[ -n "${FOCALPOINT_SESSION_TITLE:-}" ] && \
+  TMUX_ENV_ARGS+=(-e "FOCALPOINT_SESSION_TITLE=$FOCALPOINT_SESSION_TITLE")
+[ -n "${FOCALPOINT_SESSION_SLOT:-}" ] && \
+  TMUX_ENV_ARGS+=(-e "FOCALPOINT_SESSION_SLOT=$FOCALPOINT_SESSION_SLOT")
 [ -n "${FOCALPOINT_RELAUNCH_ID:-}" ] && \
   TMUX_ENV_ARGS+=(-e "FOCALPOINT_RELAUNCH_ID=$FOCALPOINT_RELAUNCH_ID")
 [ -n "${FOCALPOINT_RESUME_SESSION_ID:-}" ] && \
@@ -133,6 +164,8 @@ TMUX_ENV_ARGS+=(-e "FOCALPOINT_TMUX_SERVER=$TMUX_SERVER")
 CMD_NAME="$(basename "$1" 2>/dev/null)"
 SAFE_CMD="$(printf '%s' "$CMD_NAME" | tr -c 'A-Za-z0-9_-' '-')"
 [ -n "$SAFE_CMD" ] || SAFE_CMD="cmd"
+
+launch_log "tmux-exec"
 
 case "$LAYOUT" in
   cockpit)

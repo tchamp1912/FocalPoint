@@ -108,9 +108,24 @@ func focalpointConnect(recvTimeout: Double = 0) -> Int32? {
     return fd
 }
 
-func focalpointSendLine(_ fd: Int32, _ line: String) {
+@discardableResult
+func focalpointSendLine(_ fd: Int32, _ line: String) -> Bool {
     let data = Array((line + "\n").utf8)
-    _ = data.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
+    return data.withUnsafeBytes { raw in
+        guard let base = raw.baseAddress else { return true }
+        var written = 0
+        while written < raw.count {
+            let n = write(fd, base.advanced(by: written), raw.count - written)
+            if n > 0 {
+                written += n
+            } else if n < 0 && errno == EINTR {
+                continue
+            } else {
+                return false
+            }
+        }
+        return true
+    }
 }
 
 /// Read NDJSON objects from fd, invoking handler per object. Returns on EOF/error.
@@ -149,20 +164,16 @@ final class DaemonClient: @unchecked Sendable {
 
     /// Start the subscribe loop. Reconnects every 2 s while down.
     /// onStatus(up) fires on every connect/disconnect edge.
-    /// onConnect fires once per successful connect (before events stream),
-    /// so the model can issue one-shot get-styles / list-sessions refreshes.
     func startSubscribe(onStatus: @escaping (Bool) -> Void,
-                        onConnect: @escaping () -> Void,
                         onEvent: @escaping ([String: Any]) -> Void) {
         lock.lock(); running = true; lock.unlock()
         Thread.detachNewThread {
             while self.isRunning {
                 if let fd = focalpointConnect() {
+                    guard let sub = focalpointEncode(["cmd": "subscribe"]) else { close(fd); continue }
+                    guard focalpointSendLine(fd, sub) else { close(fd); continue }
                     log("connected to focalpointd")
                     onStatus(true)
-                    onConnect()
-                    guard let sub = focalpointEncode(["cmd": "subscribe"]) else { close(fd); continue }
-                    focalpointSendLine(fd, sub)
                     focalpointReadLines(fd) { obj in
                         onEvent(obj)
                         return self.isRunning
@@ -198,7 +209,10 @@ final class DaemonClient: @unchecked Sendable {
             return nil
         }
         defer { close(fd) }
-        focalpointSendLine(fd, line)
+        guard focalpointSendLine(fd, line) else {
+            log("request write-failed cmd=\(cmd) session=\(session)")
+            return nil
+        }
         var result: [String: Any]?
         focalpointReadLines(fd) { dict in
             result = dict

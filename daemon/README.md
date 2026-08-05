@@ -141,8 +141,9 @@ connect. Period defaults to the state default when omitted.
 
 `focalpoint watch` (a `subscribe` request) receives, as NDJSON:
 
-- an immediate snapshot on connect: an aggregate `{"event":"state",...}` event
-  plus one `{"event":"session",...}` event per live session,
+- an immediate authoritative snapshot framed by `snapshot-begin` / `snapshot-end`:
+  aggregate state, live and disconnected/tombstoned sessions, attention order,
+  provider usage, and all eight styles,
 - every subsequent aggregate change and session change (registration included),
   `{"event":"session-ended",...}` when a session ends, and
   `{"event":"session-rekeyed","old_session":...,"new_session":...}` when a
@@ -153,6 +154,10 @@ connect. Period defaults to the state default when omitted.
   snapshot events, plus a `style` event on every later `set-style`,
 - every device event, real or injected
   (`key` / `dial` / `joy`, per PROTOCOL.md §3).
+
+If a subscriber overruns the bounded event buffer, the daemon closes its
+stream. Reconnecting repairs it from a new authoritative snapshot; it never
+continues after silently dropping deltas.
 
 ### Injecting synthetic events
 
@@ -252,7 +257,10 @@ agent adapter ──focalpoint CLI──▶ ┌───────────
   socket server, and event→action dispatch. The device thread does blocking
   HID I/O and talks to the async server via an mpsc (host→device) and a
   broadcast channel (device→subscribers). Current state lives in shared state
-  so it survives device disconnects.
+  so it survives device disconnects. A transition coordinator serializes each
+  registry mutation through hardware commands, subscriber events, and one
+  atomic persisted snapshot, preventing concurrent hook connections from
+  publishing or saving transitions out of order.
 - **`paths.rs`** — socket path resolution (`$XDG_RUNTIME_DIR/focalpoint.sock` →
   `~/.local/state/focalpoint/focalpoint.sock`).
 - **`client.rs`** — the CLI's synchronous socket client.

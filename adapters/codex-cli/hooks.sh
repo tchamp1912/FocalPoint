@@ -45,6 +45,7 @@ if [ "${1:-}" = "--deferred-wait" ]; then
 fi
 
 FOCALPOINT="${FOCALPOINT_PATH:-focalpoint}"
+JQ_BIN=$(command -v jq 2>/dev/null || true)
 
 channel_pull() {
   [ -n "${FOCALPOINT_CHANNEL_ID:-}" ] || return 0
@@ -55,8 +56,8 @@ payload=$(cat 2>/dev/null) || exit 0
 
 field() {
   local name="$1"
-  if command -v jq >/dev/null 2>&1; then
-    printf '%s' "$payload" | jq -r --arg name "$name" '.[$name] // empty' 2>/dev/null
+  if [ -n "$JQ_BIN" ]; then
+    printf '%s' "$payload" | "$JQ_BIN" -r --arg name "$name" '.[$name] // empty' 2>/dev/null
   else
     printf '%s' "$payload" \
       | sed -n "s/.*\"${name}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" \
@@ -71,22 +72,32 @@ extract_context_snapshot() {
   local transcript="$1"
   local last_line=""
   [ -n "$transcript" ] && [ -f "$transcript" ] || return 0
-  command -v jq >/dev/null 2>&1 || return 0
-  last_line=$(grep -F '"type":"token_count"' "$transcript" 2>/dev/null | tail -n 1) || return 0
+  [ -n "$JQ_BIN" ] || return 0
+  # token_count is emitted repeatedly during a turn; search a bounded tail so
+  # every synchronous tool hook stays O(recent activity), not O(session age).
+  last_line=$(tail -n 500 "$transcript" 2>/dev/null | grep -F '"type":"token_count"' | tail -n 1) || return 0
   [ -n "$last_line" ] || return 0
-  printf '%s' "$last_line" | jq -r '
+  printf '%s' "$last_line" | "$JQ_BIN" -r '
     .payload.info
     | [(.last_token_usage.input_tokens // 0), (.model_context_window // 0)]
     | @tsv
   ' 2>/dev/null
 }
 
-event=$(field hook_event_name)
-session_id=$(field session_id)
-cwd=$(field cwd)
-model=$(field model)
-transcript_path=$(field transcript_path)
-prompt=$(field prompt)
+if [ -n "$JQ_BIN" ]; then
+  parsed=$(printf '%s' "$payload" | "$JQ_BIN" -r '
+    [ .hook_event_name // "", .session_id // "", .cwd // "", .model // "",
+      .transcript_path // "", .prompt // "" ] | join("\u001f")
+  ' 2>/dev/null) || exit 0
+  IFS=$'\x1f' read -r event session_id cwd model transcript_path prompt <<< "$parsed"
+else
+  event=$(field hook_event_name)
+  session_id=$(field session_id)
+  cwd=$(field cwd)
+  model=$(field model)
+  transcript_path=$(field transcript_path)
+  prompt=$(field prompt)
+fi
 
 # Codex can immediately auto-approve PermissionRequest. Use a short,
 # cancelable grace period so only a permission request that remains blocked
@@ -171,7 +182,9 @@ esac
 
 args=("$state")
 if [ -n "${session_id:-}" ]; then
-  if [ -s "$label_file" ]; then
+  if [ -n "${FOCALPOINT_SESSION_TITLE:-}" ]; then
+    label="$FOCALPOINT_SESSION_TITLE"
+  elif [ -s "$label_file" ]; then
     label=$(cat "$label_file" 2>/dev/null)
   else
     label="Codex · $(basename "${cwd:-.}")"
@@ -185,6 +198,10 @@ if [ -n "${session_id:-}" ]; then
     args+=(--meta "resume_session_id=$FOCALPOINT_RESUME_SESSION_ID")
   [ -n "${FOCALPOINT_ORCHESTRATOR_TASK_ID:-}" ] && \
     args+=(--meta "orchestrator_task_id=$FOCALPOINT_ORCHESTRATOR_TASK_ID")
+  [ -n "${FOCALPOINT_SESSION_TITLE:-}" ] && \
+    args+=(--meta "session_title=$FOCALPOINT_SESSION_TITLE")
+  [ -n "${FOCALPOINT_SESSION_SLOT:-}" ] && \
+    args+=(--meta "requested_slot=$FOCALPOINT_SESSION_SLOT")
   [ -n "${FOCALPOINT_ORCHESTRATION_ROLE:-}" ] && \
     args+=(--meta "orchestration_role=$FOCALPOINT_ORCHESTRATION_ROLE")
   [ -n "${FOCALPOINT_MANAGER_TASK_ID:-}" ] && \
@@ -201,7 +218,7 @@ if [ -n "${session_id:-}" ]; then
     mkdir -p "$counter_dir" 2>/dev/null
     counter_file="$counter_dir/$session_id.turns"
     stats=""
-    if [ -n "${transcript_path:-}" ] && [ -f "$transcript_path" ] && command -v jq >/dev/null 2>&1; then
+    if [ -n "${transcript_path:-}" ] && [ -f "$transcript_path" ] && [ -n "$JQ_BIN" ]; then
       # Codex rollout JSONL is explicitly a convenience rather than a stable
       # hook API, so keep this parser defensive and retain the counter fallback
       # below. token_count.total_token_usage.output_tokens is cumulative and
@@ -215,7 +232,7 @@ if [ -n "${session_id:-}" ]; then
       # real rollout files — Codex compacts in place, same thread_id, so this
       # is already a whole-lineage total with no daemon-side carry-forward
       # needed, unlike Claude Code's cumulative stats).
-      stats=$(jq -r -s '
+      stats=$("$JQ_BIN" -r -s '
         ([.[] | select(.type=="event_msg" and .payload.type=="token_count"
           and .payload.info.total_token_usage!=null) | .payload.info] | last // {}) as $usage
         | ([.[] | select(.type=="event_msg" and .payload.type=="task_complete") | .timestamp]) as $ends
@@ -248,12 +265,12 @@ if [ -n "${session_id:-}" ]; then
           }
         | [.turns, .tool_calls, .subagents, .tokens_in, .tokens_out, .model,
            .context_tokens, .context_window, .compactions]
-        | @tsv
+        | map(tostring) | join("\u001f")
       ' "$transcript_path" 2>/dev/null)
     fi
 
     if [ -n "$stats" ]; then
-      IFS=$'\t' read -r turns tool_calls subagents tokens_in tokens_out transcript_model context_tokens context_window compactions <<< "$stats"
+      IFS=$'\x1f' read -r turns tool_calls subagents tokens_in tokens_out transcript_model context_tokens context_window compactions <<< "$stats"
       printf '%s' "$turns" > "$counter_file" 2>/dev/null
       args+=(--meta "turns=$turns" --meta "tool_calls=$tool_calls" \
              --meta "subagents=$subagents" --meta "tokens_in=$tokens_in" \

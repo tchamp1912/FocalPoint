@@ -208,6 +208,13 @@ struct MenuContentView: View {
             Button("Show in Finder") { model.revealInFinder(cwd) }
             Button("Copy Working Directory") { model.copyToPasteboard(cwd) }
         }
+        if model.reRegisterCommand(for: s) != nil {
+            Divider()
+            Button("Copy Re-register Command") {
+                model.copyReRegisterCommand(for: s)
+            }
+            .help("Paste this into the orphaned managed agent to restore its FocalPoint registration")
+        }
         Divider()
         Button("Relaunch as Managed Session") {
             model.relaunchAsManaged(s)

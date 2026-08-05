@@ -78,14 +78,14 @@ class ApprovalDebounceTests(unittest.TestCase):
         self.assertTrue(any(line.startswith("set-state running") for line in calls))
         self.assertFalse(any(line.startswith("set-state waiting") for line in calls))
 
-    def test_claude_failed_auto_approval_becomes_waiting(self) -> None:
+    def test_claude_failed_auto_approval_becomes_approval(self) -> None:
         calls = self.run_scenario(
             "adapters/claude-code/hooks.sh",
             {"hook_event_name": "Notification", "notification_type": "permission_prompt",
              "session_id": "claude-2", "cwd": "/tmp"},
             None,
         )
-        self.assertTrue(any(line.startswith("set-state waiting") for line in calls))
+        self.assertTrue(any(line.startswith("set-state approval") for line in calls))
 
     def test_codex_registering_state_carries_relaunch_and_managed_meta(self) -> None:
         calls = self.run_scenario(
@@ -119,7 +119,7 @@ class ApprovalDebounceTests(unittest.TestCase):
             None,
             {"FOCALPOINT_RELAUNCH_ID": "handoff-456"},
         )
-        state_call = next(line for line in calls if line.startswith("set-state waiting"))
+        state_call = next(line for line in calls if line.startswith("set-state approval"))
         self.assertIn("--meta managed=false", state_call)
         self.assertIn("--meta mux_pane=", state_call)
         self.assertIn("--meta relaunch_id=handoff-456", state_call)

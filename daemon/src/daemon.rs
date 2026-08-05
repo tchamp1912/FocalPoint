@@ -76,6 +76,7 @@ pub enum Request {
         cursor_mode: Option<String>,
         task: String,
         task_id: String,
+        title: Option<String>,
         role: Option<String>,
         manager_task_id: Option<String>,
         channel_id: Option<String>,
@@ -127,6 +128,8 @@ impl Serialize for StyleMap {
 #[derive(Debug, Serialize)]
 #[serde(tag = "event", rename_all = "kebab-case")]
 pub enum Event {
+    SnapshotBegin { generation: u64 },
+    SnapshotEnd { generation: u64 },
     State { state: String },
     Session { #[serde(flatten)] session: SessionDto },
     SessionEnded { session: String, slot: Option<u8> },
@@ -228,6 +231,7 @@ fn quit_agent_process(pid: i32) -> bool {
 }
 
 static RELAUNCH_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+static SNAPSHOT_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 /// Render one allow-listed diagnostic field without permitting newlines,
 /// control characters, or unbounded client-provided text into daemon logs.
@@ -546,6 +550,18 @@ fn valid_orchestrator_model_id(id: &str) -> bool {
 }
 
 #[cfg(unix)]
+fn orchestrator_session_title(title: Option<&str>, task_id: &str) -> Result<String, String> {
+    let title = title.unwrap_or(task_id).trim();
+    if title.is_empty()
+        || title.chars().count() > 120
+        || title.chars().any(char::is_control)
+    {
+        return Err("title must contain 1-120 printable characters".into());
+    }
+    Ok(title.to_string())
+}
+
+#[cfg(unix)]
 fn validate_orchestration_relationship(
     registry: &Registry,
     role: &str,
@@ -687,6 +703,11 @@ fn preferred_terminal_bundle_id() -> String {
     DEFAULT_TERMINAL_BUNDLE_ID.to_string()
 }
 
+#[cfg(unix)]
+fn terminal_open_args(bundle_id: &str) -> [&str; 3] {
+    ["-n", "-b", bundle_id]
+}
+
 /// Safely launch one exact, user-authorized task in an already-prepared
 /// directory. Isolation and task decomposition deliberately remain outside
 /// the daemon; this only owns the managed process lifecycle.
@@ -698,6 +719,8 @@ fn launch_orchestrated_session(
     cwd: &str,
     task: &str,
     task_id: &str,
+    title: &str,
+    slot: Option<u8>,
     role: &str,
     manager_task_id: Option<&str>,
     channel_id: Option<&str>,
@@ -786,6 +809,8 @@ fn launch_orchestrated_session(
         })?;
     let receipt_value = serde_json::json!({
         "task_id": task_id,
+        "title": title,
+        "slot": slot,
         "provider": provider,
         "cursor_mode": (provider == "cursor").then_some(cursor_mode),
         "model": model,
@@ -810,7 +835,12 @@ fn launch_orchestrated_session(
         let _ = std::fs::remove_file(&receipt);
         return Err(format!("task id already has a pending launcher: {task_id}"));
     }
-    let prompt = format!("Task:\n{task}");
+    let numbered_identity = slot
+        .map(|slot| format!("session #{slot}"))
+        .unwrap_or_else(|| "an overflow session without a numbered key".to_string());
+    let prompt = format!(
+        "FocalPoint identity:\n- You are {numbered_identity}.\n- Your title is {title:?}.\n- Your stable task id is {task_id:?}.\n- Your orchestration role is {role:?}.\nUse this number and title when identifying yourself in progress, blocker, and completion messages.\n\nTask:\n{task}"
+    );
     let cursor_wrapper = home.join(".config/focalpoint/adapters/cursor-cli-focalpoint.sh");
     let provider_command = if provider == "cursor" {
         cursor_provider_command(
@@ -830,12 +860,17 @@ fn launch_orchestrated_session(
     let channel_export = channel_id
         .map(|id| format!("export FOCALPOINT_CHANNEL_ID={}\n", shell_quote(id)))
         .unwrap_or_default();
+    let slot_export = slot
+        .map(|slot| format!("export FOCALPOINT_SESSION_SLOT={}\n", shell_quote(&slot.to_string())))
+        .unwrap_or_default();
     let script = format!(
-        "#!/bin/bash\nset -e\nrm -f -- {}\ncd -- {}\nexport FOCALPOINT_ORCHESTRATOR_TASK_ID={}\nexport FOCALPOINT_ORCHESTRATION_ROLE={}\n{}{}exec {} {}\n",
+        "#!/bin/bash\nset -e\nrm -f -- {}\ncd -- {}\nexport FOCALPOINT_ORCHESTRATOR_TASK_ID={}\nexport FOCALPOINT_ORCHESTRATION_ROLE={}\nexport FOCALPOINT_SESSION_TITLE={}\n{}{}{}exec {} {}\n",
         shell_quote(&launcher.display().to_string()),
         shell_quote(&cwd.display().to_string()),
         shell_quote(task_id),
         shell_quote(role),
+        shell_quote(title),
+        slot_export,
         manager_export,
         channel_export,
         shell_quote(&runner.display().to_string()),
@@ -855,7 +890,9 @@ fn launch_orchestrated_session(
         std::fs::rename(&temporary, &launcher)
             .map_err(|e| format!("cannot publish launcher: {e}"))?;
         let status = Command::new("/usr/bin/open")
-            .args(["-b", terminal_bundle_id.as_str()])
+            // A new application instance prevents terminal preferences from
+            // coalescing simultaneous launches into tabs/panes of one window.
+            .args(terminal_open_args(terminal_bundle_id.as_str()))
             .arg(&launcher)
             .status()
             .map_err(|e| format!("could not open agent terminal: {e}"))?;
@@ -873,6 +910,8 @@ fn launch_orchestrated_session(
     Ok(serde_json::json!({
         "ok": true,
         "task_id": task_id,
+        "title": title,
+        "slot": slot,
         "provider": provider,
         "model": model,
         "cursor_mode": (provider == "cursor").then_some(cursor_mode),
@@ -1107,6 +1146,12 @@ struct EventCtx {
     config: Arc<Config>,
     shared: Arc<Mutex<Shared>>,
     host_tx: tokio::sync::mpsc::UnboundedSender<HostCmd>,
+    /// Serializes every registry mutation through its emitted effects and
+    /// durable snapshot. `Shared` protects individual memory accesses; this
+    /// lock protects the larger mutation -> device/events -> persistence
+    /// transaction so concurrent hook connections cannot publish B before A
+    /// after the registry itself committed A before B.
+    transition: Arc<Mutex<()>>,
 }
 
 #[cfg(unix)]
@@ -1263,10 +1308,12 @@ fn gracefully_end_session(
         let id = id.to_string();
         std::thread::spawn(move || {
             quit_agent_process(pid);
+            let _transition = ctx.transition.lock().unwrap();
             let effects = ctx.shared.lock().unwrap().registry.end_session(&id);
             apply_effects(effects, &ctx, &host_tx);
         });
     } else {
+        let _transition = ctx.transition.lock().unwrap();
         let effects = ctx.shared.lock().unwrap().registry.end_session(id);
         apply_effects(effects, ctx, host_tx);
     }
@@ -1334,6 +1381,7 @@ fn managed_relaunch_event_line(
     session: &str,
     launch_id: &str,
     status: &str,
+    tmux_server: Option<&str>,
     tmux_session: Option<&str>,
     error: Option<&str>,
 ) -> String {
@@ -1342,6 +1390,7 @@ fn managed_relaunch_event_line(
         "session": session,
         "launch_id": launch_id,
         "status": status,
+        "tmux_server": tmux_server,
         "tmux_session": tmux_session,
         "error": error,
     })
@@ -1409,7 +1458,7 @@ fn apply_effects(
     effects: Vec<Effect>,
     ctx: &EventCtx,
     host_tx: &tokio::sync::mpsc::UnboundedSender<HostCmd>,
-) {
+) -> bool {
     let mut session_effect = false;
     for effect in effects {
         match effect {
@@ -1430,12 +1479,16 @@ fn apply_effects(
             } => {
                 session_effect = true;
                 eprintln!(
-                    "[session] upsert id={} slot={} state={} kind={} pid={} tty={} mux={} managed={} relaunch={}",
+                    "[session] upsert id={} slot={} state={} kind={} title={} task_id={} role={} pid={} tty={} mux_server={} mux_session={} mux_pane={} managed={} relaunch={}",
                     diagnostic_text(&id),
                     slot.map(|v| v.to_string()).unwrap_or_else(|| "-".into()),
                     state.name(),
                     kind.as_deref().map(diagnostic_text).unwrap_or_else(|| "-".into()),
+                    label.as_deref().map(diagnostic_text).unwrap_or_else(|| "-".into()),
+                    diagnostic_meta(&meta, "orchestrator_task_id"),
+                    diagnostic_meta(&meta, "orchestration_role"),
                     diagnostic_meta(&meta, "pid"), diagnostic_meta(&meta, "tty"),
+                    diagnostic_meta(&meta, "mux_server"), diagnostic_meta(&meta, "mux_session"),
                     diagnostic_meta(&meta, "mux_pane"), diagnostic_meta(&meta, "managed"),
                     diagnostic_meta(&meta, "relaunch_id"),
                 );
@@ -1497,7 +1550,7 @@ fn apply_effects(
                 session_effect = true;
                 eprintln!("[managed-relaunch] complete session={new_id} launch_id={launch_id}");
                 ctx.broadcast(&managed_relaunch_event_line(
-                    &new_id, &launch_id, "complete", None, None,
+                    &new_id, &launch_id, "complete", None, None, None,
                 ));
             }
             Effect::AttentionOrderChanged { sessions } => {
@@ -1517,6 +1570,7 @@ fn apply_effects(
     let _ = host_tx.send(HostCmd::SetNavState(
         ctx.shared.lock().unwrap().registry.next_attention_state(),
     ));
+    session_effect
 }
 
 /// `Session` -> the JSON shape both `"list-sessions"` and the persisted
@@ -1635,9 +1689,9 @@ fn restore_instant(saved_at_unix_ms: u64, elapsed_ms: u64) -> Instant {
 
 /// Persist the full current session/tombstone/usage state (Part 4) —
 /// called after any session-affecting `Effect` (`apply_effects`) and after
-/// a successful `set-usage`. Best-effort: a write failure (disk full,
-/// permissions) is silently swallowed, same tolerance every other
-/// persistence path in this codebase already has for its own I/O.
+/// a successful `set-usage`. The sibling-temp + rename replacement keeps the
+/// last complete document intact if serialization or writing fails. Failure
+/// is non-fatal (live in-memory state remains authoritative) but is logged.
 #[cfg(unix)]
 fn save_snapshot(shared: &Mutex<Shared>) {
     let now = Instant::now();
@@ -1689,8 +1743,22 @@ fn save_snapshot(shared: &Mutex<Shared>) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    if let Ok(data) = serde_json::to_string(&snapshot) {
-        let _ = std::fs::write(&path, data);
+    let Ok(data) = serde_json::to_vec(&snapshot) else { return };
+    let tmp = path.with_extension(format!("json.tmp.{}", std::process::id()));
+    let result = (|| -> std::io::Result<()> {
+        let mut file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&tmp)?;
+        file.write_all(&data)?;
+        drop(file);
+        std::fs::rename(&tmp, &path)?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        let _ = std::fs::remove_file(&tmp);
+        eprintln!("[snapshot] failed to persist {}: {error}", path.display());
     }
 }
 
@@ -1885,23 +1953,24 @@ fn handle_device_event(ev: DeviceEvent, ctx: &EventCtx) {
                         None => crate::actions::run(&ctx.config.action_for(&name)),
                     }
                 } else if (17..=20).contains(&control) {
-                    let session = {
+                    let (session, next_attention_state) = {
+                        let _transition = ctx.transition.lock().unwrap();
                         let mut shared = ctx.shared.lock().unwrap();
-                        match control {
+                        let session = match control {
                             17 => shared.registry.next_attention(),
                             18 => shared.registry.previous_attention(),
                             19 => shared.registry.next_session(),
                             20 => shared.registry.previous_session(),
                             _ => unreachable!(),
-                        }
+                        };
+                        let next = shared.registry.next_attention_state();
+                        (session, next)
                     };
                     if let Some(session) = session {
                         ctx.broadcast(&event_line(Event::Focus { session: session.id.clone() }));
                         run_focus(ctx, &session, session.slot.unwrap_or(0));
                     }
-                    let _ = ctx.host_tx.send(HostCmd::SetNavState(
-                        ctx.shared.lock().unwrap().registry.next_attention_state(),
-                    ));
+                    let _ = ctx.host_tx.send(HostCmd::SetNavState(next_attention_state));
                 } else {
                     crate::actions::run(&ctx.config.action_for(&name));
                 }
@@ -2210,6 +2279,7 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
         config: config.clone(),
         shared: shared.clone(),
         host_tx: host_tx.clone(),
+        transition: Arc::new(Mutex::new(())),
     };
 
     // Launch the device thread (real or mock).
@@ -2235,13 +2305,25 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
             let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
             loop {
                 tick.tick().await;
-                let effects = {
-                    ctx.shared
-                        .lock()
-                        .unwrap()
-                        .registry
-                        .expire_tombstones(Instant::now())
+                let _transition = ctx.transition.lock().unwrap();
+                let (effects, expired_launches) = {
+                    let mut shared = ctx.shared.lock().unwrap();
+                    let now = Instant::now();
+                    (
+                        shared.registry.expire_tombstones(now),
+                        shared.registry.expire_managed_launches(
+                            now,
+                            Duration::from_secs(120),
+                        ),
+                    )
                 };
+                for (task_id, slot) in expired_launches {
+                    eprintln!(
+                        "[managed-launch] registration-timeout task_id={} slot={} reservation_released=true",
+                        diagnostic_text(&task_id),
+                        slot.map(|value| value.to_string()).unwrap_or_else(|| "overflow".into()),
+                    );
+                }
                 if !effects.is_empty() {
                     apply_effects(effects, &ctx, &host_tx);
                 }
@@ -2280,6 +2362,7 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
                 if dead.is_empty() {
                     continue;
                 }
+                let _transition = ctx.transition.lock().unwrap();
                 let effects: Vec<Effect> = {
                     let mut shared = ctx.shared.lock().unwrap();
                     let now = Instant::now();
@@ -2325,6 +2408,7 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
                 if dead.is_empty() {
                     continue;
                 }
+                let _transition = ctx.transition.lock().unwrap();
                 let effects: Vec<Effect> = {
                     let mut shared = ctx.shared.lock().unwrap();
                     let now = Instant::now();
@@ -2403,32 +2487,37 @@ async fn handle_client(
             }
             Dispatch::Subscribe => {
                 // Subscribe to the stream first, then send the snapshot, so no
-                // change can slip between the two. Snapshot = aggregate `state`
-                // event, one `session` event per live session, then one `style`
-                // event per state (all six) (§3).
+                // change can slip between the two. Begin/end markers make this
+                // an authoritative replacement snapshot for clients, including
+                // disconnected tombstones that used to require a racing
+                // `list-sessions` side request.
                 let mut rx = ctx.evt_tx.subscribe();
-                let (aggregate, sessions, attention_order, usage, styles) = {
+                let generation = SNAPSHOT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+                let (aggregate, sessions, tombstones, attention_order, usage, styles) = {
                     let s = shared.lock().unwrap();
                     (
                         s.registry.aggregate(),
                         s.registry.list(),
+                        s.registry.tombstones_snapshot(),
                         s.registry.attention_order(),
                         s.usage.clone(),
                         s.styles,
                     )
                 };
-                let mut snapshot = state_event_line(aggregate);
+                let mut snapshot = event_line(Event::SnapshotBegin { generation });
+                snapshot.push('\n');
+                snapshot.push_str(&state_event_line(aggregate));
                 for sess in &sessions {
                     snapshot.push('\n');
-                    snapshot.push_str(&session_event_line(
-                        &sess.id,
-                        &sess.kind,
-                        &sess.label,
-                        &sess.name,
-                        &sess.meta,
-                        sess.slot,
-                        sess.state,
-                    ));
+                    snapshot.push_str(&event_line(Event::Session {
+                        session: session_to_dto(sess, Some(true)),
+                    }));
+                }
+                for (_, sess, _) in &tombstones {
+                    snapshot.push('\n');
+                    snapshot.push_str(&event_line(Event::Session {
+                        session: session_to_dto(sess, Some(false)),
+                    }));
                 }
                 snapshot.push('\n');
                 snapshot.push_str(&attention_order_event_line(&attention_order));
@@ -2441,6 +2530,8 @@ async fn handle_client(
                     snapshot.push_str(&style_event_line(state, &style));
                 }
                 snapshot.push('\n');
+                snapshot.push_str(&event_line(Event::SnapshotEnd { generation }));
+                snapshot.push('\n');
                 if writer.write_all(snapshot.as_bytes()).await.is_err() {
                     return;
                 }
@@ -2452,7 +2543,15 @@ async fn handle_client(
                                 return;
                             }
                         }
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(missed)) => {
+                            // Continuing would leave the client permanently
+                            // inconsistent: there is no way to reconstruct the
+                            // missed mutations from later deltas. Closing makes
+                            // auto-reconnecting clients consume a fresh,
+                            // authoritative snapshot.
+                            eprintln!("[subscribe] receiver lagged by {missed} events; resyncing");
+                            return;
+                        }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
                     }
                 }
@@ -2474,6 +2573,10 @@ fn dispatch(
     };
     match request {
         Request::SetState { state: name, session, kind, label, meta } => {
+            let _transition = ctx.transition.lock().unwrap();
+            let joins_channel = meta.as_ref().is_some_and(|meta| {
+                meta.get("channel_id").and_then(Value::as_str).is_some()
+            });
             let state = match State::from_name(&name) {
                 Some(s) => s,
                 None => return err(&format!("unknown state: {name:?}")),
@@ -2482,60 +2585,76 @@ fn dispatch(
                 let empty = serde_json::Map::new();
                 let fields = meta.as_ref().unwrap_or(&empty);
                 eprintln!(
-                    "[session-input] cmd=set-state id={} state={} pid={} tty={} mux={} managed={} relaunch={}",
-                    diagnostic_text(id), state.name(), diagnostic_meta(fields, "pid"),
-                    diagnostic_meta(fields, "tty"), diagnostic_meta(fields, "mux_pane"),
-                    diagnostic_meta(fields, "managed"), diagnostic_meta(fields, "relaunch_id"),
+                    "[session-input] cmd=set-state id={} state={} task_id={} requested_slot={} pid={} tty={} mux_server={} mux_session={} mux_pane={} managed={} relaunch={} reregistered={}",
+                    diagnostic_text(id), state.name(),
+                    diagnostic_meta(fields, "orchestrator_task_id"),
+                    diagnostic_meta(fields, "requested_slot"),
+                    diagnostic_meta(fields, "pid"), diagnostic_meta(fields, "tty"),
+                    diagnostic_meta(fields, "mux_server"), diagnostic_meta(fields, "mux_session"),
+                    diagnostic_meta(fields, "mux_pane"), diagnostic_meta(fields, "managed"),
+                    diagnostic_meta(fields, "relaunch_id"), diagnostic_meta(fields, "reregistered"),
                 );
             }
-            let effects = shared.lock().unwrap().registry.set_state(
-                session.as_deref(),
-                state,
-                kind,
-                label,
-                meta.clone(),
-                Instant::now(),
-            );
-            apply_effects(effects, ctx, host_tx);
-            // Managed launch exports this id; the adapter reports it back in
-            // metadata when the real provider session registers. Joining here
-            // starts exactly at the current tail, never at channel creation.
-            if let (Some(id), Some(meta)) = (session.as_deref(), meta.as_ref()) {
-                if let Some(channel_id) = meta.get("channel_id").and_then(serde_json::Value::as_str) {
-                    let mut state = shared.lock().unwrap();
-                    if let Some(channel) = state.channels.channels.get_mut(channel_id) { channel.join_at_tail(id.to_string()); }
+            let effects = {
+                let mut shared = shared.lock().unwrap();
+                let effects = shared.registry.set_state(
+                    session.as_deref(),
+                    state,
+                    kind,
+                    label,
+                    meta.clone(),
+                    Instant::now(),
+                );
+                // Managed launch exports this id; the adapter reports it back
+                // in metadata when the real provider session registers.
+                if let (Some(id), Some(meta)) = (session.as_deref(), meta.as_ref()) {
+                    if let Some(channel_id) = meta.get("channel_id").and_then(serde_json::Value::as_str) {
+                        if let Some(channel) = shared.channels.channels.get_mut(channel_id) {
+                            channel.join_at_tail(id.to_string());
+                        }
+                    }
                 }
+                effects
+            };
+            if !apply_effects(effects, ctx, host_tx) && joins_channel {
+                save_snapshot(shared);
             }
-            save_snapshot(shared);
             ok()
         }
         Request::SetMeta { session, kind, label, meta } => {
+            let _transition = ctx.transition.lock().unwrap();
             let joining_channel = meta.get("channel_id").and_then(serde_json::Value::as_str).map(str::to_string);
             eprintln!(
-                "[session-input] cmd=set-meta id={} pid={} tty={} mux={} managed={} relaunch={}",
+                "[session-input] cmd=set-meta id={} task_id={} requested_slot={} pid={} tty={} mux_server={} mux_session={} mux_pane={} managed={} relaunch={} reregistered={}",
                 diagnostic_text(&session),
+                diagnostic_meta(&meta, "orchestrator_task_id"),
+                diagnostic_meta(&meta, "requested_slot"),
                 diagnostic_meta(&meta, "pid"),
                 diagnostic_meta(&meta, "tty"),
+                diagnostic_meta(&meta, "mux_server"),
+                diagnostic_meta(&meta, "mux_session"),
                 diagnostic_meta(&meta, "mux_pane"),
                 diagnostic_meta(&meta, "managed"),
                 diagnostic_meta(&meta, "relaunch_id"),
+                diagnostic_meta(&meta, "reregistered"),
             );
             // Unknown sessions are a silent no-op (never registers one) —
             // see `Registry::merge_meta`.
-            let effects = shared
-                .lock()
-                .unwrap()
-                .registry
-                .merge_meta(&session, kind, label, meta, Instant::now());
-            apply_effects(effects, ctx, host_tx);
-            // Claude Code's SessionStart uses set-meta before its first state
-            // event. Joining here makes its startup backlog pull meaningful
-            // without registering a state-less session in the registry.
-            if let Some(channel_id) = joining_channel.as_deref() {
-                let mut state = shared.lock().unwrap();
-                if let Some(channel) = state.channels.channels.get_mut(channel_id) { channel.join_at_tail(session.to_string()); }
+            let effects = {
+                let mut shared = shared.lock().unwrap();
+                let effects = shared.registry.merge_meta(
+                    &session, kind, label, meta, Instant::now(),
+                );
+                if let Some(channel_id) = joining_channel.as_deref() {
+                    if let Some(channel) = shared.channels.channels.get_mut(channel_id) {
+                        channel.join_at_tail(session.to_string());
+                    }
+                }
+                effects
+            };
+            if !apply_effects(effects, ctx, host_tx) && joining_channel.is_some() {
+                save_snapshot(shared);
             }
-            save_snapshot(shared);
             ok()
         }
         Request::ListSessions => {
@@ -2557,6 +2676,7 @@ fn dispatch(
             Dispatch::Reply(Response::Sessions { ok: true, sessions: arr })
         }
         Request::SetUsage { provider, usage } => {
+            let _transition = ctx.transition.lock().unwrap();
             let snapshot = {
                 let mut s = shared.lock().unwrap();
                 match merge_usage(&mut s.usage, &provider, &usage) {
@@ -2573,6 +2693,7 @@ fn dispatch(
             Dispatch::Reply(Response::Usage { ok: true, usage })
         }
         Request::RenameSession { session: id, name } => {
+            let _transition = ctx.transition.lock().unwrap();
             // A missing/null `name`, or an empty one, clears the rename so
             // the session falls back to the adapter's label.
             let effects = shared.lock().unwrap().registry.rename(&id, name.as_deref());
@@ -2583,6 +2704,7 @@ fn dispatch(
             ok()
         }
         Request::SetSessionBacklogged { session: id, backlogged } => {
+            let _transition = ctx.transition.lock().unwrap();
             let effects = match shared
                 .lock()
                 .unwrap()
@@ -2596,6 +2718,7 @@ fn dispatch(
             ok()
         }
         Request::SwapSlots { session1: id1, session2: id2 } => {
+            let _transition = ctx.transition.lock().unwrap();
             let result = shared.lock().unwrap().registry.swap_slots(&id1, &id2);
             match result {
                 Ok(effects) => {
@@ -2606,6 +2729,7 @@ fn dispatch(
             }
         }
         Request::MoveSlot { session: id, slot } => {
+            let _transition = ctx.transition.lock().unwrap();
             let effects = match shared
                 .lock()
                 .unwrap()
@@ -2619,6 +2743,7 @@ fn dispatch(
             ok()
         }
         Request::EndSession { session: id } => {
+            let _transition = ctx.transition.lock().unwrap();
             let (current, effects) = {
                 let mut state = shared.lock().unwrap();
                 let current = state.registry.session_or_tombstone(&id);
@@ -2661,6 +2786,7 @@ fn dispatch(
                     let id = id.clone();
                     std::thread::spawn(move || {
                         quit_agent_process(pid);
+                        let _transition = ctx.transition.lock().unwrap();
                         let effects = ctx.shared.lock().unwrap().registry.end_session(&id);
                         apply_effects(effects, &ctx, &host_tx);
                     });
@@ -2668,6 +2794,7 @@ fn dispatch(
                 None => {
                     // Nothing to signal (no resolved pid) — just remove it,
                     // same as end-session.
+                    let _transition = ctx.transition.lock().unwrap();
                     let effects = shared.lock().unwrap().registry.end_session(&id);
                     apply_effects(effects, ctx, host_tx);
                 }
@@ -2735,6 +2862,7 @@ fn dispatch(
             })))
         }
         Request::ChannelCreate { task_id } => {
+            let _transition = ctx.transition.lock().unwrap();
             let actor = match channel_actor(&shared.lock().unwrap().registry, &task_id) { Ok(actor) => actor, Err(message) => return err(&message) };
             if actor.meta.get("orchestration_role").and_then(serde_json::Value::as_str) != Some("orchestrator") { return err("only an orchestrator may create a channel"); }
             let channel = shared.lock().unwrap().channels.create(actor.id, task_id);
@@ -2742,6 +2870,7 @@ fn dispatch(
             Dispatch::Reply(Response::Json(serde_json::json!({"ok": true, "channel_id": channel.id})))
         }
         Request::ChannelClose { task_id, channel: channel_id } => {
+            let _transition = ctx.transition.lock().unwrap();
             let actor = match channel_actor(&shared.lock().unwrap().registry, &task_id) { Ok(actor) => actor, Err(message) => return err(&message) };
             let mut state = shared.lock().unwrap();
             let Some(channel) = state.channels.channels.get(&channel_id) else { return err("unknown channel"); };
@@ -2759,6 +2888,7 @@ fn dispatch(
             Dispatch::Reply(Response::Json(serde_json::json!({"ok": true, "channel": channel_public(channel)})))
         }
         Request::ChannelRead { task_id, channel: channel_id, since, tail } => {
+            let _transition = ctx.transition.lock().unwrap();
             let actor = match channel_actor(&shared.lock().unwrap().registry, &task_id) { Ok(actor) => actor, Err(message) => return err(&message) };
             let tail = tail.unwrap_or(20);
             if !(1..=100).contains(&tail) { return err("channel read tail must be 1-100"); }
@@ -2770,6 +2900,7 @@ fn dispatch(
             Dispatch::Reply(Response::Json(serde_json::json!({"ok":true,"channel_id":channel_id,"messages":messages,"next_cursor":next})))
         }
         Request::ChannelPost { task_id, channel: channel_id, body, kind, to } => {
+            let _transition = ctx.transition.lock().unwrap();
             let actor = match channel_actor(&shared.lock().unwrap().registry, &task_id) { Ok(actor) => actor, Err(message) => return err(&message) };
             let kind = kind.unwrap_or_else(|| "note".to_string());
             if !valid_kind(&kind) { return err("invalid channel message kind"); }
@@ -2789,6 +2920,7 @@ fn dispatch(
             Dispatch::Reply(Response::Json(serde_json::json!({"ok":true,"message":message})))
         }
         Request::RelaunchManagedSession { session: id } => {
+            let _transition = ctx.transition.lock().unwrap();
             let launch_id = new_relaunch_id();
             let begun = shared.lock().unwrap().registry.begin_managed_relaunch(
                 &id,
@@ -2827,7 +2959,7 @@ fn dispatch(
             apply_effects(effects, ctx, host_tx);
             eprintln!("[managed-relaunch] accepted session={id} launch_id={launch_id} pid={pid}");
             ctx.broadcast(&managed_relaunch_event_line(
-                &id, &launch_id, "quitting", None, None,
+                &id, &launch_id, "quitting", None, None, None,
             ));
 
             let ctx = ctx.clone();
@@ -2838,6 +2970,7 @@ fn dispatch(
                 if !quit_agent_process(pid) {
                     let message = "old provider did not exit; managed relaunch cancelled";
                     eprintln!("[managed-relaunch] quit failed session={id} launch_id={thread_launch_id} pid={pid}");
+                    let _transition = ctx.transition.lock().unwrap();
                     let effects = ctx
                         .shared
                         .lock()
@@ -2850,12 +2983,14 @@ fn dispatch(
                         &thread_launch_id,
                         "failed",
                         None,
+                        None,
                         Some(message),
                     ));
                     return;
                 }
                 if let Err(message) = launch_managed_resume(&prepared) {
                     eprintln!("[managed-relaunch] tmux launch failed session={id} launch_id={thread_launch_id}: {message}");
+                    let _transition = ctx.transition.lock().unwrap();
                     let effects = ctx.shared.lock().unwrap().registry.fail_managed_relaunch(
                         &id,
                         &thread_launch_id,
@@ -2867,6 +3002,7 @@ fn dispatch(
                         &thread_launch_id,
                         "failed",
                         None,
+                        None,
                         Some(&message),
                     ));
                     return;
@@ -2875,10 +3011,11 @@ fn dispatch(
                     &id,
                     &thread_launch_id,
                     "launched",
+                    Some(&prepared.tmux_server),
                     Some(&prepared.tmux_session),
                     None,
                 ));
-                eprintln!("[managed-relaunch] launched session={id} launch_id={thread_launch_id} tmux_session={}", prepared.tmux_session);
+                eprintln!("[managed-relaunch] launched session={id} launch_id={thread_launch_id} tmux_server={} tmux_session={}", prepared.tmux_server, prepared.tmux_session);
 
                 std::thread::sleep(Duration::from_secs(20));
                 let still_pending = ctx
@@ -2890,6 +3027,7 @@ fn dispatch(
                 if still_pending {
                     eprintln!("[managed-relaunch] registration timeout session={id} launch_id={thread_launch_id}");
                     kill_managed_resume(&prepared);
+                    let _transition = ctx.transition.lock().unwrap();
                     let effects = ctx.shared.lock().unwrap().registry.fail_managed_relaunch(
                         &id,
                         &thread_launch_id,
@@ -2900,6 +3038,7 @@ fn dispatch(
                         &id,
                         &thread_launch_id,
                         "failed",
+                        None,
                         None,
                         Some("replacement provider did not register"),
                     ));
@@ -2915,6 +3054,7 @@ fn dispatch(
             Dispatch::Reply(Response::Json(serde_json::json!({ "ok": true, "sessions": sessions })))
         }
         Request::SetAttentionOrder { sessions } => {
+            let _transition = ctx.transition.lock().unwrap();
             let effects = match shared
                 .lock()
                 .unwrap()
@@ -2928,6 +3068,7 @@ fn dispatch(
             ok()
         }
         Request::FocusNextAttention => {
+            let _transition = ctx.transition.lock().unwrap();
             let session = shared.lock().unwrap().registry.next_attention();
             let selected = session.as_ref().map(|session| session.id.clone());
             if let Some(session) = session {
@@ -2938,6 +3079,7 @@ fn dispatch(
             Dispatch::Reply(Response::Json(serde_json::json!({ "ok": true, "session": selected })))
         }
         Request::FocusPrevAttention => {
+            let _transition = ctx.transition.lock().unwrap();
             let session = shared.lock().unwrap().registry.previous_attention();
             let selected = session.as_ref().map(|session| session.id.clone());
             if let Some(session) = session {
@@ -2947,22 +3089,39 @@ fn dispatch(
             }
             Dispatch::Reply(Response::Json(serde_json::json!({ "ok": true, "session": selected })))
         }
-        Request::LaunchSession { provider, cwd, model, cursor_mode, task, task_id, role, manager_task_id, channel_id } => {
+        Request::LaunchSession { provider, cwd, model, cursor_mode, task, task_id, title, role, manager_task_id, channel_id } => {
             let role = role.as_deref().unwrap_or("worker");
-            if let Err(message) = validate_orchestration_relationship(
-                &shared.lock().unwrap().registry,
-                role,
-                &task_id,
-                manager_task_id.as_deref(),
-            ) {
-                return err(&message);
-            }
-            if let Some(channel_id) = channel_id.as_deref() {
-                let state = shared.lock().unwrap();
-                let Some(channel) = state.channels.channels.get(channel_id) else { return err("unknown channel"); };
-                let Some(manager) = manager_task_id.as_deref() else { return err("launch --channel requires manager_task_id"); };
-                if channel.owner_task_id != manager { return err("channel is not owned by that orchestrator task"); }
-            }
+            let title = match orchestrator_session_title(title.as_deref(), &task_id) {
+                Ok(title) => title,
+                Err(message) => return err(&message),
+            };
+            let slot = {
+                let _transition = ctx.transition.lock().unwrap();
+                let mut state = shared.lock().unwrap();
+                if let Err(message) = validate_orchestration_relationship(
+                    &state.registry,
+                    role,
+                    &task_id,
+                    manager_task_id.as_deref(),
+                ) {
+                    return err(&message);
+                }
+                if let Some(channel_id) = channel_id.as_deref() {
+                    let Some(channel) = state.channels.channels.get(channel_id) else { return err("unknown channel"); };
+                    let Some(manager) = manager_task_id.as_deref() else { return err("launch --channel requires manager_task_id"); };
+                    if channel.owner_task_id != manager { return err("channel is not owned by that orchestrator task"); }
+                }
+                match state.registry.reserve_managed_launch(&task_id, Instant::now()) {
+                    Ok(slot) => slot,
+                    Err(message) => return err(&message),
+                }
+            };
+            eprintln!(
+                "[managed-launch] reserved task_id={} title={} slot={} provider={} role={} cwd={} terminal=new-window",
+                diagnostic_text(&task_id), diagnostic_text(&title),
+                slot.map(|value| value.to_string()).unwrap_or_else(|| "overflow".into()),
+                diagnostic_text(&provider), diagnostic_text(role), diagnostic_text(&cwd),
+            );
             match launch_orchestrated_session(
                 &provider,
                 model.as_deref(),
@@ -2970,12 +3129,32 @@ fn dispatch(
                 &cwd,
                 &task,
                 &task_id,
+                &title,
+                slot,
                 role,
                 manager_task_id.as_deref(),
                 channel_id.as_deref(),
             ) {
-                Ok(response) => Dispatch::Reply(Response::Json(response)),
-                Err(message) => err(&message),
+                Ok(response) => {
+                    eprintln!(
+                        "[managed-launch] terminal-open accepted task_id={} title={} slot={} provider={}",
+                        diagnostic_text(&task_id), diagnostic_text(&title),
+                        slot.map(|value| value.to_string()).unwrap_or_else(|| "overflow".into()),
+                        diagnostic_text(&provider),
+                    );
+                    Dispatch::Reply(Response::Json(response))
+                }
+                Err(message) => {
+                    let _transition = ctx.transition.lock().unwrap();
+                    shared.lock().unwrap().registry.cancel_managed_launch(&task_id);
+                    eprintln!(
+                        "[managed-launch] failed task_id={} title={} slot={} provider={} error={}",
+                        diagnostic_text(&task_id), diagnostic_text(&title),
+                        slot.map(|value| value.to_string()).unwrap_or_else(|| "overflow".into()),
+                        diagnostic_text(&provider), diagnostic_text(&message),
+                    );
+                    err(&message)
+                }
             }
         }
         Request::FocusSession { session: id } => {
@@ -3036,6 +3215,7 @@ fn dispatch(
             Dispatch::Reply(Response::Styles { ok: true, styles: styles_json(&styles) })
         }
         Request::SetStyle { state: state_name, rgb, pattern, period_ms } => {
+            let _transition = ctx.transition.lock().unwrap();
             let (state, style) = match parse_set_style_fields(&state_name, &rgb, &pattern, period_ms) {
                 Ok(pair) => pair,
                 Err(e) => return err(&e),
@@ -3165,6 +3345,40 @@ mod tests {
             managed_tmux_config_from(None, Some(PathBuf::from("/Users/example"))),
             PathBuf::from("/Users/example/.config/focalpoint/tmux.conf"),
         );
+    }
+
+    #[test]
+    fn managed_launch_forces_a_new_terminal_application_instance() {
+        assert_eq!(
+            terminal_open_args("com.apple.Terminal"),
+            ["-n", "-b", "com.apple.Terminal"],
+        );
+    }
+
+    #[test]
+    fn managed_relaunch_event_carries_private_tmux_server_and_session() {
+        let event: Value = serde_json::from_str(&managed_relaunch_event_line(
+            "provider-session",
+            "launch-1",
+            "launched",
+            Some("fp-relaunch-1"),
+            Some("fp-relaunch-1"),
+            None,
+        ))
+        .unwrap();
+        assert_eq!(event["tmux_server"], "fp-relaunch-1");
+        assert_eq!(event["tmux_session"], "fp-relaunch-1");
+    }
+
+    #[test]
+    fn orchestrator_titles_are_bounded_printable_and_default_to_task_id() {
+        assert_eq!(orchestrator_session_title(None, "worker-1").unwrap(), "worker-1");
+        assert_eq!(
+            orchestrator_session_title(Some(" Parser implementation "), "worker-1").unwrap(),
+            "Parser implementation",
+        );
+        assert!(orchestrator_session_title(Some("bad\ntitle"), "worker-1").is_err());
+        assert!(orchestrator_session_title(Some(""), "worker-1").is_err());
     }
 
     #[test]
@@ -3566,6 +3780,18 @@ mod tests {
         assert_eq!(
             state_event_line(State::Thinking),
             r#"{"event":"state","state":"thinking"}"#
+        );
+    }
+
+    #[test]
+    fn snapshot_markers_match_protocol() {
+        assert_eq!(
+            event_line(Event::SnapshotBegin { generation: 42 }),
+            r#"{"event":"snapshot-begin","generation":42}"#
+        );
+        assert_eq!(
+            event_line(Event::SnapshotEnd { generation: 42 }),
+            r#"{"event":"snapshot-end","generation":42}"#
         );
     }
 

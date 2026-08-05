@@ -111,11 +111,16 @@ impl TestDaemon {
     }
 
     fn cli(&self, args: &[&str]) -> CliOutput {
+        self.cli_with_env(args, &[])
+    }
+
+    fn cli_with_env(&self, args: &[&str], env: &[(&str, &str)]) -> CliOutput {
         let output = Command::new(self.cli_bin)
             .args(args)
             .env("XDG_RUNTIME_DIR", self.dir.join("runtime"))
             .env("XDG_STATE_HOME", self.dir.join("state"))
             .env("XDG_CONFIG_HOME", self.dir.join("config"))
+            .envs(env.iter().copied())
             .output()
             .expect("run focalpoint CLI");
         CliOutput {
@@ -156,6 +161,25 @@ impl TestDaemon {
         serde_json::from_str(response.trim()).expect("valid daemon JSON")
     }
 
+    fn subscription_snapshot(&self) -> Vec<Value> {
+        let socket = self.dir.join("runtime/focalpoint.sock");
+        let mut stream = UnixStream::connect(socket).expect("connect daemon socket");
+        writeln!(stream, "{{\"cmd\":\"subscribe\"}}").expect("write subscribe");
+        let mut reader = BufReader::new(stream);
+        let mut events = Vec::new();
+        loop {
+            let mut line = String::new();
+            reader.read_line(&mut line).expect("read subscription event");
+            assert!(!line.is_empty(), "subscription closed before snapshot-end");
+            let event: Value = serde_json::from_str(line.trim()).expect("valid event JSON");
+            let complete = event["event"] == "snapshot-end";
+            events.push(event);
+            if complete {
+                return events;
+            }
+        }
+    }
+
     /// Kill and respawn against the *same* state/runtime dirs — the actual
     /// scenario Part 4 exists for.
     fn restart(&mut self) {
@@ -183,6 +207,80 @@ impl Drop for TestDaemon {
         let _ = self.child.wait();
         let _ = std::fs::remove_dir_all(&self.dir);
     }
+}
+
+#[test]
+fn subscription_snapshot_is_framed_and_includes_disconnected_sessions() {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let snapshot = serde_json::json!({
+        "saved_at_unix_ms": now_ms,
+        "sessions": [{
+            "session": "live", "kind": "generic", "label": "Live", "name": null,
+            "slot": 1, "state": "running", "meta": {}, "elapsed_ms_since_update": 0
+        }],
+        "tombstones": [{
+            "session": "gone", "kind": "generic", "label": "Gone", "name": null,
+            "slot": 2, "state": "done", "meta": {}, "elapsed_ms_since_reaped": 0
+        }],
+        "usage": {},
+    });
+    let d = TestDaemon::start_with(None, Some(&snapshot));
+    let events = d.subscription_snapshot();
+    assert_eq!(events.first().unwrap()["event"], "snapshot-begin");
+    assert_eq!(events.last().unwrap()["event"], "snapshot-end");
+    assert_eq!(
+        events.first().unwrap()["generation"],
+        events.last().unwrap()["generation"]
+    );
+    let live = events.iter().find(|event| event["session"] == "live").unwrap();
+    let gone = events.iter().find(|event| event["session"] == "gone").unwrap();
+    assert_eq!(live["connected"], true);
+    assert_eq!(gone["connected"], false);
+}
+
+#[test]
+fn pane_local_reregister_reconstructs_managed_identity() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let d = TestDaemon::start();
+    let fake_tmux = d.dir.join("fake-tmux");
+    std::fs::write(
+        &fake_tmux,
+        "#!/bin/bash\nprintf 'fp-codex-42\\t%%4\\t/dev/ttys042\\n'\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake_tmux, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let fake_tmux_text = fake_tmux.to_string_lossy().to_string();
+    let output = d.cli_with_env(
+        &[
+            "re-register", "--session", "provider-session", "--kind", "codex",
+            "--title", "Parser implementation", "--task-id", "worker-1",
+            "--role", "worker", "--manager-task-id", "orchestrator-1",
+            "--slot", "4", "--state", "thinking",
+        ],
+        &[
+            ("TMUX", "/tmp/tmux-501/fp-worker-42,123,0"),
+            ("TMUX_PANE", "%4"),
+            ("FOCALPOINT_TMUX_SERVER", "fp-worker-42"),
+            ("FOCALPOINT_TMUX_BIN", &fake_tmux_text),
+        ],
+    );
+    assert!(output.status_ok, "re-register failed: {}", output.stdout);
+
+    let sessions = d.cli_json(&["sessions", "--json"]);
+    let session = &sessions.as_array().unwrap()[0];
+    assert_eq!(session["session"], "provider-session");
+    assert_eq!(session["label"], "Parser implementation");
+    assert_eq!(session["slot"], 4);
+    assert_eq!(session["meta"]["managed"], "true");
+    assert_eq!(session["meta"]["mux_server"], "fp-worker-42");
+    assert_eq!(session["meta"]["mux_session"], "fp-codex-42");
+    assert_eq!(session["meta"]["mux_pane"], "%4");
+    assert_eq!(session["meta"]["orchestrator_task_id"], "worker-1");
+    assert_eq!(session["meta"]["reregistered"], "true");
 }
 
 #[test]

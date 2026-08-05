@@ -410,6 +410,12 @@ struct ManagedRelaunch {
     original_last_update: Instant,
 }
 
+#[derive(Debug, Clone)]
+struct ManagedLaunchReservation {
+    slot: Option<u8>,
+    reserved_at: Instant,
+}
+
 pub struct Registry {
     sessions: HashMap<String, Session>,
     tombstones: HashMap<String, Tombstone>,
@@ -424,6 +430,10 @@ pub struct Registry {
     tombstone_ttl: Option<Duration>,
     managed_relaunches: HashMap<String, ManagedRelaunch>,
     relaunch_guards: HashMap<String, String>,
+    /// A launch gets its numbered identity before its terminal is opened.
+    /// Keeping that slot reserved until the provider's first hook prevents a
+    /// concurrent registration from making the identity in its prompt wrong.
+    managed_launch_reservations: HashMap<String, ManagedLaunchReservation>,
     /// Explicit complete live-session order set by the orchestrator. `None`
     /// means use the deterministic state/slot/id fallback.
     attention_order: Option<Vec<String>>,
@@ -443,6 +453,7 @@ impl Registry {
             tombstone_ttl: Some(DEFAULT_TOMBSTONE_TTL),
             managed_relaunches: HashMap::new(),
             relaunch_guards: HashMap::new(),
+            managed_launch_reservations: HashMap::new(),
             attention_order: None,
             attention_cursor: None,
             session_cursor: None,
@@ -854,9 +865,74 @@ impl Registry {
     }
 
     fn lowest_free_slot(&self) -> Option<u8> {
-        let used: std::collections::HashSet<u8> =
+        let mut used: std::collections::HashSet<u8> =
             self.sessions.values().filter_map(|s| s.slot).collect();
+        used.extend(
+            self.managed_launch_reservations
+                .values()
+                .filter_map(|reservation| reservation.slot),
+        );
         (1..=12).find(|n| !used.contains(n))
+    }
+
+    /// Claim the numbered identity embedded in a managed agent's initial
+    /// prompt. The reservation is consumed by the first registration carrying
+    /// this stable orchestrator task id.
+    pub fn reserve_managed_launch(
+        &mut self,
+        task_id: &str,
+        now: Instant,
+    ) -> Result<Option<u8>, String> {
+        if self.managed_launch_reservations.contains_key(task_id)
+            || self.sessions.values().any(|session| {
+                session
+                    .meta
+                    .get("orchestrator_task_id")
+                    .and_then(Value::as_str)
+                    == Some(task_id)
+            })
+        {
+            return Err(format!("managed task id is already active: {task_id}"));
+        }
+        let slot = self.lowest_free_slot();
+        self.managed_launch_reservations.insert(
+            task_id.to_string(),
+            ManagedLaunchReservation { slot, reserved_at: now },
+        );
+        Ok(slot)
+    }
+
+    pub fn cancel_managed_launch(&mut self, task_id: &str) -> Option<u8> {
+        self.managed_launch_reservations
+            .remove(task_id)
+            .and_then(|reservation| reservation.slot)
+    }
+
+    /// Release launches which LaunchServices accepted but which never
+    /// produced a provider registration. This prevents a failed terminal
+    /// launch from leaving a numbered-key hole forever.
+    pub fn expire_managed_launches(
+        &mut self,
+        now: Instant,
+        ttl: Duration,
+    ) -> Vec<(String, Option<u8>)> {
+        let mut expired: Vec<String> = self
+            .managed_launch_reservations
+            .iter()
+            .filter(|(_, reservation)| {
+                now.saturating_duration_since(reservation.reserved_at) >= ttl
+            })
+            .map(|(task_id, _)| task_id.clone())
+            .collect();
+        expired.sort();
+        expired
+            .into_iter()
+            .filter_map(|task_id| {
+                self.managed_launch_reservations
+                    .remove(&task_id)
+                    .map(|reservation| (task_id, reservation.slot))
+            })
+            .collect()
     }
 
     /// Compact live numbered slots after an explicit end/remove. This keeps
@@ -875,8 +951,14 @@ impl Registry {
         ordered.sort_by_key(|(id, slot)| (slot.is_none(), slot.unwrap_or(u8::MAX), id.clone()));
 
         let mut effects = Vec::new();
-        for (index, (id, old_slot)) in ordered.into_iter().enumerate() {
-            let new_slot = u8::try_from(index + 1).ok().filter(|slot| *slot <= 12);
+        let reserved: std::collections::HashSet<u8> = self
+            .managed_launch_reservations
+            .values()
+            .filter_map(|reservation| reservation.slot)
+            .collect();
+        let mut available = (1..=12).filter(|slot| !reserved.contains(slot));
+        for (id, old_slot) in ordered {
+            let new_slot = available.next();
             if old_slot == new_slot {
                 continue;
             }
@@ -1114,6 +1196,14 @@ impl Registry {
                 if self.managed_relaunches.contains_key(id) {
                     return Vec::new();
                 }
+                let launch_task_id = meta
+                    .as_ref()
+                    .and_then(|fields| fields.get("orchestrator_task_id"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
+                let reserved_launch = launch_task_id.as_deref().and_then(|task_id| {
+                    self.managed_launch_reservations.remove(task_id)
+                });
                 if let Some(sess) = self.sessions.get_mut(id) {
                     // Update + merge.
                     let is_claude = kind.as_deref() == Some("claude")
@@ -1326,7 +1416,22 @@ impl Registry {
                         self.sessions.insert(id.to_string(), sess);
                     } else {
                         // Register.
-                        let slot = self.lowest_free_slot();
+                        let slot = match reserved_launch {
+                            Some(reservation) => reservation.slot,
+                            None => incoming_meta
+                                .get("requested_slot")
+                                .and_then(Value::as_u64)
+                                .and_then(|value| u8::try_from(value).ok())
+                                .filter(|value| (1..=12).contains(value))
+                                .filter(|requested| {
+                                    !self.sessions.values().any(|session| {
+                                        session.slot == Some(*requested)
+                                    }) && !self.managed_launch_reservations.values().any(
+                                        |reservation| reservation.slot == Some(*requested),
+                                    )
+                                })
+                                .or_else(|| self.lowest_free_slot()),
+                        };
                         let mut session_meta = Map::new();
                         record_claude_precompact(
                             &mut session_meta,
@@ -1792,6 +1897,71 @@ mod tests {
                 ("c".into(), Some(3))
             ]
         );
+    }
+
+    #[test]
+    fn managed_launch_reserves_its_prompted_slot_until_registration() {
+        let mut registry = Registry::new(None);
+        let now = Instant::now();
+        assert_eq!(registry.reserve_managed_launch("worker-1", now).unwrap(), Some(1));
+
+        registry.set_state(
+            Some("unrelated"), State::Thinking, Some("codex".into()), None,
+            None, now,
+        );
+        assert_eq!(registry.sessions.get("unrelated").unwrap().slot, Some(2));
+
+        let mut meta = Map::new();
+        meta.insert("orchestrator_task_id".into(), Value::from("worker-1"));
+        registry.set_state(
+            Some("provider-session"), State::Thinking, Some("codex".into()),
+            Some("Parser implementation".into()), Some(meta), now,
+        );
+        assert_eq!(registry.sessions.get("provider-session").unwrap().slot, Some(1));
+        assert!(registry.cancel_managed_launch("worker-1").is_none());
+    }
+
+    #[test]
+    fn abandoned_managed_launch_reservation_expires_and_releases_slot() {
+        let mut registry = Registry::new(None);
+        let now = Instant::now();
+        assert_eq!(registry.reserve_managed_launch("orphan", now).unwrap(), Some(1));
+        assert!(registry
+            .expire_managed_launches(now + Duration::from_secs(119), Duration::from_secs(120))
+            .is_empty());
+        assert_eq!(
+            registry.expire_managed_launches(
+                now + Duration::from_secs(120),
+                Duration::from_secs(120),
+            ),
+            vec![("orphan".into(), Some(1))],
+        );
+        assert_eq!(registry.reserve_managed_launch("next", now).unwrap(), Some(1));
+    }
+
+    #[test]
+    fn pane_reregistration_reclaims_requested_slot_only_when_free() {
+        let mut registry = Registry::new(None);
+        let now = Instant::now();
+        registry.set_state(Some("first"), State::Running, None, None, None, now);
+
+        let mut requested = Map::new();
+        requested.insert("requested_slot".into(), Value::from(4));
+        requested.insert("reregistered".into(), Value::Bool(true));
+        registry.set_state(
+            Some("recovered"), State::Thinking, Some("codex".into()),
+            Some("Parser implementation".into()), Some(requested), now,
+        );
+        assert_eq!(registry.sessions.get("recovered").unwrap().slot, Some(4));
+
+        let mut occupied = Map::new();
+        occupied.insert("requested_slot".into(), Value::from(4));
+        occupied.insert("reregistered".into(), Value::Bool(true));
+        registry.set_state(
+            Some("fallback"), State::Thinking, Some("codex".into()), None,
+            Some(occupied), now,
+        );
+        assert_eq!(registry.sessions.get("fallback").unwrap().slot, Some(2));
     }
 
     #[test]

@@ -209,10 +209,11 @@ Open **Settings** from the dropdown footer.
 ## How it maps to the protocol
 
 - On connect the app sends `subscribe` and consumes the snapshot + live stream:
-  `state` → aggregate, `session` → session rows, `session-ended` → removal,
-  `style` → swatch colors, and `usage` → account-quota meters. It also issues
-  one-shot `get-styles` / `list-sessions` / `get-usage` requests to seed state
-  and detect daemon capabilities.
+  `snapshot-begin` resets the replacement view, `state` → aggregate,
+  `session` → live or disconnected rows, `session-ended` → removal,
+  `style` → swatch colors, and `usage` → account-quota meters.
+  `snapshot-end` completes the generation. No parallel reconnect polls can race
+  newer stream events.
 - It auto-reconnects every 2 s and shows an **Offline** indicator when the
   daemon is down.
 - Against an older daemon that emits only aggregate `state` events, it degrades
