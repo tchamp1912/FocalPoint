@@ -99,6 +99,16 @@ enum Cmd {
         /// New display name. Omit or pass "" to clear.
         name: Option<String>,
     },
+    /// Move a live session out of active routing and into the backlog.
+    BacklogSession {
+        /// Session id.
+        id: String,
+    },
+    /// Restore a backlogged session to active routing and, if available, a numbered slot.
+    RestoreSession {
+        /// Session id.
+        id: String,
+    },
     /// End a session by id.
     EndSession {
         /// Session id.
@@ -231,6 +241,8 @@ fn main() {
         Cmd::GetState => client::get_state(),
         Cmd::Sessions { json } => client::sessions(json),
         Cmd::RenameSession { id, name } => client::rename_session(&id, name.as_deref()),
+        Cmd::BacklogSession { id } => client::set_session_backlogged(&id, true),
+        Cmd::RestoreSession { id } => client::set_session_backlogged(&id, false),
         Cmd::EndSession { id } => client::end_session(&id),
         Cmd::SwapSlots { id1, id2 } => client::swap_slots(&id1, &id2),
         Cmd::SetLed { index, r, g, b } => client::set_led(&index, r, g, b),

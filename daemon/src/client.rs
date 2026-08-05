@@ -351,6 +351,19 @@ pub fn rename_session(id: &str, name: Option<&str>) -> Result<(), CliError> {
     Ok(())
 }
 
+/// Move a live session into or out of the daemon-owned backlog.
+#[cfg(unix)]
+pub fn set_session_backlogged(id: &str, backlogged: bool) -> Result<(), CliError> {
+    let resp = request(serde_json::json!({
+        "cmd": "set-session-backlogged",
+        "session": id,
+        "backlogged": backlogged,
+    }))?;
+    expect_ok(&resp)?;
+    println!("ok");
+    Ok(())
+}
+
 /// `focalpoint swap-slots <ID1> <ID2>` — manual reorder: exchange the
 /// numbered-key slots of two live sessions.
 #[cfg(unix)]

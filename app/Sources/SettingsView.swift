@@ -148,20 +148,26 @@ struct GeneralSettingsView: View {
                             .frame(width: 190)
                         }
                         .padding(.top, 4)
-                        if let size = model.widgetSize(for: model.desktopWidgetOrientation) {
+                        if let width = model.widgetWidth(for: model.desktopWidgetOrientation) {
                             HStack {
-                                Text("Size")
+                                Text("Width")
                                 Spacer()
-                                Text("\(Int(size.width)) × \(Int(size.height))")
+                                Text("\(Int(width)) pt")
                                     .font(.caption).monospacedDigit().foregroundStyle(.secondary)
                                 Button("Reset to Automatic") {
-                                    model.resetWidgetSize(for: model.desktopWidgetOrientation)
+                                    model.resetWidgetWidth(for: model.desktopWidgetOrientation)
                                 }
                                 .controlSize(.small)
                             }
                         }
-                        Text("Horizontal lays sessions out as a wide strip for a screen's top or bottom edge; its width grows with the session count until you resize it. Drag the widget's bottom-right corner to resize — the size is remembered per orientation.")
+                        Text("Horizontal lays sessions out as a wide strip for a screen's top or bottom edge. Drag the widget's bottom-right corner to set its width — height always fits the content, and the widget grows away from the screen edge it's parked on. Widths are remembered per orientation.")
                             .font(.caption).foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Toggle("Compact session rows", isOn: $model.compactWidgetRows)
+                            Text("One line per session — hides the stats row and context meter in the widget (they remain in the dropdown).")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .padding(.top, 4)
                     }
                     Divider()
                     VStack(alignment: .leading, spacing: 6) {

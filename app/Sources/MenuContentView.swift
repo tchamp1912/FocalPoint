@@ -80,75 +80,134 @@ struct MenuContentView: View {
     // MARK: Session rows
 
     private var sessionList: some View {
-        VStack(spacing: 1) {
-            ForEach(model.elevatedSessions) { s in
-                // The row being renamed is deliberately NOT wrapped in the
-                // Button: `.disabled()` propagates to every descendant, so
-                // disabling the row to stop a stray click from bouncing the
-                // agent would also disable the text field inside it and
-                // swallow every keystroke.
-                Group {
-                    if renamingID == s.id {
-                        sessionRow(s)
-                    } else {
-                        Button { model.focusSession(s) } label: {
-                            sessionRow(s)
-                        }
-                        .buttonStyle(.plain)
-                        // A live slotless session (>12 live) has no numbered
-                        // key to tap; a disconnected one is still focusable by
-                        // id (its terminal is usually still open), so only a
-                        // *connected* slotless row is truly un-focusable.
-                        .disabled(s.connected && s.slot == nil)
+        VStack(spacing: 0) {
+            if !model.activeSessions.isEmpty {
+                VStack(spacing: 1) {
+                    ForEach(model.activeSessions) { s in
+                        sessionRowButton(s, isLastInSection: s.id == model.activeSessions.last?.id)
                     }
                 }
-                .hoverHighlight()
-                .contextMenu {
-                    Button("Rename\u{2026}") { renamingID = s.id }
-                    // Manual reorder (PROTOCOL.md §3/§4 swap-slots): native
-                    // drag-and-drop (`.draggable`/`.dropDestination`) doesn't
-                    // work inside a MenuBarExtra(.window) dropdown's
-                    // auxiliary panel — confirmed by testing, not just a
-                    // theoretical gap — so this is a menu instead of a drag
-                    // gesture. Only offered when this session and at least
-                    // one other both hold a real slot; slotless (>12 live)
-                    // sessions have nothing to swap.
-                    let otherSlotted = model.sessions.filter { $0.id != s.id && $0.slot != nil }
-                    if s.slot != nil, !otherSlotted.isEmpty {
-                        Menu("Move to Slot") {
-                            ForEach(otherSlotted) { other in
-                                Button("Swap with #\(other.slot!) \u{00B7} \(other.title)") {
-                                    model.swapSlots(s, other)
-                                }
-                            }
-                        }
+                .padding(.vertical, 6)
+                .padding(.horizontal, 6)
+            }
+            if !model.backlogSessions.isEmpty {
+                Divider()
+                backlogHeader
+                VStack(spacing: 1) {
+                    ForEach(model.backlogSessions) { s in
+                        sessionRowButton(s, isLastInSection: s.id == model.backlogSessions.last?.id)
                     }
-                    if let cwd = s.cwd {
-                        Divider()
-                        Button("Open in Terminal") { model.openInTerminal(cwd) }
-                        Button("Show in Finder") { model.revealInFinder(cwd) }
-                        Button("Copy Working Directory") { model.copyToPasteboard(cwd) }
-                    }
-                    Divider()
-                    Button("Relaunch as Managed Session") {
-                        model.relaunchAsManaged(s)
-                    }
-                    .disabled(!model.canRelaunchAsManaged(s))
-                    // "End Session" is destructive — it quits the actual agent
-                    // process (SIGINT→SIGTERM, so its SessionEnd teardown
-                    // runs). "Remove Session" is non-destructive — it just
-                    // drops the row from FocalPoint and leaves the agent
-                    // running (also the way to clear a disconnected row).
-                    Button("End Session", role: .destructive) { model.quitSession(s) }
-                    Button("Remove Session") { model.removeSession(s) }
                 }
-                if s.id != model.elevatedSessions.last?.id {
-                    Divider().padding(.leading, 44)
+                .padding(.bottom, 6)
+                .padding(.horizontal, 6)
+            }
+        }
+    }
+
+    /// Section divider between the active list and parked-but-still-live
+    /// sessions (PROTOCOL.md §3 backlog): out of the aggregate/attention
+    /// routing and off the numbered keys, but still reporting and clickable.
+    private var backlogHeader: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "tray")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.tertiary)
+            Text("Backlog")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Text("\(model.backlogSessions.count)")
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+            Spacer()
+        }
+        .padding(.horizontal, Metrics.hPad)
+        .padding(.vertical, 6)
+    }
+
+    /// One session row with its focus button, hover, context menu, and the
+    /// trailing divider between rows (suppressed after a section's last).
+    @ViewBuilder
+    private func sessionRowButton(_ s: SessionInfo, isLastInSection: Bool) -> some View {
+        // The row being renamed is deliberately NOT wrapped in the
+        // Button: `.disabled()` propagates to every descendant, so
+        // disabling the row to stop a stray click from bouncing the
+        // agent would also disable the text field inside it and
+        // swallow every keystroke.
+        Group {
+            if renamingID == s.id {
+                sessionRow(s)
+            } else {
+                Button { model.focusSession(s) } label: {
+                    sessionRow(s)
+                }
+                .buttonStyle(.plain)
+                // A live slotless session (>12 live) has no numbered
+                // key to tap; a disconnected one is still focusable by
+                // id (its terminal is usually still open), so only a
+                // *connected* slotless row is truly un-focusable —
+                // unless it's backlogged: the daemon keeps parked
+                // sessions focusable by id (PROTOCOL.md §3).
+                .disabled(s.connected && s.slot == nil && !s.backlogged)
+            }
+        }
+        .hoverHighlight()
+        .contextMenu { sessionContextMenu(s) }
+        if !isLastInSection {
+            Divider().padding(.leading, 44)
+        }
+    }
+
+    @ViewBuilder
+    private func sessionContextMenu(_ s: SessionInfo) -> some View {
+        Button("Rename\u{2026}") { renamingID = s.id }
+        // Manual reorder (PROTOCOL.md §3/§4 swap-slots): native
+        // drag-and-drop (`.draggable`/`.dropDestination`) doesn't
+        // work inside a MenuBarExtra(.window) dropdown's
+        // auxiliary panel — confirmed by testing, not just a
+        // theoretical gap — so this is a menu instead of a drag
+        // gesture. Only offered when this session and at least
+        // one other both hold a real slot; slotless (>12 live)
+        // sessions have nothing to swap.
+        let otherSlotted = model.sessions.filter { $0.id != s.id && $0.slot != nil }
+        if s.slot != nil, !otherSlotted.isEmpty {
+            Menu("Move to Slot") {
+                ForEach(otherSlotted) { other in
+                    Button("Swap with #\(other.slot!) \u{00B7} \(other.title)") {
+                        model.swapSlots(s, other)
+                    }
                 }
             }
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 6)
+        // Backlog parking (PROTOCOL.md §3 set-session-backlogged): a parked
+        // session keeps reporting and stays focusable, but releases its
+        // numbered key and leaves the aggregate/attention routing. The
+        // daemon only accepts live sessions, so a disconnected (tombstoned)
+        // row can't be moved in either direction.
+        if s.backlogged {
+            Button("Move to Active") { model.setSessionBacklogged(s, false) }
+                .disabled(!s.connected)
+        } else {
+            Button("Move to Backlog") { model.setSessionBacklogged(s, true) }
+                .disabled(!s.connected)
+        }
+        if let cwd = s.cwd {
+            Divider()
+            Button("Open in Terminal") { model.openInTerminal(cwd) }
+            Button("Show in Finder") { model.revealInFinder(cwd) }
+            Button("Copy Working Directory") { model.copyToPasteboard(cwd) }
+        }
+        Divider()
+        Button("Relaunch as Managed Session") {
+            model.relaunchAsManaged(s)
+        }
+        .disabled(!model.canRelaunchAsManaged(s))
+        // "End Session" is destructive — it quits the actual agent
+        // process (SIGINT→SIGTERM, so its SessionEnd teardown
+        // runs). "Remove Session" is non-destructive — it just
+        // drops the row from FocalPoint and leaves the agent
+        // running (also the way to clear a disconnected row).
+        Button("End Session", role: .destructive) { model.quitSession(s) }
+        Button("Remove Session") { model.removeSession(s) }
     }
 
     private func sessionRow(_ s: SessionInfo) -> some View {

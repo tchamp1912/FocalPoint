@@ -33,15 +33,19 @@ struct DesktopWidgetView: View {
     @ObservedObject var model: AppModel
     var onOpenSettings: () -> Void
     var onQuit: () -> Void
+    /// Reports grip drag start/end so the window controller can keep
+    /// mid-drag content refits pinned to the same corner as the grip.
+    var onGripDragChanged: (Bool) -> Void
 
     /// Session currently being renamed inline, if any.
     @State private var renamingID: String?
 
     private var orientation: DesktopWidgetOrientation { model.desktopWidgetOrientation }
     /// Non-nil once the user has dragged the corner resize grip for this
-    /// orientation: the root frame is pinned to it and overflowing session
-    /// content scrolls. nil = content-fitted sizing (the original behavior).
-    private var sizeOverride: CGSize? { model.widgetSize(for: orientation) }
+    /// orientation: the widget's width is pinned to it. Height is always
+    /// content-fitted — only the horizontal strip scrolls (its cells) when
+    /// they overflow a pinned width.
+    private var widthOverride: CGFloat? { model.widgetWidth(for: orientation) }
 
     var body: some View {
         Group {
@@ -60,15 +64,16 @@ struct DesktopWidgetView: View {
         .contextMenu { widgetContextMenu }
     }
 
-    /// The little diagonal-lines affordance in the bottom-right corner. Live
-    /// drags update the in-memory size (keeping the SwiftUI root frame in
-    /// lockstep with the window so the clear background never gaps mid-drag);
-    /// the size is persisted on mouse-up.
+    /// The little vertical-ticks affordance in the bottom-right corner.
+    /// Width-only by design (height fits the content); live drags update the
+    /// in-memory width so the SwiftUI root frame stays in lockstep with the
+    /// window, and the width is persisted on mouse-up.
     private var resizeGrip: some View {
         ResizeGripView(
             orientation: orientation,
-            onLiveResize: { model.previewWidgetSize($0, for: orientation) },
-            onCommit: { model.setWidgetSize($0, for: orientation) }
+            onLiveResize: { model.previewWidgetWidth($0, for: orientation) },
+            onCommit: { model.setWidgetWidth($0, for: orientation) },
+            onDragChanged: onGripDragChanged
         )
         .frame(width: 16, height: 16)
         .padding(2)
@@ -99,9 +104,18 @@ struct DesktopWidgetView: View {
                 }
             }
         }
-        if sizeOverride != nil {
+        Button {
+            model.compactWidgetRows.toggle()
+        } label: {
+            if model.compactWidgetRows {
+                Label("Compact Rows", systemImage: "checkmark")
+            } else {
+                Text("Compact Rows")
+            }
+        }
+        if widthOverride != nil {
             Divider()
-            Button("Reset Widget Size") { model.resetWidgetSize(for: orientation) }
+            Button("Reset Widget Width") { model.resetWidgetWidth(for: orientation) }
         }
         Divider()
         Button("Open Settings…") { onOpenSettings() }
@@ -128,9 +142,7 @@ struct DesktopWidgetView: View {
             verticalUsageSection
         }
         .padding(.vertical, 8)
-        .frame(width: sizeOverride?.width ?? 260,
-               height: sizeOverride?.height,
-               alignment: .topLeading)
+        .frame(width: widthOverride ?? 260, alignment: .leading)
     }
 
     /// Drag handle bar: the one "background chrome" region — drag to move
@@ -154,21 +166,18 @@ struct DesktopWidgetView: View {
         .background(WindowDragHandle())
     }
 
-    /// Sessions are a plain stack while auto-sized (the fitting behavior the
-    /// widget has always had) and swap to a ScrollView once the user pins a
-    /// size, so overflow scrolls instead of silently clipping.
+    /// Height always fits the content (only the width is user-pinnable), so
+    /// there is nothing to scroll here — the stack grows downward from the
+    /// controller-anchored top edge as sessions arrive.
     @ViewBuilder
     private var verticalSessionsArea: some View {
         if model.sessions.isEmpty {
-            // Spacers are zero-height in the auto-fitted window but center
-            // the empty state inside a user-sized one.
-            Spacer(minLength: 0)
             emptyState.frame(maxWidth: .infinity)
-            Spacer(minLength: 0)
-        } else if sizeOverride != nil {
-            ScrollView { sessionList }
         } else {
-            sessionList
+            VStack(spacing: 0) {
+                if !model.activeSessions.isEmpty { sessionList }
+                if !model.backlogSessions.isEmpty { backlogSection }
+            }
         }
     }
 
@@ -185,12 +194,40 @@ struct DesktopWidgetView: View {
 
     private var sessionList: some View {
         VStack(spacing: 1) {
-            ForEach(model.elevatedSessions) { s in
+            ForEach(model.activeSessions) { s in
                 sessionRowButton(s)
             }
         }
         .padding(.horizontal, 6)
         .padding(.top, 4)
+    }
+
+    /// Parked-but-still-live sessions (PROTOCOL.md §3 backlog), kept in
+    /// their own section below the active list: they keep reporting and
+    /// stay clickable, but they've left the aggregate/attention routing
+    /// and released their numbered keys.
+    private var backlogSection: some View {
+        VStack(spacing: 0) {
+            Divider().padding(.horizontal, 10)
+            HStack(spacing: 5) {
+                Image(systemName: "tray")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                Text("Backlog · \(model.backlogSessions.count)")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 5)
+            VStack(spacing: 1) {
+                ForEach(model.backlogSessions) { s in
+                    sessionRowButton(s)
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.bottom, 4)
+        }
     }
 
     @ViewBuilder
@@ -208,8 +245,9 @@ struct DesktopWidgetView: View {
                 .buttonStyle(.plain)
                 // See MenuContentView: a disconnected session is
                 // still focusable by id; only a connected slotless
-                // row is truly un-focusable.
-                .disabled(s.connected && s.slot == nil)
+                // row is truly un-focusable — unless it's backlogged,
+                // which the daemon keeps focusable by id (§3).
+                .disabled(s.connected && s.slot == nil && !s.backlogged)
             }
         }
         // The daemon owns attention priority. Highlight only the
@@ -250,6 +288,15 @@ struct DesktopWidgetView: View {
             model.relaunchAsManaged(s)
         }
         .disabled(!model.canRelaunchAsManaged(s))
+        // Same parking action as the dropdown (PROTOCOL.md §3
+        // set-session-backlogged); live sessions only.
+        if s.backlogged {
+            Button("Move to Active") { model.setSessionBacklogged(s, false) }
+                .disabled(!s.connected)
+        } else {
+            Button("Move to Backlog") { model.setSessionBacklogged(s, true) }
+                .disabled(!s.connected)
+        }
         Divider()
         // See MenuContentView: End Session quits the agent
         // process; Remove Session just drops the row.
@@ -314,9 +361,7 @@ struct DesktopWidgetView: View {
             }
         }
         .padding(.vertical, 6)
-        .frame(width: sizeOverride?.width,
-               height: sizeOverride?.height,
-               alignment: .leading)
+        .frame(width: widthOverride, alignment: .leading)
     }
 
     /// The strip's left segment doubles as the drag handle (same
@@ -346,10 +391,12 @@ struct DesktopWidgetView: View {
     @ViewBuilder
     private var horizontalSessionsArea: some View {
         if model.sessions.isEmpty {
+            // Spacers are zero-width while auto-sized but center the empty
+            // state across a user-pinned width.
             Spacer(minLength: 0)
             emptyState
             Spacer(minLength: 0)
-        } else if sizeOverride != nil {
+        } else if widthOverride != nil {
             ScrollView(.horizontal) { cellRow }
         } else {
             // Auto-sized width grows with the session count; the settings
@@ -360,29 +407,38 @@ struct DesktopWidgetView: View {
 
     private var cellRow: some View {
         HStack(alignment: .top, spacing: 2) {
-            ForEach(model.elevatedSessions) { s in
+            ForEach(model.activeSessions) { s in
                 sessionCellButton(s)
+            }
+            // Parked sessions trail the active cells behind a labeled
+            // divider — same backlog semantics as the vertical section.
+            if !model.backlogSessions.isEmpty {
+                Divider().padding(.vertical, 6)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("BACKLOG · \(model.backlogSessions.count)")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                    HStack(alignment: .top, spacing: 2) {
+                        ForEach(model.backlogSessions) { s in
+                            sessionCellButton(s)
+                        }
+                    }
+                }
+                .padding(.leading, 2)
             }
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 2)
     }
 
-    /// Fixed-width segment on the strip's right edge; scrolls vertically
-    /// when a user-pinned height is too short for every meter.
+    /// Fixed-width segment on the strip's right edge.
     @ViewBuilder
     private var horizontalUsageSection: some View {
         if model.showUsage, !model.usage.isEmpty {
             Divider().padding(.vertical, 6)
-            Group {
-                if sizeOverride != nil {
-                    ScrollView { VStack(alignment: .leading, spacing: 3) { usageRows } }
-                } else {
-                    VStack(alignment: .leading, spacing: 3) { usageRows }
-                }
-            }
-            .frame(width: 165)
-            .padding(.trailing, 4)
+            VStack(alignment: .leading, spacing: 3) { usageRows }
+                .frame(width: 165)
+                .padding(.trailing, 4)
         }
     }
 
@@ -398,7 +454,7 @@ struct DesktopWidgetView: View {
                     sessionCell(s)
                 }
                 .buttonStyle(.plain)
-                .disabled(s.connected && s.slot == nil)
+                .disabled(s.connected && s.slot == nil && !s.backlogged)
             }
         }
         .background(
@@ -473,7 +529,7 @@ struct DesktopWidgetView: View {
             SessionTitleField(session: s, model: model,
                               editingID: $renamingID, font: .system(size: 11))
                 .lineLimit(1)
-            if let tokens = s.contextTokens {
+            if !model.compactWidgetRows, let tokens = s.contextTokens {
                 let kindOverride = model.contextWindowOverride(for: s.kind)
                 if let fraction = s.contextFraction(kindOverride: kindOverride),
                    let window = s.effectiveContextWindow(kindOverride: kindOverride) {
@@ -571,22 +627,22 @@ struct DesktopWidgetView: View {
                     .font(.system(size: 10)).foregroundStyle(overBudget ? budgetWarningColor : .secondary)
                     .id(model.tick)
             }
-            if hasStats {
+            if hasStats, !model.compactWidgetRows {
                 HStack {
                     Spacer()
                     SessionStatsView(stats: s.stats, visible: model.visibleStats)
                 }
                 .padding(.trailing, 1)
             }
-            // Always shown when data is available — no settings gate, unlike
-            // the optional stat badges above. It's a hairline bar, not a
-            // badge, so it doesn't compete for the row's horizontal space.
-            // Leading inset matches where the stat badge icons actually
-            // start (the slot number above is a plain centered Text, not a
-            // filled circle, so it has a few points of built-in inset the
-            // meter otherwise lacks) — without it the meter reads as
-            // starting a touch too far left of everything above it.
-            if let tokens = s.contextTokens {
+            // Shown whenever data is available, unless Compact Rows is on —
+            // it's a hairline bar, not a badge, so it doesn't compete for the
+            // row's horizontal space. Leading inset matches where the stat
+            // badge icons actually start (the slot number above is a plain
+            // centered Text, not a filled circle, so it has a few points of
+            // built-in inset the meter otherwise lacks) — without it the
+            // meter reads as starting a touch too far left of everything
+            // above it.
+            if !model.compactWidgetRows, let tokens = s.contextTokens {
                 let kindOverride = model.contextWindowOverride(for: s.kind)
                 if let fraction = s.contextFraction(kindOverride: kindOverride),
                    let window = s.effectiveContextWindow(kindOverride: kindOverride) {
@@ -661,28 +717,35 @@ private struct WindowDragHandle: NSViewRepresentable {
     func updateNSView(_ nsView: DragView, context: Context) {}
 }
 
-// MARK: - Corner resize grip
+// MARK: - Corner resize grip (width only)
 
 /// Borderless panels get no resize chrome from AppKit (a `.borderless`
 /// window has no frame view to hit-test), so the widget ships its own grip
-/// in the bottom-right corner. Like WindowDragHandle, the work happens in a
-/// plain NSView for the same reason SwiftUI gestures were abandoned for
-/// window dragging (see the comment above): a direct mouseDragged → setFrame
-/// loop is tracked entirely against screen coordinates, with no layout
-/// feedback. Live deltas go to `onLiveResize` (in-memory, keeps the SwiftUI
-/// root frame pinned to the dragged frame so the clear window background
-/// never shows a gap); only `onCommit` (mouse-up) persists.
+/// in the bottom-right corner. The grip is deliberately width-only: height
+/// always fits the content, which is what keeps sessions arriving/leaving
+/// from fighting a pinned frame (dead space, clipped rows). Like
+/// WindowDragHandle, the work happens in a plain NSView for the same reason
+/// SwiftUI gestures were abandoned for window dragging (see the comment
+/// above): a direct mouseDragged → setFrame loop is tracked entirely
+/// against screen coordinates, with no layout feedback. Live deltas go to
+/// `onLiveResize` (in-memory, keeps the SwiftUI root frame pinned to the
+/// dragged width so the clear window background never shows a gap); only
+/// `onCommit` (mouse-up) persists. `onDragChanged` tells the window
+/// controller a grip drag is in flight so mid-drag content refits stay
+/// pinned to the same top-left corner the grip uses.
 private struct ResizeGripView: NSViewRepresentable {
     let orientation: DesktopWidgetOrientation
-    let onLiveResize: (CGSize) -> Void
-    let onCommit: (CGSize) -> Void
+    let onLiveResize: (CGFloat) -> Void
+    let onCommit: (CGFloat) -> Void
+    let onDragChanged: (Bool) -> Void
 
     final class GripView: NSView {
         var orientation: DesktopWidgetOrientation = .vertical
-        var onLiveResize: ((CGSize) -> Void)?
-        var onCommit: ((CGSize) -> Void)?
-        private var dragStartMouse: NSPoint?
-        private var dragStartFrame: NSRect = .zero
+        var onLiveResize: ((CGFloat) -> Void)?
+        var onCommit: ((CGFloat) -> Void)?
+        var onDragChanged: ((Bool) -> Void)?
+        private var dragStartMouseX: CGFloat?
+        private var dragStartWidth: CGFloat = 0
 
         // y-down drawing (bottom-right corner = maxX/maxY). This view
         // handles its own mouse events and must stay out of
@@ -691,19 +754,19 @@ private struct ResizeGripView: NSViewRepresentable {
         override var mouseDownCanMoveWindow: Bool { false }
 
         override func resetCursorRects() {
-            // No public diagonal-resize cursor; crosshair is the closest
-            // "this adjusts something" signal.
-            addCursorRect(bounds, cursor: .crosshair)
+            addCursorRect(bounds, cursor: .resizeLeftRight)
         }
 
         override func draw(_ dirtyRect: NSRect) {
+            // Three vertical ticks: a width-only affordance (there is no
+            // vertical drag, so no diagonal-lines glyph).
             let path = NSBezierPath()
             path.lineWidth = 1.2
             path.lineCapStyle = .round
             for i in 0..<3 {
-                let inset = CGFloat(i) * 3.5 + 3.5
-                path.move(to: NSPoint(x: bounds.maxX - inset, y: bounds.maxY - 1.5))
-                path.line(to: NSPoint(x: bounds.maxX - 1.5, y: bounds.maxY - inset))
+                let x = bounds.maxX - 3 - CGFloat(i) * 3.5
+                path.move(to: NSPoint(x: x, y: bounds.maxY - 3))
+                path.line(to: NSPoint(x: x, y: bounds.maxY - 9.5))
             }
             NSColor.labelColor.withAlphaComponent(0.35).setStroke()
             path.stroke()
@@ -711,27 +774,27 @@ private struct ResizeGripView: NSViewRepresentable {
 
         override func mouseDown(with event: NSEvent) {
             guard let window else { return }
-            dragStartMouse = NSEvent.mouseLocation
-            dragStartFrame = window.frame
+            dragStartMouseX = NSEvent.mouseLocation.x
+            dragStartWidth = window.frame.width
+            onDragChanged?(true)
         }
 
         override func mouseDragged(with event: NSEvent) {
-            guard let window, let start = dragStartMouse else { return }
-            let current = NSEvent.mouseLocation
-            let minSize = orientation.minWidgetSize
-            let maxSize = orientation.maxWidgetSize
-            let width = min(max(dragStartFrame.width + current.x - start.x, minSize.width), maxSize.width)
-            let height = min(max(dragStartFrame.height - (current.y - start.y), minSize.height), maxSize.height)
-            // Bottom-right grip: the top edge and left edge stay pinned, so
-            // the origin moves down as the window grows taller.
-            let origin = NSPoint(x: dragStartFrame.origin.x, y: dragStartFrame.maxY - height)
-            window.setFrame(NSRect(origin: origin, size: NSSize(width: width, height: height)), display: true)
-            onLiveResize?(CGSize(width: width, height: height))
+            guard let window, let startX = dragStartMouseX else { return }
+            let width = min(max(dragStartWidth + NSEvent.mouseLocation.x - startX,
+                                orientation.minWidgetWidth),
+                            orientation.maxWidgetWidth)
+            var frame = window.frame
+            guard width != frame.width else { return }
+            frame.size.width = width  // left edge and height stay put
+            window.setFrame(frame, display: true)
+            onLiveResize?(width)
         }
 
         override func mouseUp(with event: NSEvent) {
-            if let size = window?.frame.size { onCommit?(size) }
-            dragStartMouse = nil
+            if let window { onCommit?(window.frame.width) }
+            dragStartMouseX = nil
+            onDragChanged?(false)
         }
     }
 
@@ -740,6 +803,7 @@ private struct ResizeGripView: NSViewRepresentable {
         view.orientation = orientation
         view.onLiveResize = onLiveResize
         view.onCommit = onCommit
+        view.onDragChanged = onDragChanged
         return view
     }
 
@@ -747,6 +811,7 @@ private struct ResizeGripView: NSViewRepresentable {
         nsView.orientation = orientation
         nsView.onLiveResize = onLiveResize
         nsView.onCommit = onCommit
+        nsView.onDragChanged = onDragChanged
         nsView.needsDisplay = true
     }
 }
@@ -783,8 +848,12 @@ final class DesktopOverlayController: NSObject, NSWindowDelegate {
     private static let originXKey = "desktopWidgetOriginX"
     private static let originYKey = "desktopWidgetOriginY"
 
-    /// Pending top-edge re-anchor; see requestTopAnchor().
-    private var topAnchorRequest: (top: CGFloat, at: CFAbsoluteTime)?
+    /// Last frame we've accounted for, so windowDidResize can tell which
+    /// edges moved; see that method for why.
+    private var lastFrame: NSRect?
+    /// True while the corner grip is being dragged; its own math pins the
+    /// left edge, and mid-drag content refits follow the same anchor.
+    private var gripResizing = false
 
     init(model: AppModel) {
         self.model = model
@@ -804,22 +873,6 @@ final class DesktopOverlayController: NSObject, NSWindowDelegate {
                                         hasRelaunchStatus: relaunchStatus != nil)
             }
             .store(in: &cancellables)
-
-        // Orientation flips and size-override changes (including Reset and
-        // live grip updates) re-fit the window around a different content
-        // size; keep the top edge stationary across that refit.
-        model.$desktopWidgetOrientation.dropFirst()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.requestTopAnchor() }
-            .store(in: &cancellables)
-        model.$widgetSizeVertical.dropFirst()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.requestTopAnchor() }
-            .store(in: &cancellables)
-        model.$widgetSizeHorizontal.dropFirst()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.requestTopAnchor() }
-            .store(in: &cancellables)
     }
 
     private func updateVisibility(mode: DesktopWidgetMode, aggregate: AgentState,
@@ -832,7 +885,11 @@ final class DesktopOverlayController: NSObject, NSWindowDelegate {
         case .always:
             setVisible(true)
         case .autoHideIdle:
-            setVisible(aggregate != .idle || !sessions.isEmpty || hasRelaunchStatus)
+            // Backlog-only is storage, not activity: parked sessions leave
+            // the aggregate/attention routing daemon-side, and a widget
+            // showing nothing but the backlog shouldn't keep itself on
+            // screen. Disconnected rows still count — that's real work lost.
+            setVisible(aggregate != .idle || sessions.contains { !$0.backlogged } || hasRelaunchStatus)
         }
     }
 
@@ -865,11 +922,13 @@ final class DesktopOverlayController: NSObject, NSWindowDelegate {
         let view = DesktopWidgetView(
             model: model,
             onOpenSettings: { [weak self] in self?.onOpenSettings?() },
-            onQuit: { NSApp.terminate(nil) }
+            onQuit: { NSApp.terminate(nil) },
+            onGripDragChanged: { [weak self] in self?.gripResizing = $0 }
         )
         p.contentViewController = NSHostingController(rootView: view)
         panel = p
         positionInitially()
+        lastFrame = p.frame
     }
 
     // MARK: Position persistence (UserDefaults, not hardcoded top-right)
@@ -907,33 +966,50 @@ final class DesktopOverlayController: NSObject, NSWindowDelegate {
     }
 
     func windowDidMove(_ notification: Notification) {
+        guard let p = panel else { return }
         persistPosition()
+        lastFrame = p.frame
     }
 
     /// AppKit re-fits a contentViewController-driven window from its origin
-    /// (bottom-left), so when the layout changes shape — orientation flip,
-    /// size override change/reset — the bottom edge stays put and the widget
-    /// appears to jump relative to the top screen edge it's usually parked
-    /// against. Recording the top edge here and re-applying it in
-    /// windowDidResize keeps the widget visually stationary across the
-    /// refit. The timestamp guard stops a request that never produced a
-    /// resize from hijacking an unrelated later one; grip drags self-anchor
-    /// (top stays pinned by construction), so consuming them here is a
-    /// dy ≈ 0 no-op.
-    private func requestTopAnchor() {
-        guard let p = panel, p.isVisible else { return }
-        topAnchorRequest = (top: p.frame.maxY, at: CFAbsoluteTimeGetCurrent())
-    }
-
+    /// (bottom-left), so every content-driven resize — sessions appearing or
+    /// disappearing, a context meter arriving, an orientation flip, a width
+    /// reset — used to move the widget's *other* three edges, making it
+    /// visibly jump against whatever screen edge it's parked on. Instead,
+    /// pin the edges the widget is parked nearest: a widget hugging the
+    /// top-right grows downward and leftward (like a dropdown), one near the
+    /// bottom grows upward, etc. Grip drags self-anchor (left edge pinned by
+    /// construction), so the grip's own setFrame passes through here as a
+    /// no-op; the flag only matters for content refits interleaved with a
+    /// drag.
     func windowDidResize(_ notification: Notification) {
-        guard let request = topAnchorRequest, let p = panel else { return }
-        topAnchorRequest = nil
-        guard CFAbsoluteTimeGetCurrent() - request.at < 0.5 else { return }
-        let dy = request.top - p.frame.maxY
-        guard abs(dy) > 0.5 else { return }
-        var frame = p.frame
-        frame.origin.y += dy
-        p.setFrame(frame, display: true)
-        persistPosition()
+        guard let p = panel else { return }
+        let resized = p.frame
+        guard let old = lastFrame, old.size != resized.size else {
+            lastFrame = resized
+            return
+        }
+        let pinTop: Bool
+        let pinRight: Bool
+        if gripResizing {
+            pinTop = true
+            pinRight = false
+        } else if let vf = (p.screen ?? NSScreen.main)?.visibleFrame {
+            pinTop = abs(resized.maxY - vf.maxY) <= abs(resized.minY - vf.minY)
+            pinRight = abs(resized.maxX - vf.maxX) <= abs(resized.minX - vf.minX)
+        } else {
+            pinTop = true
+            pinRight = false
+        }
+        // Bottom/left pinning needs no correction (AppKit already kept that
+        // origin corner); only pull the frame back for top/right.
+        var adjusted = resized
+        if pinTop { adjusted.origin.y = old.maxY - resized.height }
+        if pinRight { adjusted.origin.x = old.maxX - resized.width }
+        if adjusted.origin != resized.origin {
+            p.setFrame(adjusted, display: true)
+            persistPosition()
+        }
+        lastFrame = adjusted
     }
 }

@@ -44,6 +44,7 @@ pub enum Request {
     GetState,
     ListSessions,
     RenameSession { session: String, name: Option<String> },
+    SetSessionBacklogged { session: String, backlogged: bool },
     SwapSlots { session1: String, session2: String },
     EndSession { session: String },
     QuitSession { session: String },
@@ -89,6 +90,7 @@ pub struct SessionDto {
     name: Option<String>,
     slot: Option<u8>,
     state: String,
+    backlogged: bool,
     meta: Map<String, Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     connected: Option<bool>,
@@ -1293,7 +1295,9 @@ fn session_event_line(
     event_line(Event::Session {
         session: SessionDto {
             session: id.to_string(), kind: kind.clone(), label: label.clone(), name: name.clone(),
-            slot, state: state.name().to_string(), meta: external_meta(meta), connected: None,
+            slot, state: state.name().to_string(),
+            backlogged: meta.get(crate::session::BACKLOGGED_META_KEY).and_then(Value::as_bool).unwrap_or(false),
+            meta: external_meta(meta), connected: None,
         },
     })
 }
@@ -1408,6 +1412,12 @@ fn apply_effects(
     let mut session_effect = false;
     for effect in effects {
         match effect {
+            Effect::SlotCleared { slot } => {
+                let _ = host_tx.send(HostCmd::SetKeyState {
+                    key: slot,
+                    state: None,
+                });
+            }
             Effect::SessionUpsert {
                 id,
                 kind,
@@ -1517,13 +1527,15 @@ fn session_to_dto(s: &Session, connected: Option<bool>) -> SessionDto {
     let meta = external_meta(&s.meta);
     SessionDto {
         session: s.id.clone(), kind: s.kind.clone(), label: s.label.clone(), name: s.name.clone(),
-        slot: s.slot, state: s.state.name().to_string(), meta, connected,
+        slot: s.slot, state: s.state.name().to_string(), backlogged: s.is_backlogged(), meta, connected,
     }
 }
 
 fn public_meta(meta: &Map<String, Value>) -> Map<String, Value> {
     meta.iter()
-        .filter(|(key, _)| !key.starts_with("_carry_"))
+        .filter(|(key, _)| {
+            !key.starts_with("_carry_") && key.as_str() != crate::session::BACKLOGGED_META_KEY
+        })
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect()
 }
@@ -1550,6 +1562,7 @@ fn session_to_json(s: &Session) -> Value {
         "name": s.name,
         "slot": s.slot,
         "state": s.state.name(),
+        "backlogged": s.is_backlogged(),
         "meta": public_meta(&s.meta),
     })
 }
@@ -1562,6 +1575,13 @@ fn session_from_json(v: &serde_json::Value, last_update: Instant) -> Option<Sess
     let id = v.get("session")?.as_str()?.to_string();
     let state = crate::protocol::State::from_name(v.get("state")?.as_str()?)?;
     let mut meta = v.get("meta").and_then(|m| m.as_object()).cloned().unwrap_or_default();
+    let backlogged = v.get("backlogged").and_then(Value::as_bool).unwrap_or(false);
+    if backlogged {
+        meta.insert(
+            crate::session::BACKLOGGED_META_KEY.into(),
+            Value::Bool(true),
+        );
+    }
     // Read snapshots written before carry-forward data was made internal, but
     // never expose those legacy keys again.
     let mut carry = v.get("carry").and_then(|c| c.as_object()).cloned().unwrap_or_default();
@@ -1577,7 +1597,11 @@ fn session_from_json(v: &serde_json::Value, last_update: Instant) -> Option<Sess
         name: v.get("name").and_then(|x| x.as_str()).map(str::to_string),
         meta,
         carry,
-        slot: v.get("slot").and_then(|x| x.as_u64()).map(|n| n as u8),
+        slot: if backlogged {
+            None
+        } else {
+            v.get("slot").and_then(|x| x.as_u64()).map(|n| n as u8)
+        },
         state,
         last_update,
     })
@@ -2557,6 +2581,19 @@ fn dispatch(
             apply_effects(effects, ctx, host_tx);
             ok()
         }
+        Request::SetSessionBacklogged { session: id, backlogged } => {
+            let effects = match shared
+                .lock()
+                .unwrap()
+                .registry
+                .set_backlogged(&id, backlogged)
+            {
+                Ok(effects) => effects,
+                Err(message) => return err(&message),
+            };
+            apply_effects(effects, ctx, host_tx);
+            ok()
+        }
         Request::SwapSlots { session1: id1, session2: id2 } => {
             let result = shared.lock().unwrap().registry.swap_slots(&id1, &id2);
             match result {
@@ -3333,6 +3370,7 @@ mod tests {
         meta.insert("turns".into(), json!(7));
         meta.insert("tty".into(), json!("/dev/ttys004"));
         meta.insert("transcript_path".into(), json!("/private/transcript.jsonl"));
+        meta.insert(crate::session::BACKLOGGED_META_KEY.into(), json!(true));
         let original = Session {
             id: "abc".into(),
             kind: Some("claude".into()),
@@ -3340,7 +3378,7 @@ mod tests {
             name: Some("Renamed".into()),
             meta,
             carry: serde_json::Map::new(),
-            slot: Some(3),
+            slot: None,
             state: State::Thinking,
             last_update: Instant::now(),
         };
@@ -3353,8 +3391,11 @@ mod tests {
         assert_eq!(restored.slot, original.slot);
         assert_eq!(restored.state, original.state);
         assert_eq!(restored.meta, original.meta);
+        assert!(restored.is_backlogged());
         let external = session_to_dto(&original, None);
+        assert!(external.backlogged);
         assert!(external.meta.get("transcript_path").is_none());
+        assert!(external.meta.get(crate::session::BACKLOGGED_META_KEY).is_none());
         assert_eq!(external.meta["turns"], json!(7));
     }
 
@@ -3371,6 +3412,12 @@ mod tests {
             "cmd": "inject", "kind": "dial", "delta": -1
         })).expect("typed inject decodes");
         assert!(matches!(request, Request::Inject { kind, delta: Some(-1), .. } if kind == "dial"));
+
+        let request: Request = serde_json::from_value(json!({
+            "cmd": "set-session-backlogged", "session": "s1", "backlogged": true
+        })).expect("typed backlog request decodes");
+        assert!(matches!(request, Request::SetSessionBacklogged { session, backlogged: true }
+            if session == "s1"));
     }
 
     #[test]
@@ -3382,6 +3429,7 @@ mod tests {
             slot: Some(1), state: State::Running, last_update: Instant::now(),
         };
         let payload = session_to_json(&session);
+        assert_eq!(payload["backlogged"], json!(false));
         assert!(payload["meta"].get("_carry_turns").is_none());
         assert!(payload.get("carry").is_none());
         let event = session_event_line(&session.id, &session.kind, &session.label, &session.name,

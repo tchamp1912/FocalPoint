@@ -220,6 +220,13 @@ struct SessionInfo: Identifiable, Equatable {
     /// it, it reconnects/recovers, or its tombstone TTL expires. `state`
     /// holds its last-known state at the moment it was reaped.
     var connected: Bool = true
+    /// True when the user parked this session in the backlog via
+    /// `set-session-backlogged` (PROTOCOL.md §3): still registered and
+    /// focusable by id, but it released its numbered-key slot (slot is nil)
+    /// and left the aggregate/attention routing. Rendered in a separate
+    /// Backlog section, not the active list. Top-level DTO field, never
+    /// part of `meta`.
+    var backlogged: Bool = false
     /// True for a row inserted optimistically by History → Resume, before the
     /// reopened agent's `SessionStart` hook has re-registered it with the
     /// daemon. Rendered as "Reopening…"; cleared the moment any real `session`

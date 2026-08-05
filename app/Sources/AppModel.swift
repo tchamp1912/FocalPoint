@@ -42,18 +42,19 @@ enum DesktopWidgetOrientation: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Guardrails for the corner-grip resize. Mins keep the header plus one
-    /// session legible; maxes keep the widget a HUD, not a window.
-    var minWidgetSize: CGSize {
+    /// Guardrails for the corner-grip width resize. The min keeps the header
+    /// plus one session legible; the max keeps the widget a HUD, not a
+    /// window.
+    var minWidgetWidth: CGFloat {
         switch self {
-        case .vertical:   return CGSize(width: 200, height: 110)
-        case .horizontal: return CGSize(width: 360, height: 76)
+        case .vertical:   return 200
+        case .horizontal: return 360
         }
     }
-    var maxWidgetSize: CGSize {
+    var maxWidgetWidth: CGFloat {
         switch self {
-        case .vertical:   return CGSize(width: 560, height: 1000)
-        case .horizontal: return CGSize(width: 1600, height: 220)
+        case .vertical:   return 560
+        case .horizontal: return 1600
         }
     }
 }
@@ -171,14 +172,20 @@ final class AppModel: ObservableObject {
                                       forKey: "desktopWidgetOrientation")
         }
     }
-    /// User-chosen widget size from the corner resize grip, per orientation.
-    /// nil = auto-size to content (the pre-grip behavior: fixed 260pt width /
-    /// content-fitted height for vertical, fully content-fitted horizontal).
-    /// Once set, the widget's root frame is pinned to this size and the
-    /// session area scrolls when content exceeds it. Persisted as four
-    /// doubles because UserDefaults has no CGSize bridging.
-    @Published private(set) var widgetSizeVertical: CGSize?
-    @Published private(set) var widgetSizeHorizontal: CGSize?
+    /// User-chosen widget width from the corner resize grip, per
+    /// orientation. nil = automatic (fixed 260pt for vertical, content-
+    /// fitted for horizontal). Height is always content-fitted — pinning it
+    /// fought the widget's reason to exist: sessions appearing/disappearing
+    /// reshaped a pinned frame into dead space or clipped rows, and the
+    /// bottom-left-anchored AppKit refit made the widget visibly jump.
+    @Published private(set) var widgetWidthVertical: CGFloat?
+    @Published private(set) var widgetWidthHorizontal: CGFloat?
+    /// One-line session rows in the desktop widget (hides the per-row stats
+    /// badges and the context meter). Widget-only: the dropdown keeps its
+    /// full rows, since it has the room.
+    @Published var compactWidgetRows: Bool {
+        didSet { UserDefaults.standard.set(compactWidgetRows, forKey: "compactWidgetRows") }
+    }
     /// Runtime-only override toggled by the "Toggle Widget" hotkey — hides
     /// the widget on demand without touching the persisted `desktopWidgetMode`
     /// setting. Deliberately not persisted: it resets on relaunch so the
@@ -276,66 +283,57 @@ final class AppModel: ObservableObject {
         contextWindowByKind[kind.lowercased()]
     }
 
-    // MARK: Widget size overrides (corner-grip resize)
+    // MARK: Widget width overrides (corner-grip resize)
 
-    func widgetSize(for orientation: DesktopWidgetOrientation) -> CGSize? {
+    func widgetWidth(for orientation: DesktopWidgetOrientation) -> CGFloat? {
         switch orientation {
-        case .vertical:   return widgetSizeVertical
-        case .horizontal: return widgetSizeHorizontal
+        case .vertical:   return widgetWidthVertical
+        case .horizontal: return widgetWidthHorizontal
         }
     }
 
-    func setWidgetSize(_ size: CGSize, for orientation: DesktopWidgetOrientation) {
-        previewWidgetSize(size, for: orientation)
-        guard let clamped = widgetSize(for: orientation) else { return }
+    func setWidgetWidth(_ width: CGFloat, for orientation: DesktopWidgetOrientation) {
+        previewWidgetWidth(width, for: orientation)
+        guard let clamped = widgetWidth(for: orientation) else { return }
+        UserDefaults.standard.set(Double(clamped), forKey: Self.widgetWidthKey(for: orientation))
+    }
+
+    /// Live grip-drag updates: in-memory only (the UserDefaults write waits
+    /// for mouse-up in setWidgetWidth). Keeping the root SwiftUI frame in
+    /// lockstep with the dragged window frame prevents the clear-background
+    /// window from showing a gap between content and window edge mid-drag.
+    func previewWidgetWidth(_ width: CGFloat, for orientation: DesktopWidgetOrientation) {
+        let clamped = min(max(width, orientation.minWidgetWidth), orientation.maxWidgetWidth)
+        switch orientation {
+        case .vertical:   widgetWidthVertical = clamped
+        case .horizontal: widgetWidthHorizontal = clamped
+        }
+    }
+
+    /// Back to automatic width for this orientation.
+    func resetWidgetWidth(for orientation: DesktopWidgetOrientation) {
+        switch orientation {
+        case .vertical:   widgetWidthVertical = nil
+        case .horizontal: widgetWidthHorizontal = nil
+        }
+        UserDefaults.standard.removeObject(forKey: Self.widgetWidthKey(for: orientation))
+    }
+
+    private static func widgetWidthKey(for orientation: DesktopWidgetOrientation) -> String {
+        switch orientation {
+        case .vertical:   return "desktopWidgetWidthV"
+        case .horizontal: return "desktopWidgetWidthH"
+        }
+    }
+
+    private static func loadWidgetWidth(for orientation: DesktopWidgetOrientation) -> CGFloat? {
         let d = UserDefaults.standard
-        d.set(Double(clamped.width), forKey: Self.widgetSizeKeys(for: orientation).width)
-        d.set(Double(clamped.height), forKey: Self.widgetSizeKeys(for: orientation).height)
-    }
-
-    /// Live grip-drag updates: in-memory only (UserDefaults writes wait for
-    /// mouse-up in setWidgetSize). Keeping the root SwiftUI frame in lockstep
-    /// with the dragged window frame prevents the clear-background window
-    /// from showing a gap between content and window edge mid-drag.
-    func previewWidgetSize(_ size: CGSize, for orientation: DesktopWidgetOrientation) {
-        let clamped = CGSize(
-            width: min(max(size.width, orientation.minWidgetSize.width), orientation.maxWidgetSize.width),
-            height: min(max(size.height, orientation.minWidgetSize.height), orientation.maxWidgetSize.height))
-        switch orientation {
-        case .vertical:   widgetSizeVertical = clamped
-        case .horizontal: widgetSizeHorizontal = clamped
-        }
-    }
-
-    /// Back to content-fitted sizing for this orientation.
-    func resetWidgetSize(for orientation: DesktopWidgetOrientation) {
-        switch orientation {
-        case .vertical:   widgetSizeVertical = nil
-        case .horizontal: widgetSizeHorizontal = nil
-        }
-        let keys = Self.widgetSizeKeys(for: orientation)
-        UserDefaults.standard.removeObject(forKey: keys.width)
-        UserDefaults.standard.removeObject(forKey: keys.height)
-    }
-
-    private static func widgetSizeKeys(for orientation: DesktopWidgetOrientation)
-        -> (width: String, height: String) {
-        switch orientation {
-        case .vertical:   return ("desktopWidgetSizeVW", "desktopWidgetSizeVH")
-        case .horizontal: return ("desktopWidgetSizeHW", "desktopWidgetSizeHH")
-        }
-    }
-
-    private static func loadWidgetSize(for orientation: DesktopWidgetOrientation) -> CGSize? {
-        let d = UserDefaults.standard
-        let keys = widgetSizeKeys(for: orientation)
+        let key = widgetWidthKey(for: orientation)
         // object(forKey:) (not double(forKey:)) so "never resized" is
         // distinguishable from a stored 0, which would be invalid anyway.
-        guard d.object(forKey: keys.width) != nil, d.object(forKey: keys.height) != nil else { return nil }
-        let size = CGSize(width: d.double(forKey: keys.width), height: d.double(forKey: keys.height))
-        guard size.width >= orientation.minWidgetSize.width,
-              size.height >= orientation.minWidgetSize.height else { return nil }
-        return size
+        guard d.object(forKey: key) != nil else { return nil }
+        let width = CGFloat(d.double(forKey: key))
+        return width >= orientation.minWidgetWidth ? width : nil
     }
 
     // Wiring set by the app delegate.
@@ -374,8 +372,9 @@ final class AppModel: ObservableObject {
         }
         desktopWidgetOrientation = DesktopWidgetOrientation(
             rawValue: d.string(forKey: "desktopWidgetOrientation") ?? "") ?? .vertical
-        widgetSizeVertical = Self.loadWidgetSize(for: .vertical)
-        widgetSizeHorizontal = Self.loadWidgetSize(for: .horizontal)
+        widgetWidthVertical = Self.loadWidgetWidth(for: .vertical)
+        widgetWidthHorizontal = Self.loadWidgetWidth(for: .horizontal)
+        compactWidgetRows = d.object(forKey: "compactWidgetRows") as? Bool ?? false
         interfaceTranslucency = d.object(forKey: "interfaceTranslucency") as? Double ?? 0.35
         if let raw = d.array(forKey: "visibleStats") as? [String] {
             visibleStats = Set(raw.compactMap(SessionStat.init(rawValue:)))
@@ -416,8 +415,10 @@ final class AppModel: ObservableObject {
 
     /// Sessions that need user attention (waiting/approval/error). Falls back to the
     /// aggregate when the daemon is aggregate-only (no session events).
+    /// Backlogged sessions are excluded to match the daemon's attention
+    /// routing, which parked sessions leave (PROTOCOL.md §3).
     var attentionCount: Int {
-        let n = sessions.filter { $0.state.needsAttention }.count
+        let n = sessions.filter { $0.state.needsAttention && !$0.backlogged }.count
         if n > 0 { return n }
         if sessions.isEmpty && aggregate.needsAttention { return 1 }
         return 0
@@ -701,6 +702,10 @@ final class AppModel: ObservableObject {
         // session is active — default true. `list-sessions` includes the flag
         // explicitly (false for tombstoned/disconnected rows).
         let connected = e["connected"] as? Bool ?? true
+        // Always present on a backlog-aware daemon (session events and
+        // list-sessions); omitted by older daemons, where the feature is
+        // simply absent.
+        let backlogged = e["backlogged"] as? Bool ?? false
 
         let operation: String
         if let idx = sessions.firstIndex(where: { $0.id == id }) {
@@ -722,6 +727,7 @@ final class AppModel: ObservableObject {
             // that omits it simply never has one).
             s.name = name
             if let slot = e["slot"] { s.slot = slot as? Int }
+            if let b = e["backlogged"] as? Bool { s.backlogged = b }
             if let cwd = cwd { s.cwd = cwd }
             if let model = model { s.model = model }
             if let contextTokens = contextTokens { s.contextTokens = contextTokens }
@@ -750,6 +756,7 @@ final class AppModel: ObservableObject {
             s.orchestratorTaskID = orchestratorTaskID
             s.orchestrationRole = orchestrationRole
             s.managerTaskID = managerTaskID
+            s.backlogged = backlogged
             sessions.append(s)
         }
         log("row \(operation) id=\(boundedLogField(id)) slot=\(slot.map(String.init) ?? "-") state=\(newState.rawValue) connected=\(connected) managed=\(managed.map(String.init) ?? "-") role=\(boundedLogField(orchestrationRole)) manager=\(boundedLogField(managerTaskID)) pid=\(boundedLogField(meta?["pid"])) tty=\(boundedLogField(meta?["tty"])) mux=\(boundedLogField(meta?["mux_pane"]))")
@@ -778,6 +785,24 @@ final class AppModel: ObservableObject {
     /// a named compatibility surface, but do not introduce a second order.
     var elevatedSessions: [SessionInfo] {
         sessions
+    }
+
+    /// The two presentation partitions of `sessions` (PROTOCOL.md §3
+    /// backlog): the active list drives the aggregate/attention routing and
+    /// holds the numbered slots; the backlog is parked-but-still-live work
+    /// shown in its own section. `sessions` is already kept in daemon slot
+    /// order by `sortSessions()`, so both filters inherit that order.
+    var activeSessions: [SessionInfo] { sessions.filter { !$0.backlogged } }
+    var backlogSessions: [SessionInfo] { sessions.filter(\.backlogged) }
+
+    /// Park a live session in the backlog (or bring it back to active). The
+    /// daemon keeps it registered and focusable by id, but it releases its
+    /// numbered key (remaining slots compact to stay contiguous) and drops
+    /// out of the aggregate and attention routing. No optimistic echo: the
+    /// move also re-slots other sessions, and all of it arrives as `session`
+    /// broadcasts a moment later over the local socket.
+    func setSessionBacklogged(_ s: SessionInfo, _ backlogged: Bool) {
+        client.send(["cmd": "set-session-backlogged", "session": s.id, "backlogged": backlogged])
     }
 
     var orchestratorSessions: [SessionInfo] { sessions.filter(\.isOrchestrator) }

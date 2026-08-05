@@ -23,10 +23,24 @@ edit the per-state render styles — all over the `focalpointd` unix-socket prot
   and sessions, with clickable rows (click focuses the session). Two
   orientations — a vertical card or a wide horizontal strip with compact
   session cells — selectable in Settings → Behavior → Orientation or the
-  widget's right-click menu. Drag the bottom-right corner grip to resize it;
-  sizes are remembered per orientation, sessions scroll when they overflow a
-  pinned size, and *Reset Widget Size* (context menu or Settings) returns to
-  content-fitted sizing.
+  widget's right-click menu. Drag the bottom-right corner grip to set its
+  width (height always fits the content; horizontal cells scroll when they
+  overflow a pinned width); widths are remembered per orientation, and
+  *Reset Widget Width* (context menu or Settings) returns to automatic
+  sizing. Content changes re-anchor the window on the screen edge it's
+  parked nearest, so sessions arriving/leaving never make it jump. A
+  **Compact Rows** toggle (same two places) collapses each session to one
+  line by hiding its stats row and context meter.
+- **Session backlog**: right-click a session (dropdown or widget) → *Move to
+  Backlog* to park it without ending it (`set-session-backlogged`,
+  PROTOCOL.md §3). Parked sessions keep reporting and stay clickable — a
+  click still bounces focus to them by id — but they release their numbered
+  key, leave the aggregate/attention routing and the menu-bar badge count,
+  and move to a labeled Backlog section: below the active list in the
+  dropdown and vertical widget, trailing it in the horizontal strip. *Move
+  to Active* brings one back (lowest free slot, or slotless overflow when
+  all 12 are taken). Requires a backlog-aware daemon; against an older one
+  the menu items silently no-op.
 - Global hotkeys via Carbon (no Accessibility permission needed).
 
 Requires **macOS 14+, Apple Silicon**.

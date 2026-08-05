@@ -18,6 +18,8 @@ use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+pub(crate) const BACKLOGGED_META_KEY: &str = "_backlogged";
+
 /// How long a session may sit in `State::Compacting` waiting to be reunited
 /// with its post-compaction continuation (see `Registry::set_state`'s rekey
 /// match below) before it's treated as abandoned and reaped outright by
@@ -142,6 +144,12 @@ fn apply_meta_update(
     incoming: Map<String, Value>,
 ) {
     for (k, v) in incoming {
+        // Backlog membership is controlled only by set-session-backlogged;
+        // adapters cannot move themselves between active and backlog by
+        // smuggling the daemon's private storage key through arbitrary meta.
+        if k == BACKLOGGED_META_KEY {
+            continue;
+        }
         if accumulation_of(&k) == Accumulation::CumulativeSegments && v.is_number() {
             let added = add_carry(carry, &k, &v);
             meta.insert(k, added);
@@ -268,6 +276,17 @@ pub struct Session {
 }
 
 impl Session {
+    /// Backlog is daemon-owned presentation/routing state stored in private
+    /// metadata so older snapshots and the many session construction paths
+    /// remain compatible. It is exposed as a top-level protocol field, never
+    /// as arbitrary adapter metadata.
+    pub fn is_backlogged(&self) -> bool {
+        self.meta
+            .get(BACKLOGGED_META_KEY)
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }
+
     /// What a UI should show for this session: the user's name if they set
     /// one, else the adapter's label, else the kind.
     pub fn display_name(&self) -> String {
@@ -317,6 +336,10 @@ impl Session {
 /// A change the daemon must apply to the device and/or subscribers.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Effect {
+    /// Clear a physical numbered key without implying that its session ended.
+    /// Used when moving a still-live session into the backlog before the
+    /// remaining active slots are compacted.
+    SlotCleared { slot: u8 },
     /// A session was registered or updated. `SET_KEY_STATE` if it has a slot;
     /// always a `session` event.
     SessionUpsert {
@@ -427,7 +450,11 @@ impl Registry {
     }
 
     fn fallback_attention_order(&self) -> Vec<String> {
-        let mut sessions: Vec<&Session> = self.sessions.values().collect();
+        let mut sessions: Vec<&Session> = self
+            .sessions
+            .values()
+            .filter(|session| !session.is_backlogged())
+            .collect();
         sessions.sort_by_key(|session| {
             let state_rank = match session.state {
                 State::Error => 0,
@@ -448,9 +475,10 @@ impl Registry {
             .collect()
     }
 
-    /// Complete current live-session order. An explicit orchestrator order is
-    /// followed first; sessions registered afterward are appended in the
-    /// deterministic fallback order until the orchestrator replaces it.
+    /// Complete current active-session order. An explicit orchestrator order
+    /// is followed first; sessions registered or restored from the backlog
+    /// afterward are appended in deterministic fallback order until the
+    /// orchestrator replaces it.
     pub fn attention_order(&self) -> Vec<String> {
         let fallback = self.fallback_attention_order();
         let Some(explicit) = &self.attention_order else {
@@ -458,7 +486,11 @@ impl Registry {
         };
         let mut order: Vec<String> = explicit
             .iter()
-            .filter(|id| self.sessions.contains_key(id.as_str()))
+            .filter(|id| {
+                self.sessions
+                    .get(id.as_str())
+                    .is_some_and(|session| !session.is_backlogged())
+            })
             .cloned()
             .collect();
         for id in fallback {
@@ -469,11 +501,15 @@ impl Registry {
         order
     }
 
-    /// Replace the complete order. The input must contain every live session
-    /// exactly once, so a stale orchestrator cannot silently hide work.
+    /// Replace the complete order. The input must contain every active live
+    /// session exactly once. Backlogged sessions are deliberately absent.
     pub fn set_attention_order(&mut self, order: Vec<String>) -> Result<Vec<Effect>, String> {
-        let live: std::collections::HashSet<&str> =
-            self.sessions.keys().map(String::as_str).collect();
+        let live: std::collections::HashSet<&str> = self
+            .sessions
+            .values()
+            .filter(|session| !session.is_backlogged())
+            .map(|session| session.id.as_str())
+            .collect();
         let supplied: std::collections::HashSet<&str> = order.iter().map(String::as_str).collect();
         if supplied.len() != order.len() {
             return Err("attention order contains duplicate session ids".into());
@@ -484,7 +520,7 @@ impl Registry {
             missing.sort_unstable();
             unknown.sort_unstable();
             return Err(format!(
-                "attention order must contain every live session exactly once (missing: [{}]; unknown: [{}])",
+                "attention order must contain every active session exactly once (missing: [{}]; unknown: [{}])",
                 missing.join(", "),
                 unknown.join(", ")
             ));
@@ -496,7 +532,12 @@ impl Registry {
         if self
             .attention_cursor
             .as_ref()
-            .is_some_and(|id| !self.sessions.contains_key(id))
+            .is_some_and(|id| {
+                !self
+                    .sessions
+                    .get(id)
+                    .is_some_and(|session| !session.is_backlogged())
+            })
         {
             self.attention_cursor = None;
         }
@@ -508,7 +549,12 @@ impl Registry {
             if self
                 .attention_cursor
                 .as_ref()
-                .is_some_and(|id| !self.sessions.contains_key(id))
+                .is_some_and(|id| {
+                    !self
+                        .sessions
+                        .get(id)
+                        .is_some_and(|session| !session.is_backlogged())
+                })
             {
                 self.attention_cursor = None;
             }
@@ -526,7 +572,12 @@ impl Registry {
             }
         }
         let mut seen = std::collections::HashSet::new();
-        order.retain(|id| self.sessions.contains_key(id) && seen.insert(id.clone()));
+        order.retain(|id| {
+            self.sessions
+                .get(id)
+                .is_some_and(|session| !session.is_backlogged())
+                && seen.insert(id.clone())
+        });
         for id in self.fallback_attention_order() {
             if !order.contains(&id) {
                 order.push(id);
@@ -535,7 +586,12 @@ impl Registry {
         if self
             .attention_cursor
             .as_ref()
-            .is_some_and(|id| !self.sessions.contains_key(id))
+            .is_some_and(|id| {
+                !self
+                    .sessions
+                    .get(id)
+                    .is_some_and(|session| !session.is_backlogged())
+            })
         {
             self.attention_cursor = None;
         }
@@ -552,7 +608,10 @@ impl Registry {
             .filter(|id| {
                 self.sessions
                     .get(id)
-                    .is_some_and(|session| matches!(session.state, State::Waiting | State::Approval | State::Error))
+                    .is_some_and(|session| {
+                        !session.is_backlogged()
+                            && matches!(session.state, State::Waiting | State::Approval | State::Error)
+                    })
             })
             .collect();
         if eligible.is_empty() {
@@ -591,7 +650,10 @@ impl Registry {
     pub fn next_attention_state(&self) -> Option<State> {
         let eligible: Vec<&Session> = self.attention_order().iter()
             .filter_map(|id| self.sessions.get(id))
-            .filter(|s| matches!(s.state, State::Waiting | State::Approval | State::Error))
+            .filter(|s| {
+                !s.is_backlogged()
+                    && matches!(s.state, State::Waiting | State::Approval | State::Error)
+            })
             .collect();
         if eligible.is_empty() { return None; }
         let index = self.attention_cursor.as_ref()
@@ -602,7 +664,12 @@ impl Registry {
     }
 
     fn cycle_sessions(&mut self, forward: bool) -> Option<Session> {
-        let mut ordered: Vec<Session> = self.sessions.values().cloned().collect();
+        let mut ordered: Vec<Session> = self
+            .sessions
+            .values()
+            .filter(|session| !session.is_backlogged())
+            .cloned()
+            .collect();
         ordered.sort_by_key(|s| (s.slot.is_none(), s.slot.unwrap_or(u8::MAX), s.id.clone()));
         if ordered.is_empty() { self.session_cursor = None; return None; }
         let index = self.session_cursor.as_ref()
@@ -779,7 +846,9 @@ impl Registry {
             consider(ds);
         }
         for s in self.sessions.values() {
-            consider(s.state);
+            if !s.is_backlogged() {
+                consider(s.state);
+            }
         }
         worst
     }
@@ -800,6 +869,7 @@ impl Registry {
         let mut ordered: Vec<(String, Option<u8>)> = self
             .sessions
             .values()
+            .filter(|session| !session.is_backlogged())
             .map(|session| (session.id.clone(), session.slot))
             .collect();
         ordered.sort_by_key(|(id, slot)| (slot.is_none(), slot.unwrap_or(u8::MAX), id.clone()));
@@ -823,6 +893,51 @@ impl Registry {
             });
         }
         effects
+    }
+
+    /// Move a live session into or out of the backlog. A backlogged session
+    /// remains registered and focusable by id, but releases its numbered key
+    /// and no longer participates in aggregate/attention routing.
+    pub fn set_backlogged(&mut self, id: &str, backlogged: bool) -> Result<Vec<Effect>, String> {
+        let Some(current) = self.sessions.get(id) else {
+            return Err(format!("unknown live session: {id}"));
+        };
+        if current.is_backlogged() == backlogged {
+            return Ok(Vec::new());
+        }
+
+        let mut effects = Vec::new();
+        if backlogged {
+            let old_slot = self.sessions.get(id).and_then(|session| session.slot);
+            let session = self.sessions.get_mut(id).expect("validated live session");
+            session.meta.insert(BACKLOGGED_META_KEY.into(), Value::Bool(true));
+            session.slot = None;
+            if let Some(slot) = old_slot {
+                effects.push(Effect::SlotCleared { slot });
+            }
+        } else {
+            let slot = self.lowest_free_slot();
+            let session = self.sessions.get_mut(id).expect("validated live session");
+            session.meta.remove(BACKLOGGED_META_KEY);
+            session.slot = slot;
+        }
+
+        let session = self.sessions.get(id).expect("updated live session");
+        effects.push(Effect::SessionUpsert {
+            id: session.id.clone(),
+            kind: session.kind.clone(),
+            label: session.label.clone(),
+            name: session.name.clone(),
+            meta: session.meta.clone(),
+            slot: session.slot,
+            state: session.state,
+        });
+        if backlogged {
+            effects.extend(self.compact_slots());
+        }
+        self.maintain_attention_order(&mut effects);
+        self.note_aggregate(&mut effects);
+        Ok(effects)
     }
 
     /// Append an `AggregateChanged` effect iff the aggregate actually moved.
@@ -1472,10 +1587,19 @@ impl Registry {
         Vec::new()
     }
 
-    /// Live sessions in slot order; slotless ones last (PROTOCOL.md §3).
+    /// Live active sessions in slot order, then backlogged sessions. Slotless
+    /// overflow sessions come after numbered active sessions but before the
+    /// backlog (PROTOCOL.md §3).
     pub fn list(&self) -> Vec<Session> {
         let mut v: Vec<Session> = self.sessions.values().cloned().collect();
-        v.sort_by_key(|s| (s.slot.is_none(), s.slot.unwrap_or(0), s.id.clone()));
+        v.sort_by_key(|s| {
+            (
+                s.is_backlogged(),
+                s.slot.is_none(),
+                s.slot.unwrap_or(0),
+                s.id.clone(),
+            )
+        });
         v
     }
 
@@ -1724,6 +1848,62 @@ mod tests {
         assert_eq!(r.session_by_slot(2).unwrap().id, "c");
         r.set_state(Some("d"), State::Running, None, None, None, now);
         assert_eq!(r.session_by_slot(3).unwrap().id, "d");
+    }
+
+    #[test]
+    fn backlog_releases_slot_and_routing_but_remains_focusable() {
+        let mut r = Registry::new(None);
+        let now = t0();
+        r.set_state(Some("a"), State::Running, None, None, None, now);
+        r.set_state(Some("b"), State::Error, None, None, None, now);
+        r.set_state(Some("c"), State::Waiting, None, None, None, now);
+        r.set_attention_order(vec!["b".into(), "c".into(), "a".into()])
+            .unwrap();
+
+        let effects = r.set_backlogged("b", true).unwrap();
+        assert!(effects.contains(&Effect::SlotCleared { slot: 2 }));
+        let backlogged = r.session_or_tombstone("b").expect("still live/focusable");
+        assert!(backlogged.is_backlogged());
+        assert_eq!(backlogged.slot, None);
+        assert_eq!(r.session_by_slot(2).unwrap().id, "c");
+        assert_eq!(r.aggregate(), State::Waiting, "backlog is not aggregate-active");
+        assert_eq!(r.attention_order(), vec!["c", "a"]);
+        assert_eq!(r.next_attention().unwrap().id, "c");
+        assert_eq!(r.next_session().unwrap().id, "a");
+        assert_eq!(r.next_session().unwrap().id, "c");
+        assert_eq!(r.list().last().unwrap().id, "b");
+
+        let restored = r.set_backlogged("b", false).unwrap();
+        assert!(restored.iter().any(|effect| matches!(effect,
+            Effect::SessionUpsert { id, slot: Some(3), .. } if id == "b"
+        )));
+        let active = r.session_or_tombstone("b").unwrap();
+        assert!(!active.is_backlogged());
+        assert_eq!(active.slot, Some(3));
+        assert_eq!(r.aggregate(), State::Error);
+        assert_eq!(r.attention_order(), vec!["c", "a", "b"]);
+    }
+
+    #[test]
+    fn backlog_is_idempotent_rejects_unknown_and_ignores_adapter_meta() {
+        let mut r = Registry::new(None);
+        let now = t0();
+        r.set_state(Some("a"), State::Running, None, None, None, now);
+        assert!(r.set_backlogged("missing", true).is_err());
+        assert!(!r.set_backlogged("a", true).unwrap().is_empty());
+        assert!(r.set_backlogged("a", true).unwrap().is_empty());
+
+        let mut spoofed = Map::new();
+        spoofed.insert(BACKLOGGED_META_KEY.into(), Value::Bool(false));
+        r.set_state(
+            Some("a"),
+            State::Waiting,
+            None,
+            None,
+            Some(spoofed),
+            now,
+        );
+        assert!(r.session_or_tombstone("a").unwrap().is_backlogged());
     }
 
     #[test]

@@ -100,6 +100,7 @@ Requests:
 {"cmd": "get-state"}
 {"cmd": "list-sessions"}
 {"cmd": "rename-session", "session": "id", "name": "Backend"}
+{"cmd": "set-session-backlogged", "session": "id", "backlogged": true}
 {"cmd": "end-session", "session": "id"}
 {"cmd": "swap-slots", "session1": "id-a", "session2": "id-b"}
 {"cmd": "set-led", "index": 3, "rgb": [255, 0, 128]}
@@ -279,6 +280,22 @@ drives an age-based session removal.
   they are not persisted across `end-session`, TTL/reap expiry, or a daemon
   restart (unlike session records, tombstones, and usage — see **Persisted
   state** below).
+- **Backlog.** `set-session-backlogged` moves a live session into or out of
+  a daemon-owned backlog without ending or disconnecting it. A backlogged
+  session remains registered, retains its state, metadata, and history, and
+  stays focusable by id (`focus-session`). It carries `"backlogged": true`
+  and `"slot": null`, and is excluded from the aggregate state, attention
+  order/cycling, sequential session cycling, and numbered hardware keys.
+  Parking releases its old slot (`SET_KEY_STATE slot 0xFF` on the device)
+  and compacts the remaining active slots to stay contiguous; clearing the
+  flag restores active routing and assigns the lowest free slot (or, when
+  none is free, an active slotless overflow session). The command is
+  idempotent and rejects unknown or disconnected sessions. The flag is
+  daemon-owned routing state exposed as a first-class DTO field on session
+  rows and live `session` events — never adapter `meta` — and rides the
+  persisted snapshot and compaction reunification. Front-ends render
+  backlogged sessions in their own section, not the active list, and mirror
+  the daemon's routing by excluding them from attention counts.
 - **Persisted state.** The daemon writes a snapshot to
   `$XDG_STATE_HOME/focalpoint/state.json` (falling back to
   `~/.local/state/focalpoint/state.json`) on every session-affecting change
@@ -353,14 +370,17 @@ connected FocalPoint UI highlights the selected session.
 
 The daemon owns a complete attention order separately from numbered slots.
 `get-attention-order` returns `{"ok":true,"sessions":[...]}`.
-`set-attention-order` replaces it and requires every live session id exactly
-once; changes broadcast `{"event":"attention-order","sessions":[...]}`.
+`set-attention-order` replaces it and requires every active (non-backlogged)
+live session id exactly once; changes broadcast
+`{"event":"attention-order","sessions":[...]}`.
 Ended sessions are removed, newly registered sessions are appended
-deterministically, rekeys retain position, and the explicit order persists in
-the daemon snapshot. Without an explicit order the fallback is error first,
-then approval, then waiting, then slot and id. `focus-next-attention` and
-`focus-prev-attention` wrap an internal cursor across only live waiting/approval/error
-sessions and reply with `{"ok":true,"session":"id"}` or `session:null`.
+deterministically, restored sessions are appended, rekeys retain position, and
+the explicit order persists in the daemon snapshot. Without an explicit order
+the fallback is error first, then approval, then waiting, then slot and id.
+`focus-next-attention` and `focus-prev-attention` wrap an internal cursor
+across only active live waiting/approval/error sessions and reply with
+`{"ok":true,"session":"id"}` or `session:null`. ("Active" here and above
+means non-backlogged — see **Backlog** in §3 Sessions.)
 
 `launch-session` is the daemon's narrow managed-process primitive. It accepts
 `claude`, `codex`, or `cursor`, an optional provider model id/alias, an existing
@@ -427,10 +447,12 @@ Responses / events:
 {"ok": true, "state": "thinking"}
 {"ok": true, "sessions": [{"session": "id", "kind": "claude", "label": "focalpoint",
                            "name": "Backend", "slot": 1, "state": "waiting",
-                           "connected": true, "meta": {"cwd": "/path"}}]}
+                           "backlogged": false, "connected": true,
+                           "meta": {"cwd": "/path"}}]}
 {"event": "state", "state": "thinking"}
 {"event": "session", "session": "id", "kind": "claude", "label": "focalpoint",
- "name": "Backend", "slot": 1, "state": "waiting", "meta": {"cwd": "/path"}}
+ "name": "Backend", "slot": 1, "state": "waiting", "backlogged": false,
+ "meta": {"cwd": "/path"}}
 {"event": "session-ended", "session": "id", "slot": 1}
 {"event": "session-disconnected", "session": "id", "slot": 1}
 {"event": "session-rekeyed", "old_session": "old-id", "new_session": "new-id"}
@@ -441,10 +463,13 @@ Responses / events:
 {"event": "joy", "gesture": "north"}
 ```
 
-`list-sessions` returns live sessions (`"connected": true`) in compact slot order
-(slotless ones last), followed by any tombstoned sessions (`"connected":
-false`) — sweep-reaped sessions kept visible for recovery until ended,
-dismissed, recovered, or expired. `session-ended` removes a row;
+`list-sessions` returns active live sessions (`"connected":true`,
+`"backlogged":false`) in compact slot order (slotless overflow sessions last),
+then backlogged live sessions (`"connected":true,"backlogged":true`), followed
+by any tombstoned sessions (`"connected":false`) — sweep-reaped sessions kept
+visible for recovery until ended, dismissed, recovered, or expired.
+`backlogged` is present on every session row and live `session` event.
+`session-ended` removes a row;
 `session-disconnected` marks it disconnected (kept, dimmed) rather than
 removing it; a live `session` event on that id reconnects it. A
 `session-disconnected` event omits `"connected"` (the event name says it);

@@ -222,7 +222,7 @@ fn sanitized_sessions(response: &Value) -> Result<Value, String> {
                 safe.insert(key.into(), value);
             }
         }
-        for key in ["slot", "connected"] {
+        for key in ["slot", "connected", "backlogged"] {
             if let Some(value) = row
                 .get(key)
                 .filter(|v| v.is_number() || v.is_boolean() || v.is_null())
@@ -561,6 +561,7 @@ mod tests {
     fn status_drops_unbounded_metadata_and_transcripts() {
         let input = json!({"sessions": [{
             "session": "s1", "kind": "codex", "state": "waiting", "slot": 2,
+            "backlogged": true,
             "meta": {"pid": 42, "tty": "/dev/ttys003", "mux_pane": "%4",
                      "prompt": "secret", "transcript": "secret", "unknown": "secret"}
         }]});
@@ -568,6 +569,7 @@ mod tests {
         let meta = output["sessions"][0]["meta"].as_object().unwrap();
         assert_eq!(meta.get("pid"), Some(&json!(42)));
         assert_eq!(meta.get("mux_pane"), Some(&json!("%4")));
+        assert_eq!(output["sessions"][0]["backlogged"], json!(true));
         assert!(!meta.contains_key("prompt"));
         assert!(!meta.contains_key("transcript"));
         assert!(!meta.contains_key("unknown"));
