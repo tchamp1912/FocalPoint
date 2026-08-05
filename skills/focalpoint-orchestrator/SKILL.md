@@ -41,6 +41,15 @@ it in managed tmux. It cannot relaunch a disconnected history row, a managed
 session, or in-flight work; report the daemon error rather than attempting a
 replacement launch.
 
+## Coordination
+
+Prefer daemon channels for normal orchestration: create a channel for a work
+group, use `channel post` for assignments, progress, questions, and blockers,
+and use `channel read` to collect updates. This keeps coordination explicit
+and bounded. Use transcript reads sparingly for targeted diagnosis, verifying
+the `FOCALPOINT_WAKE` marker, or recovering context when a session has not
+reported through its channel.
+
 ## Launch
 
 Prepare the directory/environment first, then launch only user-authorized
