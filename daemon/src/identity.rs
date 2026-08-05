@@ -14,6 +14,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::process::Command;
 
 /// Everything the resolver needs to know about one process. Abstracted
 /// behind a trait so the walk logic (`resolve_pid`) is unit-testable against
@@ -29,6 +30,36 @@ pub trait ProcessSource {
 
 /// Real process ancestry via `sysinfo`.
 pub struct SysinfoProcessSource(sysinfo::System);
+
+/// Prefer sysinfo's structured argv, but let callers recover it from the OS
+/// when sysinfo observes the narrow post-exec window where `comm` is already
+/// the new binary name and `cmd()` is still empty.
+fn process_args_or_fallback(
+    args: Vec<String>,
+    fallback: impl FnOnce() -> Option<Vec<String>>,
+) -> Option<Vec<String>> {
+    if args.iter().any(|arg| !arg.trim().is_empty()) {
+        Some(args)
+    } else {
+        fallback().filter(|fallback_args| fallback_args.iter().any(|arg| !arg.trim().is_empty()))
+    }
+}
+
+/// Read one process's command line directly from `ps`. We keep the returned
+/// line intact rather than shell-splitting it: identity matching only needs
+/// to prove the executable path contains `claude` and reject `daemon run`,
+/// both of which are safer and more accurate against the unmodified text.
+fn ps_args_for_pid(pid: i32) -> Option<Vec<String>> {
+    let output = Command::new("ps")
+        .args(["-o", "args=", "-p", &pid.to_string()])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let command_line = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!command_line.is_empty()).then(|| vec![command_line])
+}
 
 impl SysinfoProcessSource {
     pub fn new() -> Self {
@@ -59,12 +90,18 @@ impl ProcessSource for SysinfoProcessSource {
     }
 
     fn cmd(&self, pid: i32) -> Option<Vec<String>> {
-        self.0.process(sysinfo::Pid::from_u32(pid as u32)).map(|p| {
-            p.cmd()
-                .iter()
-                .map(|s| s.to_string_lossy().into_owned())
-                .collect()
-        })
+        let sysinfo_args = self
+            .0
+            .process(sysinfo::Pid::from_u32(pid as u32))
+            .map(|process| {
+                process
+                    .cmd()
+                    .iter()
+                    .map(|arg| arg.to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        process_args_or_fallback(sysinfo_args, || ps_args_for_pid(pid))
     }
 }
 
@@ -162,7 +199,6 @@ fn usable_tty(raw: &str) -> Option<String> {
 /// Controlling terminal for `pid`, via `ps -o tty=`. Used for focus matching
 /// (iTerm/Terminal compare against `/dev/ttys00N`).
 fn tty_for_pid(pid: i32) -> Option<String> {
-    use std::process::Command;
     let output = Command::new("ps")
         .args(["-o", "tty=", "-p", &pid.to_string()])
         .output()
@@ -390,6 +426,22 @@ mod tests {
         src.insert(2, Some(1), "zsh", &["-zsh"]);
 
         assert_eq!(resolve_pid(&src, 300, "claude"), Some(100));
+    }
+
+    #[test]
+    fn empty_sysinfo_argv_uses_ps_fallback_for_versioned_claude() {
+        let recovered = process_args_or_fallback(Vec::new(), || {
+            Some(vec![
+                "/Users/example/.local/share/claude/versions/2.1.222".into()
+            ])
+        })
+        .unwrap();
+        assert!(is_versioned_claude_binary("2.1.222", &recovered));
+
+        let structured = process_args_or_fallback(vec!["claude".into()], || {
+            panic!("ps fallback must not run when sysinfo argv is populated")
+        });
+        assert_eq!(structured, Some(vec!["claude".into()]));
     }
 
     #[test]
