@@ -160,20 +160,32 @@ struct MenuContentView: View {
     @ViewBuilder
     private func sessionContextMenu(_ s: SessionInfo) -> some View {
         Button("Rename\u{2026}") { renamingID = s.id }
-        // Manual reorder (PROTOCOL.md §3/§4 swap-slots): native
-        // drag-and-drop (`.draggable`/`.dropDestination`) doesn't
-        // work inside a MenuBarExtra(.window) dropdown's
-        // auxiliary panel — confirmed by testing, not just a
-        // theoretical gap — so this is a menu instead of a drag
-        // gesture. Only offered when this session and at least
-        // one other both hold a real slot; slotless (>12 live)
-        // sessions have nothing to swap.
-        let otherSlotted = model.sessions.filter { $0.id != s.id && $0.slot != nil }
-        if s.slot != nil, !otherSlotted.isEmpty {
-            Menu("Move to Slot") {
-                ForEach(otherSlotted) { other in
-                    Button("Swap with #\(other.slot!) \u{00B7} \(other.title)") {
-                        model.swapSlots(s, other)
+        // Manual placement (PROTOCOL.md §3/§4 move-slot + swap-slots):
+        // free slots move (sparse placement — the gap is the point),
+        // occupied slots swap. Native drag-and-drop (`.draggable`/
+        // `.dropDestination`) doesn't work inside a MenuBarExtra(.window)
+        // dropdown's auxiliary panel — confirmed by testing, not just a
+        // theoretical gap — so this is a menu instead of a drag gesture.
+        // Offered to live, active rows only: a backlogged session holds no
+        // slot until it's moved back to active, and a disconnected one no
+        // longer occupies its last slot.
+        if s.connected, !s.backlogged {
+            let openSlots = model.freeSlots.filter { $0 != s.slot }
+            let otherSlotted = model.activeSessions.filter { $0.id != s.id && $0.connected && $0.slot != nil }
+            if !openSlots.isEmpty || (s.slot != nil && !otherSlotted.isEmpty) {
+                Menu("Move to Slot") {
+                    ForEach(openSlots, id: \.self) { n in
+                        Button("#\(n) \u{00B7} Empty") { model.moveSessionToSlot(s, slot: n) }
+                    }
+                    if s.slot != nil, !openSlots.isEmpty, !otherSlotted.isEmpty {
+                        Divider()
+                    }
+                    if s.slot != nil {
+                        ForEach(otherSlotted) { other in
+                            Button("Swap with #\(other.slot!) \u{00B7} \(other.title)") {
+                                model.swapSlots(s, other)
+                            }
+                        }
                     }
                 }
             }

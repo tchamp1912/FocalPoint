@@ -378,6 +378,21 @@ pub fn swap_slots(id1: &str, id2: &str) -> Result<(), CliError> {
     Ok(())
 }
 
+/// `focalpoint move-slot <ID> <N>` — manual sparse placement: move a live
+/// session onto free numbered slot N (1-12), leaving a gap. Companion to
+/// `swap-slots`, which exchanges two occupied slots.
+#[cfg(unix)]
+pub fn move_slot(id: &str, slot: u64) -> Result<(), CliError> {
+    let resp = request(serde_json::json!({
+        "cmd": "move-slot",
+        "session": id,
+        "slot": slot,
+    }))?;
+    expect_ok(&resp)?;
+    println!("ok");
+    Ok(())
+}
+
 /// `focalpoint end-session <ID>` — also clears the cached identity for `id`
 /// (Part 1's `identity.rs`), the one chokepoint every adapter's `SessionEnd`
 /// already calls through, so a reused session_id never inherits a stale
@@ -584,6 +599,7 @@ win_stub!(
     sessions(json: bool),
     end_session(id: &str),
     swap_slots(id1: &str, id2: &str),
+    move_slot(id: &str, slot: u64),
     set_led(index: &str, r: u8, g: u8, b: u8),
     styles(json: bool),
     set_style(state: &str, r: u8, g: u8, b: u8, pattern: &str, period_ms: Option<u16>),

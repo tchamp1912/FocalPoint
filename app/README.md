@@ -17,6 +17,11 @@ edit the per-state render styles — all over the `focalpointd` unix-socket prot
   adapter's own label as its placeholder — submit it empty to drop the
   rename and go back to that label. Names last as long as the session (see
   `rename-session` in [`PROTOCOL.md`](../PROTOCOL.md) §3).
+- **Move to Slot**: right-click a session → *Move to Slot* to place it on
+  any free numbered slot (`move-slot` — sparse placement; the gap stays
+  until a session ends or is parked, which compacts) or to swap slots with
+  another session (`swap-slots`). Offered for live, active sessions in the
+  dropdown and the widget.
 - Settings window: per-state style editor (color, pattern, period) and
   behavior toggles.
 - Floating **desktop widget**: a draggable HUD mirroring the aggregate state

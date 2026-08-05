@@ -46,6 +46,7 @@ pub enum Request {
     RenameSession { session: String, name: Option<String> },
     SetSessionBacklogged { session: String, backlogged: bool },
     SwapSlots { session1: String, session2: String },
+    MoveSlot { session: String, slot: u64 },
     EndSession { session: String },
     QuitSession { session: String },
     StopOrchestratedSession { session: String, task_id: String },
@@ -2603,6 +2604,19 @@ fn dispatch(
                 }
                 Err(message) => err(&message),
             }
+        }
+        Request::MoveSlot { session: id, slot } => {
+            let effects = match shared
+                .lock()
+                .unwrap()
+                .registry
+                .move_slot(&id, slot)
+            {
+                Ok(effects) => effects,
+                Err(message) => return err(&message),
+            };
+            apply_effects(effects, ctx, host_tx);
+            ok()
         }
         Request::EndSession { session: id } => {
             let (current, effects) = {

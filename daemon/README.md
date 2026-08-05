@@ -47,6 +47,10 @@ focalpoint get-state        # aggregate state (worst across live sessions)
 focalpoint sessions [--json]   # live sessions in slot order
 focalpoint rename-session <ID> [NAME]   # omit NAME (or pass "") to clear
 focalpoint end-session <ID>
+focalpoint swap-slots <ID1> <ID2>       # exchange two live sessions' numbered-key slots
+focalpoint move-slot <ID> <N>           # place a live session on free slot N (1-12), leaving a gap
+focalpoint backlog-session <ID>         # park: frees its slot, leaves aggregate/attention (PROTOCOL.md §3)
+focalpoint restore-session <ID>         # return a parked session to active routing
 focalpoint set-led <index|all> <r> <g> <b>
 focalpoint watch            # NDJSON events (incl. state/session/session-ended)
 focalpoint ping             # exits 0 iff the daemon AND a device are up

@@ -123,6 +123,16 @@ enum Cmd {
         /// Second session id.
         id2: String,
     },
+    /// Move a live session onto a specific free numbered slot (1-12) —
+    /// sparse manual placement that leaves a gap (the app's Move to Slot
+    /// menu offers this alongside swaps). A slotless overflow session can
+    /// be moved into a free slot the same way.
+    MoveSlot {
+        /// Session id.
+        id: String,
+        /// Target slot (1-12, must be free).
+        slot: u64,
+    },
     /// Override an LED (or all) to an RGB color.
     SetLed {
         /// LED index, or "all".
@@ -245,6 +255,7 @@ fn main() {
         Cmd::RestoreSession { id } => client::set_session_backlogged(&id, false),
         Cmd::EndSession { id } => client::end_session(&id),
         Cmd::SwapSlots { id1, id2 } => client::swap_slots(&id1, &id2),
+        Cmd::MoveSlot { id, slot } => client::move_slot(&id, slot),
         Cmd::SetLed { index, r, g, b } => client::set_led(&index, r, g, b),
         Cmd::Styles { json } => client::styles(json),
         Cmd::SetStyle {

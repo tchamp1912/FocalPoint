@@ -103,6 +103,7 @@ Requests:
 {"cmd": "set-session-backlogged", "session": "id", "backlogged": true}
 {"cmd": "end-session", "session": "id"}
 {"cmd": "swap-slots", "session1": "id-a", "session2": "id-b"}
+{"cmd": "move-slot", "session": "id", "slot": 4}
 {"cmd": "set-led", "index": 3, "rgb": [255, 0, 128]}
 {"cmd": "get-styles"}
 {"cmd": "set-style", "state": "waiting", "rgb": [30, 144, 255],
@@ -153,13 +154,19 @@ a new session (a state-less session has no state to key `SET_KEY_STATE`
 off of). Staleness is presentation-only; neither `set-meta` nor `set-state`
 drives an age-based session removal.
 
-- Each session claims the **lowest free numbered key** (1–12) at registration
-  and keeps that slot for its lifetime; slots never shift automatically (a
-  session ending never bumps the others down to close the gap). The one
-  exception is `swap-slots`, an explicit user action (drag-to-reorder in the
-  app's dropdown) that exchanges two live sessions' slots outright. Sessions
-  beyond 12 are tracked with `slot: null` and can't participate in a swap —
-  there's no slot to give.
+- Each session claims the **lowest free numbered key** (1–12) at
+  registration. After that, slot placement is user-controlled: `swap-slots`
+  exchanges two live sessions' slots outright, and `move-slot` places a
+  live, active session on any free slot — deliberately leaving a gap
+  (sparse placement is the point; a slotless overflow session can be moved
+  INTO a free slot the same way). A manual move never compacts the gap it
+  leaves; gaps close only on lifecycle events — an explicit `end-session`
+  or parking a session in the backlog compacts the remaining active slots
+  back to contiguous 1..N, so the rendered list and the physical key map
+  never keep a hole the user didn't just make. A sweep-reap (below) frees
+  the slot *without* compacting; the disconnected row still reports its
+  last-held slot. Sessions beyond 12 are tracked with `slot: null` and
+  can't participate in a swap — there's no slot to give.
 - A session ends via explicit `end-session`, or — for a session carrying a
   `tty` in `meta` (the well-known key, resolved by the daemon — see
   **Identity resolution** below) — the moment that pty device stops existing on
@@ -544,6 +551,9 @@ focalpoint sessions         # list live sessions in slot order
 focalpoint rename-session <ID> [NAME]   # omit NAME (or pass "") to clear
 focalpoint end-session <ID>
 focalpoint swap-slots <ID1> <ID2>       # exchange two live sessions' numbered-key slots
+focalpoint move-slot <ID> <N>           # place a live session on free slot N (1-12), leaving a gap
+focalpoint backlog-session <ID>         # park a live session (§3 Backlog): frees its slot, leaves aggregate/attention
+focalpoint restore-session <ID>         # return a parked session to active (lowest free slot, else slotless overflow)
 focalpoint set-led <index|all> <r> <g> <b>
 focalpoint watch            # prints events as NDJSON to stdout (incl. state/session events)
 focalpoint ping             # exits 0 if daemon and device are up

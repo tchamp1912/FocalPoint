@@ -283,6 +283,7 @@ struct DesktopWidgetView: View {
     @ViewBuilder
     private func sessionContextMenu(_ s: SessionInfo) -> some View {
         Button("Rename\u{2026}") { renamingID = s.id }
+        slotDestinationMenu(s)
         Divider()
         Button("Relaunch as Managed Session") {
             model.relaunchAsManaged(s)
@@ -302,6 +303,35 @@ struct DesktopWidgetView: View {
         // process; Remove Session just drops the row.
         Button("End Session", role: .destructive) { model.quitSession(s) }
         Button("Remove Session") { model.removeSession(s) }
+    }
+
+    /// The same Move to Slot menu the dropdown offers (PROTOCOL.md §3/§4
+    /// move-slot + swap-slots): free slots move (sparse placement), occupied
+    /// slots swap. Live, active rows only — a backlogged session holds no
+    /// slot until it's moved back to active.
+    @ViewBuilder
+    private func slotDestinationMenu(_ s: SessionInfo) -> some View {
+        if s.connected, !s.backlogged {
+            let openSlots = model.freeSlots.filter { $0 != s.slot }
+            let otherSlotted = model.activeSessions.filter { $0.id != s.id && $0.connected && $0.slot != nil }
+            if !openSlots.isEmpty || (s.slot != nil && !otherSlotted.isEmpty) {
+                Menu("Move to Slot") {
+                    ForEach(openSlots, id: \.self) { n in
+                        Button("#\(n) \u{00B7} Empty") { model.moveSessionToSlot(s, slot: n) }
+                    }
+                    if s.slot != nil, !openSlots.isEmpty, !otherSlotted.isEmpty {
+                        Divider()
+                    }
+                    if s.slot != nil {
+                        ForEach(otherSlotted) { other in
+                            Button("Swap with #\(other.slot!) \u{00B7} \(other.title)") {
+                                model.swapSlots(s, other)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     @ViewBuilder

@@ -1108,6 +1108,28 @@ final class AppModel: ObservableObject {
         client.send(["cmd": "swap-slots", "session1": a.id, "session2": b.id])
     }
 
+    /// Move a live session onto a specific free numbered slot (user-initiated
+    /// sparse placement — PROTOCOL.md §3 move-slot). Companion to
+    /// `swapSlots`, which exchanges two occupied slots. Optimistic for the
+    /// same reason: the daemon's `session` broadcast confirms a moment later
+    /// and is the correction if a race made the slot non-free.
+    func moveSessionToSlot(_ s: SessionInfo, slot: Int) {
+        guard s.slot != slot else { return }
+        if let idx = sessions.firstIndex(where: { $0.id == s.id }) {
+            sessions[idx].slot = slot
+        }
+        sortSessions()
+        client.send(["cmd": "move-slot", "session": s.id, "slot": slot])
+    }
+
+    /// Numbered slots not held by any live, active session — the destinations
+    /// Move to Slot offers. A disconnected row's last-held slot counts as
+    /// free: it reports that slot but no longer occupies it (PROTOCOL.md §3).
+    var freeSlots: [Int] {
+        let used = Set(sessions.compactMap { $0.connected && !$0.backlogged ? $0.slot : nil })
+        return (1...12).filter { !used.contains($0) }
+    }
+
     /// Snapshots a session into `sessionHistory` right before it's dropped
     /// from `sessions` — called from the `"session-ended"` case, which fires
     /// for both an explicit `end-session` and TTL expiry (PROTOCOL.md §3).

@@ -1572,6 +1572,61 @@ impl Registry {
         Ok(effects)
     }
 
+    /// Move a live, active session onto a specific free numbered slot —
+    /// manual sparse placement (the app's Move to Slot menu), companion to
+    /// `swap_slots`. Unlike the compaction that follows an end or a backlog
+    /// move, this NEVER closes the gap it leaves: the hole is the point. A
+    /// slotless overflow session (>12 live) can be moved INTO a free slot
+    /// the same way. Rejects backlogged sessions (they hold no slot — move
+    /// them back to active first), occupied targets (that's `swap_slots`),
+    /// and out-of-range slots. Doesn't touch `last_update` — placement
+    /// isn't activity.
+    pub fn move_slot(&mut self, id: &str, slot: u64) -> Result<Vec<Effect>, String> {
+        let target = u8::try_from(slot)
+            .ok()
+            .filter(|n| (1..=12).contains(n))
+            .ok_or_else(|| format!("slot must be 1-12, got {slot}"))?;
+        {
+            let session = self
+                .sessions
+                .get(id)
+                .ok_or_else(|| format!("unknown live session: {id}"))?;
+            if session.is_backlogged() {
+                return Err(format!("session is backlogged and holds no slot: {id}"));
+            }
+            if session.slot == Some(target) {
+                return Ok(Vec::new());
+            }
+        }
+        let occupied_by = self
+            .sessions
+            .values()
+            .find(|s| s.id != id && !s.is_backlogged() && s.slot == Some(target))
+            .map(|s| s.id.clone());
+        if let Some(holder) = occupied_by {
+            return Err(format!(
+                "slot {target} is held by session {holder}; use swap-slots to exchange"
+            ));
+        }
+        let old_slot = self.sessions.get(id).and_then(|s| s.slot);
+        let session = self.sessions.get_mut(id).expect("validated live session");
+        session.slot = Some(target);
+        let mut effects = Vec::new();
+        if let Some(old) = old_slot {
+            effects.push(Effect::SlotCleared { slot: old });
+        }
+        effects.push(Effect::SessionUpsert {
+            id: session.id.clone(),
+            kind: session.kind.clone(),
+            label: session.label.clone(),
+            name: session.name.clone(),
+            meta: session.meta.clone(),
+            slot: session.slot,
+            state: session.state,
+        });
+        Ok(effects)
+    }
+
     /// Kept as a compatibility no-op for callers built around the old TTL
     /// sweep. Age is not evidence that an agent died: the app marks stale
     /// rows visually, while daemon removal requires explicit SessionEnd or a
@@ -1931,6 +1986,44 @@ mod tests {
         assert!(r.swap_slots("a", "ghost").is_err());
         // Same id is a no-op, not an error.
         assert_eq!(r.swap_slots("a", "a").unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn move_slot_places_on_free_slot_and_keeps_the_gap() {
+        let mut r = Registry::new(None);
+        let now = t0();
+        r.set_state(Some("a"), State::Running, None, None, None, now);
+        r.set_state(Some("b"), State::Running, None, None, None, now);
+        r.set_state(Some("c"), State::Running, None, None, None, now);
+        let effects = r.move_slot("a", 5).unwrap();
+        assert_eq!(r.sessions.get("a").unwrap().slot, Some(5));
+        // The gap is deliberate: b and c stay exactly where they were (no
+        // end/backlog-style compaction on a manual move).
+        assert_eq!(r.sessions.get("b").unwrap().slot, Some(2));
+        assert_eq!(r.sessions.get("c").unwrap().slot, Some(3));
+        assert!(effects
+            .iter()
+            .any(|e| matches!(e, Effect::SlotCleared { slot: 1 })));
+        assert!(effects.iter().any(|e| matches!(e,
+            Effect::SessionUpsert { id, slot: Some(5), .. } if id == "a")));
+        // Moving to the slot it already holds is a no-op, not an error.
+        assert_eq!(r.move_slot("a", 5).unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn move_slot_rejects_occupied_unknown_backlogged_and_out_of_range() {
+        let mut r = Registry::new(None);
+        let now = t0();
+        r.set_state(Some("a"), State::Running, None, None, None, now);
+        r.set_state(Some("b"), State::Running, None, None, None, now);
+        assert!(r.move_slot("a", 2).is_err()); // occupied — that's swap-slots
+        assert!(r.move_slot("ghost", 4).is_err());
+        assert!(r.move_slot("a", 0).is_err());
+        assert!(r.move_slot("a", 13).is_err());
+        assert!(r.move_slot("a", 999).is_err());
+        r.set_backlogged("b", true).unwrap();
+        assert!(r.move_slot("b", 4).is_err()); // parked sessions hold no slot
+        assert_eq!(r.sessions.get("a").unwrap().slot, Some(1)); // untouched
     }
 
     #[test]
