@@ -6,8 +6,9 @@
 //! (`SET_KEY_STATE` / `SET_STATE`) and subscriber events.
 //!
 //! Slot rules: each identified session claims the lowest free numbered key
-//! (1..=12) at registration and keeps it for its lifetime; sessions beyond 12
-//! get `slot: None`. A `set-state` with no session id updates the sessionless
+//! (1..=12) at registration. Slots stay stable while sessions are live, then
+//! compact after an explicit end/remove; sessions beyond 12 get `slot: None`.
+//! A `set-state` with no session id updates the sessionless
 //! *default* session, which occupies no slot but still counts toward the
 //! aggregate (back-compat). The default never expires and is never listed or
 //! emitted as a session event.
@@ -789,6 +790,41 @@ impl Registry {
         (1..=12).find(|n| !used.contains(n))
     }
 
+    /// Compact live numbered slots after an explicit end/remove. This keeps
+    /// both the rendered list and physical numbered-key map contiguous (1,
+    /// 2, 3, ...) instead of leaving a hole until some unrelated future
+    /// registration happens to reuse it. Preserve the existing slot order;
+    /// slotless overflow sessions follow it and can be promoted if a slot is
+    /// now available.
+    fn compact_slots(&mut self) -> Vec<Effect> {
+        let mut ordered: Vec<(String, Option<u8>)> = self
+            .sessions
+            .values()
+            .map(|session| (session.id.clone(), session.slot))
+            .collect();
+        ordered.sort_by_key(|(id, slot)| (slot.is_none(), slot.unwrap_or(u8::MAX), id.clone()));
+
+        let mut effects = Vec::new();
+        for (index, (id, old_slot)) in ordered.into_iter().enumerate() {
+            let new_slot = u8::try_from(index + 1).ok().filter(|slot| *slot <= 12);
+            if old_slot == new_slot {
+                continue;
+            }
+            let session = self.sessions.get_mut(&id).expect("collected live session");
+            session.slot = new_slot;
+            effects.push(Effect::SessionUpsert {
+                id: session.id.clone(),
+                kind: session.kind.clone(),
+                label: session.label.clone(),
+                name: session.name.clone(),
+                meta: session.meta.clone(),
+                slot: session.slot,
+                state: session.state,
+            });
+        }
+        effects
+    }
+
     /// Append an `AggregateChanged` effect iff the aggregate actually moved.
     fn note_aggregate(&mut self, effects: &mut Vec<Effect>) {
         let agg = self.aggregate();
@@ -1301,6 +1337,7 @@ impl Registry {
                 id: id.to_string(),
                 slot: sess.slot,
             });
+            effects.extend(self.compact_slots());
             self.note_aggregate(&mut effects);
         } else if tomb.is_some() {
             // Dismissing an already-disconnected (tombstoned) session — the
@@ -1672,21 +1709,21 @@ mod tests {
     }
 
     #[test]
-    fn ending_frees_slot_and_next_registration_reuses_it() {
+    fn ending_compacts_slots_before_next_registration() {
         let mut r = Registry::new(None);
         let now = t0();
         r.set_state(Some("a"), State::Running, None, None, None, now);
         r.set_state(Some("b"), State::Running, None, None, None, now);
         r.set_state(Some("c"), State::Running, None, None, None, now);
-        // End b (slot 2). Its slot should free up.
+        // End b (slot 2). c shifts down, so the next registration takes #3.
         let e = r.end_session("b");
         assert!(e.contains(&Effect::SessionEnded {
             id: "b".into(),
             slot: Some(2),
         }));
-        // New session reuses slot 2 (lowest free), not slot 4.
+        assert_eq!(r.session_by_slot(2).unwrap().id, "c");
         r.set_state(Some("d"), State::Running, None, None, None, now);
-        assert_eq!(r.session_by_slot(2).unwrap().id, "d");
+        assert_eq!(r.session_by_slot(3).unwrap().id, "d");
     }
 
     #[test]
@@ -1717,15 +1754,15 @@ mod tests {
     }
 
     #[test]
-    fn slots_are_stable_across_updates() {
+    fn explicit_end_compacts_slots_and_later_updates_keep_the_new_order() {
         let mut r = Registry::new(None);
         let now = t0();
         r.set_state(Some("a"), State::Running, None, None, None, now);
         r.set_state(Some("b"), State::Running, None, None, None, now);
-        r.end_session("a"); // frees slot 1
-                            // Updating b must NOT move it to slot 1.
+        r.end_session("a"); // b moves from slot 2 to slot 1
+                            // An update must preserve that compacted mapping.
         r.set_state(Some("b"), State::Waiting, None, None, None, now);
-        assert_eq!(r.sessions.get("b").unwrap().slot, Some(2));
+        assert_eq!(r.sessions.get("b").unwrap().slot, Some(1));
     }
 
     #[test]

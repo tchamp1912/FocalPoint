@@ -125,8 +125,8 @@ is expected to fail with an app-only install unless the daemon is in mock mode.
 ### Every agent in one place
 
 - Track concurrent Claude Code, Codex CLI, and Cursor sessions.
-- Keep stable numbered slots while sessions change state or other sessions
-  come and go.
+- Keep numbered slots stable while sessions change state, then compact them
+  after a session ends or is removed.
 - See the model, working directory, session name, current state, and elapsed
   time at a glance.
 - Rename, reorder, focus, or end sessions directly from the app.

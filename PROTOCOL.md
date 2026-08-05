@@ -441,7 +441,7 @@ Responses / events:
 {"event": "joy", "gesture": "north"}
 ```
 
-`list-sessions` returns live sessions (`"connected": true`) in slot order
+`list-sessions` returns live sessions (`"connected": true`) in compact slot order
 (slotless ones last), followed by any tombstoned sessions (`"connected":
 false`) — sweep-reaped sessions kept visible for recovery until ended,
 dismissed, recovered, or expired. `session-ended` removes a row;
