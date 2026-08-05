@@ -7,7 +7,7 @@ description: Safely inspect, prioritize, launch, resume, and route attention acr
 
 Use `fpctl-agent`, never raw daemon socket commands.
 
-## Routine
+## Default loop
 
 ```sh
 fpctl-agent status                         # live sessions, usage, order
@@ -18,10 +18,15 @@ fpctl-agent focus SESSION_ID               # only on user request
 fpctl-agent next | fpctl-agent previous
 ```
 
-`prioritize` changes attention order only: numbered slots stay fixed. Build
-its list from `order` or `status` rows where `connected: true`; history rows
-are not live. Inspect the smallest useful normalized transcript before routing
-owned managed work:
+Use `status` and `order` for attention decisions. `prioritize` changes
+attention order only: numbered slots stay fixed. Its list must contain each
+currently live (`connected: true`) session exactly once; history rows are not
+live.
+
+Use channels for almost all coordination. Read an owned normalized transcript
+only for targeted diagnosis, to verify `FOCALPOINT_WAKE`, or when a session
+has not reported through its channel. When a transcript is necessary, read the
+smallest useful tail:
 
 ```sh
 fpctl-agent transcript --session ID --task-id STABLE_ID --tail 20  # 1–8000 messages
@@ -41,14 +46,39 @@ it in managed tmux. It cannot relaunch a disconnected history row, a managed
 session, or in-flight work; report the daemon error rather than attempting a
 replacement launch.
 
-## Coordination
+## Channel-first coordination
 
-Prefer daemon channels for normal orchestration: create a channel for a work
-group, use `channel post` for assignments, progress, questions, and blockers,
-and use `channel read` to collect updates. This keeps coordination explicit
-and bounded. Use transcript reads sparingly for targeted diagnosis, verifying
-the `FOCALPOINT_WAKE` marker, or recovering context when a session has not
-reported through its channel.
+Channels are pull-first, bounded coordination mailboxes. Use one for each
+orchestrator work group: assignments, progress, questions, blockers, and
+handoffs all belong there. Do not use transcripts as a routine mailbox or to
+poll for ordinary completion.
+
+Channel commands work only inside a live FocalPoint-managed Claude/Codex
+session, where `FOCALPOINT_ORCHESTRATOR_TASK_ID` is set. An orchestrator creates
+and owns the channel; add a worker when launching it:
+
+```sh
+fpctl-agent channel create
+# record the returned channel_id, e.g. ch-1
+fpctl-agent launch --provider codex --cwd /absolute/prepared/path \
+  --task 'Implement and test the assigned slice.' --task-id worker-id \
+  --role worker --manager-task-id orchestrator-id --channel ch-1
+```
+
+Within the channel, use `post`, `read`, and `members` deliberately:
+
+```sh
+fpctl-agent channel post --channel ch-1 --kind directive --body 'Take the parser slice.'
+fpctl-agent channel read --channel ch-1 --tail 20
+fpctl-agent channel members --channel ch-1
+```
+
+Valid message kinds are `note`, `question`, `progress`, `blocker`, and
+`directive`; bodies are limited to 4,096 characters. Workers may post only to
+their owning orchestrator (use the default recipient); an orchestrator may post
+to the channel or a member with `--to`. A worker joins at the channel's current
+tail, so include its assignment in the launch task or send it after the worker
+has joined. Close the channel when the work group is finished.
 
 ## Launch
 
@@ -78,7 +108,8 @@ comparable providers with available reported headroom.
 - `launch` creates a process: do not create worktrees, install dependencies,
   decompose tasks, or duplicate stable task ids unless explicitly authorized.
 
-When an orchestrator wants a monitor-driven follow-up, it should put the exact
-marker `FOCALPOINT_WAKE` in its final visible response (preferably on its own
-line). A transcript monitor may treat that marker as a request to wake or
-re-check the orchestration session; ordinary completion does not require it.
+When an orchestrator needs a monitor-driven follow-up that channels cannot
+provide, put the exact marker `FOCALPOINT_WAKE` in its final visible response,
+preferably on its own line. A transcript monitor may then wake or re-check that
+orchestration session. Do not use the marker for normal progress, completion,
+or channel mail.
