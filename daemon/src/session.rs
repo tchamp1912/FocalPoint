@@ -13,7 +13,7 @@
 //! aggregate (back-compat). The default never expires and is never listed or
 //! emitted as a session event.
 
-use crate::protocol::State;
+use crate::protocol::{NavStates, State};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -612,40 +612,30 @@ impl Registry {
         }
     }
 
-    fn cycle_attention(&mut self, forward: bool) -> Option<Session> {
-        let eligible: Vec<String> = self
-            .attention_order()
-            .into_iter()
-            .filter(|id| {
-                self.sessions
-                    .get(id)
-                    .is_some_and(|session| {
-                        !session.is_backlogged()
-                            && matches!(session.state, State::Waiting | State::Approval | State::Error)
-                    })
+    fn navigation_index(len: usize, current: Option<usize>, forward: bool) -> Option<usize> {
+        if len == 0 { return None; }
+        Some(current
+            .map(|index| if forward { (index + 1) % len } else if index == 0 { len - 1 } else { index - 1 })
+            .unwrap_or(if forward { 0 } else { len - 1 }))
+    }
+
+    fn attention_target(&self, forward: bool) -> Option<&Session> {
+        let eligible: Vec<&Session> = self.attention_order().iter()
+            .filter_map(|id| self.sessions.get(id))
+            .filter(|session| {
+                !session.is_backlogged()
+                    && matches!(session.state, State::Waiting | State::Approval | State::Error)
             })
             .collect();
-        if eligible.is_empty() {
-            self.attention_cursor = None;
-            return None;
-        }
-        let index = self
-            .attention_cursor
-            .as_ref()
-            .and_then(|cursor| eligible.iter().position(|id| id == cursor))
-            .map(|index| {
-                if forward {
-                    (index + 1) % eligible.len()
-                } else if index == 0 {
-                    eligible.len() - 1
-                } else {
-                    index - 1
-                }
-            })
-            .unwrap_or(if forward { 0 } else { eligible.len() - 1 });
-        let id = eligible[index].clone();
-        self.attention_cursor = Some(id.clone());
-        self.sessions.get(&id).cloned()
+        let current = self.attention_cursor.as_ref()
+            .and_then(|id| eligible.iter().position(|session| &session.id == id));
+        Self::navigation_index(eligible.len(), current, forward).map(|index| eligible[index])
+    }
+
+    fn cycle_attention(&mut self, forward: bool) -> Option<Session> {
+        let session = self.attention_target(forward).cloned();
+        self.attention_cursor = session.as_ref().map(|session| session.id.clone());
+        session
     }
 
     pub fn next_attention(&mut self) -> Option<Session> {
@@ -656,44 +646,55 @@ impl Registry {
         self.cycle_attention(false)
     }
 
-    /// State of the session which a following `next_attention` selects,
-    /// without advancing the cursor. This drives the keyboard's Right Arrow.
-    pub fn next_attention_state(&self) -> Option<State> {
-        let eligible: Vec<&Session> = self.attention_order().iter()
-            .filter_map(|id| self.sessions.get(id))
-            .filter(|s| {
-                !s.is_backlogged()
-                    && matches!(s.state, State::Waiting | State::Approval | State::Error)
-            })
-            .collect();
-        if eligible.is_empty() { return None; }
-        let index = self.attention_cursor.as_ref()
-            .and_then(|id| eligible.iter().position(|s| &s.id == id))
-            .map(|i| (i + 1) % eligible.len())
-            .unwrap_or(0);
-        Some(eligible[index].state)
+    /// State of the session which a following attention navigation selects,
+    /// without advancing the cursor.
+    fn attention_target_state(&self, forward: bool) -> Option<State> {
+        self.attention_target(forward).map(|session| session.state)
     }
 
-    fn cycle_sessions(&mut self, forward: bool) -> Option<Session> {
-        let mut ordered: Vec<Session> = self
+    pub fn next_attention_state(&self) -> Option<State> {
+        self.attention_target_state(true)
+    }
+
+    pub fn previous_attention_state(&self) -> Option<State> {
+        self.attention_target_state(false)
+    }
+
+    fn session_target(&self, forward: bool) -> Option<&Session> {
+        let mut ordered: Vec<&Session> = self
             .sessions
             .values()
             .filter(|session| !session.is_backlogged())
-            .cloned()
             .collect();
         ordered.sort_by_key(|s| (s.slot.is_none(), s.slot.unwrap_or(u8::MAX), s.id.clone()));
-        if ordered.is_empty() { self.session_cursor = None; return None; }
-        let index = self.session_cursor.as_ref()
-            .and_then(|id| ordered.iter().position(|s| &s.id == id))
-            .map(|i| if forward { (i + 1) % ordered.len() } else if i == 0 { ordered.len() - 1 } else { i - 1 })
-            .unwrap_or(if forward { 0 } else { ordered.len() - 1 });
-        let session = ordered[index].clone();
-        self.session_cursor = Some(session.id.clone());
-        Some(session)
+        let current = self.session_cursor.as_ref()
+            .and_then(|id| ordered.iter().position(|s| &s.id == id));
+        Self::navigation_index(ordered.len(), current, forward).map(|index| ordered[index])
+    }
+
+    fn cycle_sessions(&mut self, forward: bool) -> Option<Session> {
+        let session = self.session_target(forward).cloned();
+        self.session_cursor = session.as_ref().map(|session| session.id.clone());
+        session
     }
 
     pub fn next_session(&mut self) -> Option<Session> { self.cycle_sessions(true) }
     pub fn previous_session(&mut self) -> Option<Session> { self.cycle_sessions(false) }
+
+    /// State of the session which a following chronological/slot-order
+    /// navigation selects, without advancing the cursor.
+    fn session_target_state(&self, forward: bool) -> Option<State> {
+        self.session_target(forward).map(|session| session.state)
+    }
+
+    pub fn navigation_states(&self) -> NavStates {
+        NavStates {
+            attention_next: self.next_attention_state(),
+            attention_previous: self.previous_attention_state(),
+            session_next: self.session_target_state(true),
+            session_previous: self.session_target_state(false),
+        }
+    }
 
     pub fn is_managed_relaunch_pending(&self, id: &str, launch_id: &str) -> bool {
         self.managed_relaunches
@@ -2039,14 +2040,26 @@ mod tests {
         r.set_state(Some("wait"), State::Waiting, None, None, None, now);
         r.set_state(Some("approval"), State::Approval, None, None, None, now);
         r.set_state(Some("err"), State::Error, None, None, None, now);
-        assert_eq!(r.next_attention_state(), Some(State::Error));
+        assert_eq!(r.navigation_states(), NavStates {
+            attention_next: Some(State::Error),
+            attention_previous: Some(State::Waiting),
+            session_next: Some(State::Running),
+            session_previous: Some(State::Error),
+        });
         assert_eq!(r.next_attention().unwrap().id, "err");
         assert_eq!(r.next_attention_state(), Some(State::Approval));
+        assert_eq!(r.previous_attention_state(), Some(State::Waiting));
         assert_eq!(r.next_attention().unwrap().id, "approval");
         assert_eq!(r.next_attention_state(), Some(State::Waiting));
         assert_eq!(r.next_session().unwrap().id, "run");
         assert_eq!(r.next_session().unwrap().id, "wait");
         assert_eq!(r.previous_session().unwrap().id, "run");
+        assert_eq!(r.navigation_states(), NavStates {
+            attention_next: Some(State::Waiting),
+            attention_previous: Some(State::Error),
+            session_next: Some(State::Waiting),
+            session_previous: Some(State::Error),
+        });
     }
 
     #[test]

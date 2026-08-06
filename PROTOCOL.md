@@ -53,7 +53,7 @@ above waiting in the aggregate and attention fallback.
 | `0x03` | `SET_HOST_MODE` | byte 1: 1 = daemon attached (keys report via HID events), 0 = detached (keys send their fallback keycodes) |
 | `0x04` | `SET_KEY_STATE` | byte 1: user-key number 1–12, byte 2: state ID, or `0xFF` = slot empty (key returns to ambient/off and clears any `SET_LED` override on that key). Firmware renders that state's effect on that key's LED only. |
 | `0x05` | `SET_STATE_STYLE` | byte 1: state ID, bytes 2–4: R,G,B, byte 5: pattern (0 solid, 1 breathe, 2 blink, 3 strobe, 4 off), bytes 6–7: period in ms (little-endian u16). Overrides that state's default effect everywhere it renders (aggregate and per-key). Stored in RAM; defaults restored on power cycle. The daemon pushes all eight styles on device connect. |
-| `0x06` | `SET_NAV_STATE` | byte 1: state ID of the next attention session, or `0xFF` when none. Firmware renders it on its dedicated next-attention indicator (Right Arrow on the Keychron V1 Max). |
+| `0x06` | `SET_NAV_STATE` | bytes 1–4: target state IDs (or `0xFF` when none) for attention next, attention previous, chronological session next, and chronological session previous; byte 5: vector version `1`. Firmware renders these on Right, Left, Down, and Up respectively. For compatibility, firmware always accepts byte 1 as the original right-arrow-only payload and only reads bytes 2–4 when byte 5 is `1`. |
 
 ### Device → host
 
@@ -394,6 +394,12 @@ the fallback is error first, then approval, then waiting, then slot and id.
 across only active live waiting/approval/error sessions and reply with
 `{"ok":true,"session":"id"}` or `session:null`. ("Active" here and above
 means non-backlogged — see **Backlog** in §3 Sessions.)
+
+The four arrow LEDs preview the state of the session each navigation key will
+select without advancing either cursor: Right/Left follow the next/previous
+eligible session in attention order; Down/Up follow the next/previous active
+session in chronological numbered-slot order. Empty navigation sets paint the
+corresponding arrow black.
 
 `launch-session` is the daemon's narrow managed-process primitive. It accepts
 `claude`, `codex`, or `cursor`, an optional provider model id/alias, an existing

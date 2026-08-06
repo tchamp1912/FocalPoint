@@ -25,6 +25,11 @@ pub const CMD_SET_KEY_STATE: u8 = 0x04;
 pub const CMD_SET_STATE_STYLE: u8 = 0x05;
 pub const CMD_SET_NAV_STATE: u8 = 0x06;
 
+/// Marks the extended four-arrow `SET_NAV_STATE` payload. Legacy hosts leave
+/// this byte zero, allowing new firmware to preserve right-arrow-only
+/// behavior without mistaking zero-filled bytes for `idle` targets.
+pub const NAV_STATE_VECTOR_VERSION: u8 = 1;
+
 /// Sentinel state byte for `SET_KEY_STATE` meaning "slot empty" (PROTOCOL.md §2).
 pub const KEY_STATE_EMPTY: u8 = 0xFF;
 
@@ -136,6 +141,16 @@ impl State {
     }
 }
 
+/// States of the sessions each arrow key would select next. Field order
+/// matches the physical controls and `SET_NAV_STATE` payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct NavStates {
+    pub attention_next: Option<State>,
+    pub attention_previous: Option<State>,
+    pub session_next: Option<State>,
+    pub session_previous: Option<State>,
+}
+
 /// Render pattern for a state style (PROTOCOL.md §2 `SET_STATE_STYLE`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pattern {
@@ -216,7 +231,7 @@ pub enum HostCmd {
         pattern: Pattern,
         period_ms: u16,
     },
-    SetNavState(Option<State>),
+    SetNavState(NavStates),
 }
 
 impl HostCmd {
@@ -266,9 +281,13 @@ impl HostCmd {
                 buf[6] = (period_ms & 0xFF) as u8;
                 buf[7] = (period_ms >> 8) as u8;
             }
-            HostCmd::SetNavState(state) => {
+            HostCmd::SetNavState(states) => {
                 buf[0] = CMD_SET_NAV_STATE;
-                buf[1] = state.map_or(KEY_STATE_EMPTY, |s| s.id());
+                buf[1] = states.attention_next.map_or(KEY_STATE_EMPTY, |s| s.id());
+                buf[2] = states.attention_previous.map_or(KEY_STATE_EMPTY, |s| s.id());
+                buf[3] = states.session_next.map_or(KEY_STATE_EMPTY, |s| s.id());
+                buf[4] = states.session_previous.map_or(KEY_STATE_EMPTY, |s| s.id());
+                buf[5] = NAV_STATE_VECTOR_VERSION;
             }
         }
         buf
@@ -430,11 +449,25 @@ mod tests {
     }
 
     #[test]
-    fn set_nav_state_encodes_next_attention_or_empty() {
-        let waiting = HostCmd::SetNavState(Some(State::Waiting)).encode();
-        assert_eq!(&waiting[0..2], &[CMD_SET_NAV_STATE, State::Waiting.id()]);
-        let empty = HostCmd::SetNavState(None).encode();
-        assert_eq!(&empty[0..2], &[CMD_SET_NAV_STATE, KEY_STATE_EMPTY]);
+    fn set_nav_state_encodes_all_four_targets_and_vector_marker() {
+        let states = HostCmd::SetNavState(NavStates {
+            attention_next: Some(State::Waiting),
+            attention_previous: Some(State::Approval),
+            session_next: Some(State::Running),
+            session_previous: None,
+        })
+        .encode();
+        assert_eq!(
+            &states[0..6],
+            &[
+                CMD_SET_NAV_STATE,
+                State::Waiting.id(),
+                State::Approval.id(),
+                State::Running.id(),
+                KEY_STATE_EMPTY,
+                NAV_STATE_VECTOR_VERSION,
+            ]
+        );
     }
 
     #[test]

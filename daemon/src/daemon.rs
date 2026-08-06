@@ -1447,7 +1447,7 @@ fn replay_state_cmds(shared: &Mutex<Shared>) -> Vec<HostCmd> {
             state: slot_states.get(&key).copied(),
         });
     }
-    cmds.push(HostCmd::SetNavState(s.registry.next_attention_state()));
+    cmds.push(HostCmd::SetNavState(s.registry.navigation_states()));
     cmds
 }
 
@@ -1572,7 +1572,7 @@ fn apply_effects(
         save_snapshot(&ctx.shared);
     }
     let _ = host_tx.send(HostCmd::SetNavState(
-        ctx.shared.lock().unwrap().registry.next_attention_state(),
+        ctx.shared.lock().unwrap().registry.navigation_states(),
     ));
     session_effect
 }
@@ -1957,7 +1957,7 @@ fn handle_device_event(ev: DeviceEvent, ctx: &EventCtx) {
                         None => crate::actions::run(&ctx.config.action_for(&name)),
                     }
                 } else if (17..=20).contains(&control) {
-                    let (session, next_attention_state) = {
+                    let (session, navigation_states) = {
                         let _transition = ctx.transition.lock().unwrap();
                         let mut shared = ctx.shared.lock().unwrap();
                         let session = match control {
@@ -1967,14 +1967,14 @@ fn handle_device_event(ev: DeviceEvent, ctx: &EventCtx) {
                             20 => shared.registry.previous_session(),
                             _ => unreachable!(),
                         };
-                        let next = shared.registry.next_attention_state();
-                        (session, next)
+                        let navigation = shared.registry.navigation_states();
+                        (session, navigation)
                     };
                     if let Some(session) = session {
                         ctx.broadcast(&event_line(Event::Focus { session: session.id.clone() }));
                         run_focus(ctx, &session, session.slot.unwrap_or(0));
                     }
-                    let _ = ctx.host_tx.send(HostCmd::SetNavState(next_attention_state));
+                    let _ = ctx.host_tx.send(HostCmd::SetNavState(navigation_states));
                 } else {
                     crate::actions::run(&ctx.config.action_for(&name));
                 }
@@ -2230,10 +2230,13 @@ fn log_host_cmd(cmd: &HostCmd) {
             pattern.name(),
             period_ms
         ),
-        HostCmd::SetNavState(state) => match state {
-            Some(state) => eprintln!("[mock] LED <- SET_NAV_STATE {} ({})", state.id(), state.name()),
-            None => eprintln!("[mock] LED <- SET_NAV_STATE EMPTY"),
-        },
+        HostCmd::SetNavState(states) => eprintln!(
+            "[mock] LED <- SET_NAV_STATE attention_next={} attention_previous={} session_next={} session_previous={}",
+            states.attention_next.map(State::name).unwrap_or("empty"),
+            states.attention_previous.map(State::name).unwrap_or("empty"),
+            states.session_next.map(State::name).unwrap_or("empty"),
+            states.session_previous.map(State::name).unwrap_or("empty"),
+        ),
         HostCmd::Ping => eprintln!("[mock] PING"),
     }
 }
@@ -3091,7 +3094,13 @@ fn dispatch(
         }
         Request::FocusNextAttention => {
             let _transition = ctx.transition.lock().unwrap();
-            let session = shared.lock().unwrap().registry.next_attention();
+            let (session, navigation_states) = {
+                let mut shared = shared.lock().unwrap();
+                let session = shared.registry.next_attention();
+                let navigation_states = shared.registry.navigation_states();
+                (session, navigation_states)
+            };
+            let _ = host_tx.send(HostCmd::SetNavState(navigation_states));
             let selected = session.as_ref().map(|session| session.id.clone());
             if let Some(session) = session {
                 let ctx = ctx.clone();
@@ -3102,7 +3111,13 @@ fn dispatch(
         }
         Request::FocusPrevAttention => {
             let _transition = ctx.transition.lock().unwrap();
-            let session = shared.lock().unwrap().registry.previous_attention();
+            let (session, navigation_states) = {
+                let mut shared = shared.lock().unwrap();
+                let session = shared.registry.previous_attention();
+                let navigation_states = shared.registry.navigation_states();
+                (session, navigation_states)
+            };
+            let _ = host_tx.send(HostCmd::SetNavState(navigation_states));
             let selected = session.as_ref().map(|session| session.id.clone());
             if let Some(session) = session {
                 let ctx = ctx.clone();
@@ -3292,7 +3307,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn replay_includes_next_attention_navigation_state() {
+    fn replay_includes_all_navigation_states() {
         let mut registry = Registry::new(None);
         registry.set_state(
             Some("needs-input"),
@@ -3310,9 +3325,14 @@ mod tests {
             channel_wake_last: HashMap::new(),
             device_present: false,
         });
-        assert!(replay_state_cmds(&shared)
-            .iter()
-            .any(|cmd| matches!(cmd, HostCmd::SetNavState(Some(State::Waiting)))));
+        assert!(replay_state_cmds(&shared).iter().any(|cmd| matches!(
+            cmd,
+            HostCmd::SetNavState(states)
+                if states.attention_next == Some(State::Waiting)
+                    && states.attention_previous == Some(State::Waiting)
+                    && states.session_next == Some(State::Waiting)
+                    && states.session_previous == Some(State::Waiting)
+        )));
     }
 
     #[test]

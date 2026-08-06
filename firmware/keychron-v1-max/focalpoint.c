@@ -54,7 +54,10 @@ static inline uint8_t vk_scale(uint8_t v, uint8_t s) {
 static bool    vk_host_mode          = false;               /* default off  */
 static uint8_t vk_aggregate          = VK_STATE_IDLE;       /* Esc          */
 static uint8_t vk_key_state[VK_USER_KEY_COUNT];             /* slots 1..12  */
-static uint8_t vk_next_attention     = VK_STATE_EMPTY;      /* Right arrow  */
+static uint8_t vk_attention_next     = VK_STATE_EMPTY;      /* Right arrow  */
+static uint8_t vk_attention_previous = VK_STATE_EMPTY;      /* Left arrow   */
+static uint8_t vk_session_next       = VK_STATE_EMPTY;      /* Down arrow   */
+static uint8_t vk_session_previous   = VK_STATE_EMPTY;      /* Up arrow     */
 
 typedef struct {
     uint8_t r, g, b, pattern;
@@ -73,8 +76,12 @@ static vk_led_override_t vk_override[VK_USER_KEY_COUNT];    /* SET_LED      */
  * which are LED indices 15..26.  Esc is LED index 0. */
 #define VK_LED_SESSION_BASE 15   /* LED index of user-key 1 ("1")           */
 #define VK_LED_ESC          0    /* LED index of Esc (aggregate indicator)  */
-/* The final LED in the V1 Max ANSI matrix is the physical Right Arrow. */
-#define VK_LED_RIGHT_ARROW  81
+/* Arrow indices from the V1 Max ANSI matrix in Keychron's official
+ * wireless_playground source: Up is on row 4; Left/Down/Right end row 5. */
+#define VK_LED_UP_ARROW     70
+#define VK_LED_LEFT_ARROW   78
+#define VK_LED_DOWN_ARROW   79
+#define VK_LED_RIGHT_ARROW  80
 
 static inline uint8_t vk_slot_led(uint8_t slot0) { /* slot0: 0..11 */
     return VK_LED_SESSION_BASE + slot0;
@@ -297,7 +304,19 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
             return;
 
         case VK_CMD_SET_NAV_STATE:
-            vk_next_attention = data[1];
+            /* Byte 1 is the original right-arrow-only v0.3 payload. The
+             * version marker distinguishes an extended vector from the zero
+             * padding sent by older daemons (zero is also a valid idle state). */
+            vk_attention_next = data[1];
+            if (length > 5 && data[5] == VK_NAV_STATE_VECTOR_VERSION) {
+                vk_attention_previous = data[2];
+                vk_session_next = data[3];
+                vk_session_previous = data[4];
+            } else {
+                vk_attention_previous = VK_STATE_EMPTY;
+                vk_session_next = VK_STATE_EMPTY;
+                vk_session_previous = VK_STATE_EMPTY;
+            }
             return;
 
         default:
@@ -365,9 +384,14 @@ bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
         }
         /* else: stays black in the full FocalPoint overlay */
     }
-    if (vk_next_attention != VK_STATE_EMPTY) {
-        vk_paint_state(VK_LED_RIGHT_ARROW, vk_next_attention, false);
-    }
+    if (vk_attention_next != VK_STATE_EMPTY)
+        vk_paint_state(VK_LED_RIGHT_ARROW, vk_attention_next, false);
+    if (vk_attention_previous != VK_STATE_EMPTY)
+        vk_paint_state(VK_LED_LEFT_ARROW, vk_attention_previous, false);
+    if (vk_session_next != VK_STATE_EMPTY)
+        vk_paint_state(VK_LED_DOWN_ARROW, vk_session_next, false);
+    if (vk_session_previous != VK_STATE_EMPTY)
+        vk_paint_state(VK_LED_UP_ARROW, vk_session_previous, false);
     return true;
 }
 #endif /* RGB_MATRIX_ENABLE */
@@ -381,7 +405,10 @@ void keyboard_post_init_user(void) {
         vk_override[i].active = false;
     }
     vk_aggregate = VK_STATE_IDLE;
-    vk_next_attention = VK_STATE_EMPTY;
+    vk_attention_next = VK_STATE_EMPTY;
+    vk_attention_previous = VK_STATE_EMPTY;
+    vk_session_next = VK_STATE_EMPTY;
+    vk_session_previous = VK_STATE_EMPTY;
     const vk_style_t defaults[] = {
         {40, 40, 40, 1, 4000}, {158, 89, 242, 1, 2500},
         {255, 166, 26, 1, 800}, {64, 140, 255, 2, 800},

@@ -28,8 +28,10 @@ enum vk_host_cmd {
     VK_CMD_SET_HOST_MODE = 0x03, /* b1: 1=attached, 0=detached        */
     VK_CMD_SET_KEY_STATE = 0x04, /* b1: user-key 1..12, b2: state/0xFF */
     VK_CMD_SET_STATE_STYLE = 0x05, /* b1: state, b2..4 RGB, b5 pattern, b6..7 period */
-    VK_CMD_SET_NAV_STATE = 0x06, /* b1: next-attention state or 0xFF */
+    VK_CMD_SET_NAV_STATE = 0x06, /* b1..4: arrow target states, b5: vector version */
 };
+
+#define VK_NAV_STATE_VECTOR_VERSION 1
 
 /* ---- Device -> host command IDs (PROTOCOL.md 2, "Device -> host") ---- */
 enum vk_dev_cmd {

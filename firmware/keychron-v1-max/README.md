@@ -29,8 +29,9 @@ Target board: `keychron/v1_max/ansi_encoder` (the knob variant).
     (`SET_STATE_STYLE`). An empty slot (`0xFF`) paints nothing.
   - While attached, FocalPoint clears and repaints a full-board overlay on
     every RGB-matrix frame, so stock travelling-wave effects cannot leak
-    through. Every non-FocalPoint key remains black; Right Arrow shows the
-    next-attention session's state.
+    through. Every non-FocalPoint key remains black. Right / Left show the
+    next / previous attention target's state; Down / Up show the next /
+    previous chronological session target's state.
 - **FocalPoint control layer** (hold Option/Alt with a control key):
   - number keys `1`–`=` → `KEY_EVENT` for user keys 1–12 (control IDs 4–15)
   - `A` / `R` / `N` → accept / reject / new-task (control IDs 0 / 1 / 2)
@@ -102,10 +103,15 @@ map) and cross-checked against the default keymap. **Not guessed.**
 | `0` | `[1,10]` | 24 | slot 10 |
 | `-` | `[1,11]` | 25 | slot 11 |
 | `=` | `[1,12]` | 26 | slot 12 |
-| Right Arrow | — | **81** | next-attention state |
+| Up Arrow | `[4,14]` | **70** | previous chronological session state |
+| Left Arrow | `[5,13]` | **78** | previous-attention state |
+| Down Arrow | `[5,14]` | **79** | next chronological session state |
+| Right Arrow | `[5,15]` | **80** | next-attention state |
 
 So session slots 1–12 are LED indices `15 + (slot-1)` (`VK_LED_SESSION_BASE 15`
-in `focalpoint.c`), and Esc is LED index `0`.
+in `focalpoint.c`), Esc is LED index `0`, and the arrow cluster uses the exact
+matrix indices above. The previous Right Arrow index (`81`) was one past the
+V1 Max's valid `0...80` LED range and is corrected here.
 
 ---
 
