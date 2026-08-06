@@ -160,7 +160,7 @@ struct GeneralSettingsView: View {
                                 .controlSize(.small)
                             }
                         }
-                        Text("Horizontal renders the pad itself: a short strip of keycaps, one per session, lit with its state color — hover a key for its name and details, click to focus. Drag the widget's bottom-right corner to set its width — height always fits the content, and the widget grows away from the screen edge it's parked on. Widths are remembered per orientation.")
+                        Text("Horizontal renders the pad itself: a short strip of keycaps, one per session — state glyph and slot number lit in its state color; hover a key for its name and details, click to focus. The strip sizes itself to the session count; drag the widget's bottom-right corner to cap its width (keys scroll past the cap). Widths are remembered per orientation, and the widget grows away from the screen edge it's parked on.")
                             .font(.caption).foregroundStyle(.secondary)
                         VStack(alignment: .leading, spacing: 4) {
                             Toggle("Compact session rows", isOn: $model.compactWidgetRows)

@@ -39,6 +39,10 @@ struct DesktopWidgetView: View {
 
     /// Session currently being renamed inline, if any.
     @State private var renamingID: String?
+    /// True while the corner grip is mid-drag: the horizontal strip tracks
+    /// the dragged width exactly (instead of hugging content below the cap)
+    /// so the window and its SwiftUI root stay in lockstep.
+    @State private var gripDragging = false
 
     private var orientation: DesktopWidgetOrientation { model.desktopWidgetOrientation }
     /// Non-nil once the user has dragged the corner resize grip for this
@@ -73,7 +77,7 @@ struct DesktopWidgetView: View {
             orientation: orientation,
             onLiveResize: { model.previewWidgetWidth($0, for: orientation) },
             onCommit: { model.setWidgetWidth($0, for: orientation) },
-            onDragChanged: onGripDragChanged
+            onDragChanged: { gripDragging = $0; onGripDragChanged($0) }
         )
         .frame(width: 16, height: 16)
         .padding(2)
@@ -378,13 +382,14 @@ struct DesktopWidgetView: View {
     // MARK: Horizontal layout (macropad key strip, for top/bottom screen edges)
     //
     // The strip renders the pad itself: one keycap per active session, lit
-    // with its state color, slot number inside — parked sessions trail as
-    // small dots behind a hairline. No text, no meters, no usage on the
-    // bar: name/state/elapsed live in each key's hover tooltip, the
-    // aggregate in the mark's. Click a key to focus its session;
-    // right-click for the full session menu (rename opens a popover — the
-    // strip has no text field of its own). The whole bar drags; the corner
-    // grip still pins a width per orientation.
+    // with its state color, state glyph + slot number inside — parked
+    // sessions trail as small dots behind a hairline. No text, no meters,
+    // no usage on the bar: name/state/elapsed live in each key's hover
+    // tooltip, the aggregate in the mark's. Click a key to focus its
+    // session; right-click for the full session menu (rename opens a
+    // popover — the strip has no text field of its own). The whole bar
+    // drags; the corner grip caps the width per orientation (below the cap
+    // the strip hugs its keys, above it they scroll).
 
     private var horizontalBody: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -409,7 +414,12 @@ struct DesktopWidgetView: View {
             .contentShape(Rectangle())
             .background(WindowDragHandle())
         }
-        .frame(width: widthOverride, alignment: .leading)
+        // A pinned width is a CAP, not an exact size: below it the strip
+        // hugs its keys (so it scales with the session count), above it the
+        // keys scroll. During a grip drag the frame tracks the dragged width
+        // exactly so the clear window background never gaps mid-drag.
+        .frame(width: gripDragging ? widthOverride : nil, alignment: .leading)
+        .frame(maxWidth: gripDragging ? nil : widthOverride, alignment: .leading)
     }
 
     @ViewBuilder
@@ -417,12 +427,14 @@ struct DesktopWidgetView: View {
         if model.sessions.isEmpty {
             // The mark stands alone; auto-hide usually covers this case.
             EmptyView()
-        } else if widthOverride != nil {
-            ScrollView(.horizontal) { keyStrip }
         } else {
-            // Auto-sized width grows with the session count; the settings
-            // copy points at the grip as the way to cap it.
-            keyStrip
+            // Hug the keys while they fit the (possibly capped) width and
+            // scroll them past it — ViewThatFits takes the first child that
+            // fits, and a ScrollView always "fits" by scrolling.
+            ViewThatFits(in: .horizontal) {
+                keyStrip
+                ScrollView(.horizontal) { keyStrip }
+            }
         }
     }
 
@@ -462,10 +474,10 @@ struct DesktopWidgetView: View {
             }
         }
         .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .strokeBorder(Color.accentColor, lineWidth: 1.5)
                 .shadow(color: Color.accentColor.opacity(0.8), radius: 3)
-                .frame(width: s.backlogged ? 15 : 22, height: s.backlogged ? 15 : 22)
+                .padding(-3.5)   // ring hugs the key, whatever its width
                 .opacity(s.id == model.focusedSessionID ? 1 : 0)
         )
         .hoverHighlight(cornerRadius: 6)
@@ -497,18 +509,20 @@ struct DesktopWidgetView: View {
                 Circle().fill(keyColor)
             } else {
                 RoundedRectangle(cornerRadius: 4.5, style: .continuous).fill(keyColor)
-                if let slot = s.slot {
-                    Text(String(slot))
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                } else {
+                HStack(spacing: 2.5) {
                     Image(systemName: displayState.symbolName)
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(.white)
+                        .font(.system(size: 7.5, weight: .bold))
+                    if let slot = s.slot {
+                        Text(String(slot))
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                    }
                 }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 4.5)
             }
         }
-        .frame(width: s.backlogged ? 9 : 16, height: s.backlogged ? 9 : 16)
+        .frame(minWidth: s.backlogged ? 9 : 16)
+        .frame(height: s.backlogged ? 9 : 16)
         .shadow(color: keyColor.opacity(shouldHighlightAttention(s) ? 0.85 : 0), radius: 3.5)
         .opacity(dimmed ? 0.45 : 1)
         .padding(.vertical, 3)   // even strip height across key sizes

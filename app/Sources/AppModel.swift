@@ -48,7 +48,7 @@ enum DesktopWidgetOrientation: String, CaseIterable, Identifiable {
     var minWidgetWidth: CGFloat {
         switch self {
         case .vertical:   return 200
-        case .horizontal: return 360
+        case .horizontal: return 96   // key strip: mark + a couple of keys
         }
     }
     var maxWidgetWidth: CGFloat {
