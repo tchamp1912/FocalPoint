@@ -146,6 +146,30 @@ class ApprovalDebounceTests(unittest.TestCase):
         state_call = next(line for line in calls if line.startswith("set-state thinking"))
         self.assertIn("--meta resume_session_id=claude-session-3", state_call)
 
+    def test_claude_history_resume_registers_idle_on_session_start(self) -> None:
+        calls = self.run_scenario(
+            "adapters/claude-code/hooks.sh",
+            {"hook_event_name": "SessionStart", "session_id": "claude-session-4",
+             "cwd": "/tmp/project"},
+            None,
+            {"FOCALPOINT_RESUME_SESSION_ID": "claude-session-4"},
+        )
+        state_call = next(line for line in calls if line.startswith("set-state idle"))
+        self.assertIn("--session claude-session-4", state_call)
+        self.assertIn("--refresh-identity", state_call)
+        self.assertIn("--meta resume_session_id=claude-session-4", state_call)
+        self.assertIn("--meta managed=false", state_call)
+
+    def test_claude_ordinary_session_start_remains_metadata_only(self) -> None:
+        calls = self.run_scenario(
+            "adapters/claude-code/hooks.sh",
+            {"hook_event_name": "SessionStart", "session_id": "claude-fresh",
+             "cwd": "/tmp/project"},
+            None,
+        )
+        self.assertTrue(any(line.startswith("set-meta --session claude-fresh") for line in calls))
+        self.assertFalse(any(line.startswith("set-state ") for line in calls))
+
 
 if __name__ == "__main__":
     unittest.main()

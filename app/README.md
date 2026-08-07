@@ -173,6 +173,11 @@ Open **Settings** from the dropdown footer.
 - **Colored status icon** (default OFF) — tints the menu-bar icon/badge by the
   aggregate state instead of the neutral template.
 
+The first managed launch through iTerm may ask for Automation permission.
+FocalPoint uses iTerm's application API to create exactly one new command
+window; it does not use Accessibility or synthesize UI input. If permission is
+denied, the app logs the failure and falls back to LaunchServices.
+
 **State styles** — one row per state (`idle`, `thinking`, `running`, `waiting`,
 `approval`, `done`, `error`, `compacting`):
 

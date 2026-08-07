@@ -24,6 +24,8 @@
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>FocalPoint uses iTerm automation to open each managed session in exactly one new terminal window.</string>
     <key>NSHumanReadableCopyright</key>
     <string>MIT License</string>
 </dict>

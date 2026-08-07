@@ -35,6 +35,11 @@ The hooks block wires five Claude Code events to the dispatcher:
 | `PostToolUse` | `thinking` | Tool execution finished; Claude is reasoning about results |
 | `Stop` | `done` | Claude's response is complete |
 | `Notification` (`idle_prompt`) | `waiting` | Claude finished and awaits your next prompt |
+
+An ordinary `SessionStart` refreshes process identity without changing state.
+When `FOCALPOINT_RESUME_SESSION_ID` marks an explicit History resume, it also
+registers the restored conversation as `idle`; resumed Claude opens at its
+prompt and otherwise may emit no later state event to reconnect the row.
 | `Notification` (`permission_prompt`) | `approval` | A tool use awaits your approval |
 | `SessionEnd` | `end-session` | Session ended; its numbered-key slot is freed |
 

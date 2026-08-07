@@ -314,11 +314,39 @@ case "$event" in
     # session_id is never the same pid twice). If this first walk races the
     # new versioned launcher and returns no pid/tty, identity.rs leaves the
     # session re-armed: every later hook below passes --kind claude and retries
-    # until it self-heals. set-meta doesn't require the
-    # session to already be registered (an unknown id is a harmless no-op
-    # daemon-side), and causes no visible state change — a session merely
-    # starting/resuming isn't itself a state transition worth reporting.
+    # until it self-heals. An ordinary start remains metadata-only so this
+    # asynchronous hook cannot race a newer UserPromptSubmit back to idle.
+    # An explicit History resume is different: it opens directly at an idle
+    # prompt and may emit no later state hook at all. Register that one as
+    # idle here, carrying the exact resume id that selects its tombstone.
     if [ -n "${session_id:-}" ]; then
+      if [ -n "${FOCALPOINT_RESUME_SESSION_ID:-}" ]; then
+        resume_label="${FOCALPOINT_SESSION_TITLE:-}"
+        [ -n "$resume_label" ] || resume_label=$(extract_title "$transcript_path" "$title_cache")
+        [ -n "$resume_label" ] || resume_label="$(basename "${cwd:-.}")"
+        resume_args=(idle --session "$session_id" --kind claude --cwd "$cwd" --label "$resume_label" --refresh-identity)
+        resume_args+=(--meta "managed=$managed_value" --meta "mux_pane=$mux_pane" --meta "mux_session=$mux_session" --meta "mux_server=$mux_server")
+        resume_args+=(--meta "resume_session_id=$FOCALPOINT_RESUME_SESSION_ID")
+        [ -n "${transcript_path:-}" ] && resume_args+=(--meta "transcript_path=$transcript_path")
+        [ -n "${FOCALPOINT_RELAUNCH_ID:-}" ] && \
+          resume_args+=(--meta "relaunch_id=$FOCALPOINT_RELAUNCH_ID")
+        [ -n "${FOCALPOINT_ORCHESTRATOR_TASK_ID:-}" ] && \
+          resume_args+=(--meta "orchestrator_task_id=$FOCALPOINT_ORCHESTRATOR_TASK_ID")
+        [ -n "${FOCALPOINT_SESSION_TITLE:-}" ] && \
+          resume_args+=(--meta "session_title=$FOCALPOINT_SESSION_TITLE")
+        [ -n "${FOCALPOINT_SESSION_SLOT:-}" ] && \
+          resume_args+=(--meta "requested_slot=$FOCALPOINT_SESSION_SLOT")
+        [ -n "${FOCALPOINT_ORCHESTRATION_ROLE:-}" ] && \
+          resume_args+=(--meta "orchestration_role=$FOCALPOINT_ORCHESTRATION_ROLE")
+        [ -n "${FOCALPOINT_MANAGER_TASK_ID:-}" ] && \
+          resume_args+=(--meta "manager_task_id=$FOCALPOINT_MANAGER_TASK_ID")
+        [ -n "${FOCALPOINT_CHANNEL_ID:-}" ] && \
+          resume_args+=(--meta "channel_id=$FOCALPOINT_CHANNEL_ID")
+        "$FOCALPOINT" set-state "${resume_args[@]}" >/dev/null 2>&1 || true
+        channel_pull
+        exit 0
+      fi
+
       "$FOCALPOINT" set-meta --session "$session_id" --kind claude --refresh-identity >/dev/null 2>&1 || true
 
       # Managed-session detection.

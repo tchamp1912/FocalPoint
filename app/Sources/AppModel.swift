@@ -1123,26 +1123,75 @@ final class AppModel: ObservableObject {
     /// chosen terminal — or Apple Terminal when none is set / it's no longer
     /// installed. Explicitly choosing Terminal prevents a user's `.command`
     /// file association (for example, Script Editor) from intercepting the
-    /// managed-session launcher. Requesting a new application instance makes
-    /// each managed agent a distinct terminal window even when the terminal's
-    /// normal preference is to reuse the current window as a tab or pane.
-    /// Plain `NSWorkspace`, not `osascript` UI-scripting:
-    /// the latter needs Accessibility access this app doesn't (and shouldn't
-    /// have to) request.
+    /// managed-session launcher. iTerm needs its application scripting API
+    /// for `.command` launchers: asking a new iTerm instance to open the file
+    /// creates a blank default window plus the command window, while asking
+    /// the existing instance through NSWorkspace is accepted but ignored.
+    /// `create window ... command` creates exactly one dedicated window. This
+    /// is iTerm application automation, not Accessibility/UI scripting. Other
+    /// terminals retain the NSWorkspace new-instance path.
     private func openWithTerminal(_ file: URL) {
-        let config = NSWorkspace.OpenConfiguration()
-        config.createsNewApplicationInstance = true
+        let isCommandLauncher = file.pathExtension == "command"
         let terminal = preferredTerminalURL()
             ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal")
         if let app = terminal {
             let bundleID = Bundle(url: app)?.bundleIdentifier ?? app.lastPathComponent
-            log("terminal open requested file=\(boundedLogField(file.lastPathComponent)) terminal=\(boundedLogField(bundleID)) mode=new-application-instance")
-            NSWorkspace.shared.open([file], withApplicationAt: app, configuration: config) { application, error in
-                log("terminal open completed file=\(boundedLogField(file.lastPathComponent)) accepted=\(application != nil) pid=\(application?.processIdentifier.description ?? "-") error=\(boundedLogField(error?.localizedDescription))")
+            if isCommandLauncher && bundleID == "com.googlecode.iterm2" {
+                openCommandInITerm(file, fallbackApp: app)
+            } else {
+                openWithWorkspace(file, app: app, mode: "new-application-instance")
             }
         } else {
             let accepted = NSWorkspace.shared.open(file)
             log("terminal open fallback file=\(boundedLogField(file.lastPathComponent)) accepted=\(accepted)")
+        }
+    }
+
+    private func openWithWorkspace(_ file: URL, app: URL, mode: String) {
+        let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = true
+        let bundleID = Bundle(url: app)?.bundleIdentifier ?? app.lastPathComponent
+        log("terminal open requested file=\(boundedLogField(file.lastPathComponent)) terminal=\(boundedLogField(bundleID)) mode=\(mode)")
+        NSWorkspace.shared.open([file], withApplicationAt: app, configuration: config) { application, error in
+            log("terminal open completed file=\(boundedLogField(file.lastPathComponent)) accepted=\(application != nil) pid=\(application?.processIdentifier.description ?? "-") error=\(boundedLogField(error?.localizedDescription))")
+        }
+    }
+
+    private func openCommandInITerm(_ file: URL, fallbackApp: URL) {
+        func shellQuoted(_ value: String) -> String {
+            "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        }
+        func appleScriptQuoted(_ value: String) -> String {
+            value.replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+        }
+
+        let command = "exec \(shellQuoted(file.path))"
+        let script = "tell application \"iTerm2\" to create window with default profile command \"\(appleScriptQuoted(command))\""
+        let process = Process()
+        let errorPipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = errorPipe
+        process.terminationHandler = { [weak self] process in
+            let data = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            let detail = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            log("terminal open completed file=\(boundedLogField(file.lastPathComponent)) accepted=\(process.terminationStatus == 0) mode=iterm-single-window status=\(process.terminationStatus) error=\(boundedLogField(detail))")
+            if process.terminationStatus != 0 {
+                DispatchQueue.main.async {
+                    self?.openWithWorkspace(file, app: fallbackApp,
+                                            mode: "new-application-fallback")
+                }
+            }
+        }
+        do {
+            log("terminal open requested file=\(boundedLogField(file.lastPathComponent)) terminal=com.googlecode.iterm2 mode=iterm-single-window")
+            try process.run()
+        } catch {
+            log("terminal open failed file=\(boundedLogField(file.lastPathComponent)) mode=iterm-single-window error=\(boundedLogField(error.localizedDescription))")
+            openWithWorkspace(file, app: fallbackApp, mode: "new-application-fallback")
         }
     }
 
@@ -1349,12 +1398,11 @@ final class AppModel: ObservableObject {
     }
 
     /// Recover an ended session from History under the managed tmux launcher
-    /// in a new Terminal window at its working directory. Writes a temporary
-    /// `.command` launcher and opens it with `NSWorkspace` (Terminal is the
-    /// default handler for `.command`) rather than osascript-scripting a
-    /// terminal — so it needs no Automation/Accessibility permission, same
-    /// reasoning as `openInTerminal`. The resumed session re-registers with
-    /// the daemon via its adapter hooks, so it reappears as a live session.
+    /// in a new terminal window at its working directory. Writes a temporary
+    /// `.command` launcher and routes it through `openWithTerminal`; iTerm uses
+    /// its one-window application command while other terminals use
+    /// NSWorkspace. The resumed session re-registers with the daemon via its
+    /// adapter hooks, so it reappears as a live session.
     func recoverSession(_ entry: SessionHistoryEntry) {
         launchManagedSession(entry)
     }
