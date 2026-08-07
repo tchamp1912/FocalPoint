@@ -4,7 +4,8 @@
 # The daemon runs this script when a numbered key whose slot has a live
 # session is pressed, with the session exposed via env vars:
 #   FOCALPOINT_SESSION_ID, FOCALPOINT_SESSION_KIND, FOCALPOINT_SESSION_LABEL,
-#   FOCALPOINT_SESSION_CWD, FOCALPOINT_SESSION_TTY, FOCALPOINT_SLOT
+#   FOCALPOINT_SESSION_CWD, FOCALPOINT_SESSION_TTY,
+#   FOCALPOINT_SESSION_MUX_{SERVER,SESSION,PANE}, FOCALPOINT_SLOT
 #
 # Goal: bring the terminal window/tab running that session to the front.
 #
@@ -43,17 +44,13 @@
 # Must never hang the daemon's action dispatch: every osascript call below
 # runs under a hard timeout via run_osa().
 #
-# ASSUMPTION on managed-session focus data: PROTOCOL.md §3 "Focus" documents
-# FOCALPOINT_SESSION_{ID,KIND,LABEL,NAME,DISPLAY,CWD,TTY} and FOCALPOINT_SLOT
-# as the env vars this script receives — `mux_pane` is NOT among them (it's
-# session *meta*, not one of the focus env vars the daemon exports). Rather
-# than expand the protocol for this MVP, try_managed_tmux() below recovers
-# the pane by matching $FOCALPOINT_SESSION_TTY against `tmux list-panes`'
-# pane_tty: a managed session's controlling tty (what identity.rs's ancestry
-# walk finds and hooks.sh reports as meta.tty) IS the pty tmux allocated for
-# that pane, so the match is exact, not fuzzy. If a future protocol revision
-# exports mux_pane directly as a focus env var, this lookup can be replaced
-# with a straight `tmux display-message -t "$FOCALPOINT_MUX_PANE"`.
+# Managed sessions use the exact private tmux server/session/pane tuple the
+# provider hook registered. This must not be reconstructed from tty: state
+# updates are keyed by provider session id and can keep working while cached
+# pid/tty metadata is stale, and private `tmux -L fp-*` servers are invisible
+# to a plain `tmux list-panes`. The tty remains the exact primary identity for
+# unmanaged Terminal/iTerm sessions and a fallback if the managed transport
+# has disappeared.
 #
 # MIT License - see adapters/README.md
 
@@ -77,6 +74,9 @@ else
   NEEDLE=""
 fi
 TARGET_TTY="${FOCALPOINT_SESSION_TTY:-}"
+TARGET_MUX_SERVER="${FOCALPOINT_SESSION_MUX_SERVER:-}"
+TARGET_MUX_SESSION="${FOCALPOINT_SESSION_MUX_SESSION:-}"
+TARGET_MUX_PANE="${FOCALPOINT_SESSION_MUX_PANE:-}"
 # The generic /dev/tty alias is not unique per session — treat as missing so
 # focus falls through rather than matching every colliding session at once.
 if [ "$TARGET_TTY" = "/dev/tty" ]; then
@@ -99,6 +99,13 @@ fi
 
 # Seconds to wait for any single osascript call before killing it.
 TIMEOUT_SECS="${FOCALPOINT_FOCUS_TIMEOUT:-3}"
+
+focus_log() {
+  printf '[focus-action] %s id=%s slot=%s tty=%s mux_server=%s mux_session=%s mux_pane=%s\n' \
+    "$1" "${FOCALPOINT_SESSION_ID:-}" "${FOCALPOINT_SLOT:-}" \
+    "${TARGET_TTY:-}" "${TARGET_MUX_SERVER:-}" \
+    "${TARGET_MUX_SESSION:-}" "${TARGET_MUX_PANE:-}" >&2
+}
 
 # Ttys claimed by registered sessions, for the fuzzy fallback's skip list
 # (strategy 2 above). Only queried when this session itself has no tty —
@@ -245,43 +252,66 @@ APPLESCRIPT
   return 1
 }
 
-# Managed-session focus (see the ASSUMPTION header comment above): resolves
-# the tmux pane hosting this session by exact pane_tty match, flips to its
-# window with `select-window`, then switches any attached client(s) showing
-# that session to it with `switch-client -c <client-tty>` and raises the
-# hosting terminal app by the *client's* tty (not the pane's). Returns 0
+# Managed-session focus: verifies the exact pane on its private tmux server,
+# flips to its window with `select-window`, then switches any attached
+# client(s) showing that session with `switch-client -c <client-tty>` and
+# raises the hosting terminal app by the *client's* tty (not the pane's).
+# The live pane tty is logged but deliberately not compared with cached
+# TARGET_TTY: the private server/session/pane tuple is authoritative and this
+# path exists specifically so stale pid/tty metadata cannot break focus.
+# Returns 0
 # ("handled, stop here") whenever a matching pane is found at all — even a
 # detached session with no client to raise is correctly "handled": there is
 # nothing else in this script that could find it either, and select-window
 # still means the *next* attach lands on the right window.
 try_managed_tmux() {
-  [ -n "$TARGET_TTY" ] || return 1
-  [ -n "$TMUX_BIN" ] && [ -x "$TMUX_BIN" ] || return 1
+  [ -n "$TARGET_MUX_SERVER" ] || return 1
+  if [ -z "$TMUX_BIN" ] || [ ! -x "$TMUX_BIN" ]; then
+    focus_log "result=miss strategy=managed reason=tmux-unavailable"
+    return 1
+  fi
+  if ! [[ "$TARGET_MUX_SERVER" =~ ^fp-[A-Za-z0-9_-]+$ ]] \
+     || ! [[ "$TARGET_MUX_SESSION" =~ ^[A-Za-z0-9_.-]+$ ]] \
+     || ! [[ "$TARGET_MUX_PANE" =~ ^%[0-9]+$ ]]; then
+    focus_log "result=miss strategy=managed reason=invalid-identity"
+    return 1
+  fi
 
-  local line pane_id session_name window_id
-  line=$("$TMUX_BIN" list-panes -a -F '#{pane_tty} #{pane_id} #{session_name} #{window_id}' 2>/dev/null \
-    | awk -v t="$TARGET_TTY" '$1 == t { print; exit }')
-  [ -n "$line" ] || return 1
-
-  pane_id=$(printf '%s' "$line" | awk '{print $2}')
-  session_name=$(printf '%s' "$line" | awk '{print $3}')
-  window_id=$(printf '%s' "$line" | awk '{print $4}')
-  : "$pane_id"  # unused beyond documentation/debugging; kept for clarity
+  local line session_name pane_id pane_tty window_id
+  line=$("$TMUX_BIN" -L "$TARGET_MUX_SERVER" display-message -p \
+    -t "$TARGET_MUX_PANE" \
+    '#{session_name}	#{pane_id}	#{pane_tty}	#{window_id}' 2>/dev/null) || line=""
+  if [ -z "$line" ]; then
+    focus_log "result=miss strategy=managed reason=pane-not-found"
+    return 1
+  fi
+  IFS=$'\t' read -r session_name pane_id pane_tty window_id <<<"$line"
+  if [ "$session_name" != "$TARGET_MUX_SESSION" ] \
+     || [ "$pane_id" != "$TARGET_MUX_PANE" ] \
+     || [ -z "$window_id" ]; then
+    focus_log "result=miss strategy=managed reason=ownership-mismatch"
+    return 1
+  fi
 
   # Precise in-mux focus: flip the session to the right window regardless
   # of whether any client is currently attached to see it.
-  "$TMUX_BIN" select-window -t "$window_id" 2>/dev/null || true
+  if ! "$TMUX_BIN" -L "$TARGET_MUX_SERVER" select-window -t "$window_id" 2>/dev/null; then
+    focus_log "result=miss strategy=managed reason=select-window-failed"
+    return 1
+  fi
 
   # Raise whichever real terminal window(s) are attached to this session,
   # switching each attached client to it first. Normally exactly one client
   # (per-agent layout, or cockpit layout's single shared terminal); loop
   # covers the rare case of more than one.
   local clients client_tty
-  clients=$("$TMUX_BIN" list-clients -t "$session_name" -F '#{client_tty}' 2>/dev/null)
+  clients=$("$TMUX_BIN" -L "$TARGET_MUX_SERVER" list-clients \
+    -t "$session_name" -F '#{client_tty}' 2>/dev/null)
   if [ -n "$clients" ]; then
     while IFS= read -r client_tty; do
       [ -n "$client_tty" ] || continue
-      "$TMUX_BIN" switch-client -c "$client_tty" -t "$session_name" 2>/dev/null || true
+      "$TMUX_BIN" -L "$TARGET_MUX_SERVER" switch-client \
+        -c "$client_tty" -t "$session_name" 2>/dev/null || true
       if command -v osascript >/dev/null 2>&1; then
         raise_terminal_by_tty "$client_tty" || true
       fi
@@ -290,6 +320,7 @@ $clients
 CLIENTS
   fi
 
+  focus_log "result=focused strategy=managed live_pane_tty=$pane_tty"
   return 0
 }
 
@@ -453,16 +484,19 @@ if try_managed_tmux; then
   :
 elif command -v osascript >/dev/null 2>&1; then
   if try_iterm_tty; then
-    :
+    focus_log "result=focused strategy=iterm-tty"
   elif try_terminal_tty; then
-    :
+    focus_log "result=focused strategy=terminal-tty"
   elif try_iterm; then
-    :
+    focus_log "result=focused strategy=iterm-fuzzy"
   elif try_terminal; then
-    :
+    focus_log "result=focused strategy=terminal-fuzzy"
   else
+    focus_log "result=fallback strategy=activate"
     fallback_activate
   fi
+else
+  focus_log "result=miss strategy=none reason=osascript-unavailable"
 fi
 
 exit 0

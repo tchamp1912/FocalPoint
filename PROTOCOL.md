@@ -333,11 +333,15 @@ the `[session] focus` action (config §5) instead of that key's `[actions]`
 entry, with the session exposed in env vars: `FOCALPOINT_SESSION_ID`,
 `FOCALPOINT_SESSION_KIND`, `FOCALPOINT_SESSION_LABEL`, `FOCALPOINT_SESSION_NAME`,
 `FOCALPOINT_SESSION_DISPLAY`, `FOCALPOINT_SESSION_CWD`, `FOCALPOINT_SESSION_TTY`,
+`FOCALPOINT_SESSION_MUX_SERVER`, `FOCALPOINT_SESSION_MUX_SESSION`,
+`FOCALPOINT_SESSION_MUX_PANE`,
 `FOCALPOINT_SLOT`.
 (`FOCALPOINT_SESSION_DISPLAY` is the resolved `name` → `label` → `kind` a UI
 would show; `FOCALPOINT_SESSION_NAME` is empty unless the user renamed it;
 `FOCALPOINT_SESSION_TTY` is the session's `tty` meta if the adapter supplied
-one, else empty.)
+one, else empty. The three `FOCALPOINT_SESSION_MUX_*` values expose the
+corresponding metadata for exact managed-session focus and are empty for an
+unmanaged session.)
 Keys with empty slots fall back to their normal `[actions]` mapping.
 
 `end-session` (`{"cmd":"end-session","session":"id"}`) removes a session from

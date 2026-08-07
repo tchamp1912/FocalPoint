@@ -106,13 +106,12 @@ breaks on older Claude Code versions or malformed hook payloads.
 Pressing a numbered key whose slot has a live session runs the daemon's
 `[session] focus` action instead of that key's normal `[actions]` mapping
 (PROTOCOL.md §3 "Focus"). `focus-session.sh` is the default focus action for
-macOS: it asks iTerm2, then Terminal.app, for a window/tab whose title or
-tty contains the session's cwd basename, and brings it to the front.
-
-**This is a heuristic, not a real lookup** — see the comments at the top of
-`focus-session.sh` for its known failure modes (wrong window on cwd-basename
-collisions, no match on other terminal apps or overridden titles). Wire it
-up in `~/.config/focalpoint/config.toml`:
+macOS. Managed sessions use their verified private tmux server/session/pane
+tuple, so focus does not depend on cached pid/tty metadata. Unmanaged sessions
+ask iTerm2, then Terminal.app, for an exact tty match before falling back to a
+cwd/title heuristic. The heuristic still has known failure modes (same-cwd
+collisions, overridden titles, and unsupported terminal apps). Wire it up in
+`~/.config/focalpoint/config.toml`:
 
 ```toml
 [session]

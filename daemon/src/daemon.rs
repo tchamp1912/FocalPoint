@@ -1888,19 +1888,19 @@ fn reconcile_on_startup(shared: &Mutex<Shared>) {
 /// Run the focus action for `session` (PROTOCOL.md §3 Focus), exposing the
 /// session via `FOCALPOINT_SESSION_*` env vars (empty string for missing values).
 #[cfg(unix)]
-fn run_focus(ctx: &EventCtx, session: &crate::session::Session, slot: u8) {
-    let focus = ctx.config.session.focus.clone().unwrap_or(Action::None);
-    eprintln!(
-        "[focus] id={} slot={} state={} pid={} tty={} mux={} managed={}",
-        diagnostic_text(&session.id),
-        slot,
-        session.state.name(),
-        diagnostic_meta(&session.meta, "pid"),
-        diagnostic_meta(&session.meta, "tty"),
-        diagnostic_meta(&session.meta, "mux_pane"),
-        diagnostic_meta(&session.meta, "managed"),
-    );
-    let env = vec![
+fn focus_environment(
+    session: &crate::session::Session,
+    slot: u8,
+) -> Vec<(&'static str, String)> {
+    let meta_text = |key: &str| {
+        session
+            .meta
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+    vec![
         ("FOCALPOINT_SESSION_ID", session.id.clone()),
         (
             "FOCALPOINT_SESSION_KIND",
@@ -1917,8 +1917,29 @@ fn run_focus(ctx: &EventCtx, session: &crate::session::Session, slot: u8) {
         ("FOCALPOINT_SESSION_DISPLAY", session.display_name()),
         ("FOCALPOINT_SESSION_CWD", session.cwd()),
         ("FOCALPOINT_SESSION_TTY", session.tty()),
+        ("FOCALPOINT_SESSION_MUX_SERVER", meta_text("mux_server")),
+        ("FOCALPOINT_SESSION_MUX_SESSION", meta_text("mux_session")),
+        ("FOCALPOINT_SESSION_MUX_PANE", meta_text("mux_pane")),
         ("FOCALPOINT_SLOT", slot.to_string()),
-    ];
+    ]
+}
+
+#[cfg(unix)]
+fn run_focus(ctx: &EventCtx, session: &crate::session::Session, slot: u8) {
+    let focus = ctx.config.session.focus.clone().unwrap_or(Action::None);
+    eprintln!(
+        "[focus] id={} slot={} state={} pid={} tty={} mux_server={} mux_session={} mux_pane={} managed={}",
+        diagnostic_text(&session.id),
+        slot,
+        session.state.name(),
+        diagnostic_meta(&session.meta, "pid"),
+        diagnostic_meta(&session.meta, "tty"),
+        diagnostic_meta(&session.meta, "mux_server"),
+        diagnostic_meta(&session.meta, "mux_session"),
+        diagnostic_meta(&session.meta, "mux_pane"),
+        diagnostic_meta(&session.meta, "managed"),
+    );
+    let env = focus_environment(session, slot);
     crate::actions::run_with_env(&focus, &env);
 }
 
@@ -3376,6 +3397,35 @@ mod tests {
                 }
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn focus_environment_exports_exact_managed_tmux_identity() {
+        let mut meta = serde_json::Map::new();
+        meta.insert("tty".into(), serde_json::json!("/dev/ttys-stale"));
+        meta.insert("mux_server".into(), serde_json::json!("fp-worker-42"));
+        meta.insert("mux_session".into(), serde_json::json!("worker-42"));
+        meta.insert("mux_pane".into(), serde_json::json!("%7"));
+        let session = Session {
+            id: "claude-session".into(),
+            kind: Some("claude".into()),
+            label: Some("Parser implementation".into()),
+            name: None,
+            meta,
+            carry: serde_json::Map::new(),
+            slot: Some(4),
+            state: State::Thinking,
+            last_update: Instant::now(),
+        };
+        let env: std::collections::HashMap<_, _> =
+            focus_environment(&session, 4).into_iter().collect();
+
+        assert_eq!(env["FOCALPOINT_SESSION_TTY"], "/dev/ttys-stale");
+        assert_eq!(env["FOCALPOINT_SESSION_MUX_SERVER"], "fp-worker-42");
+        assert_eq!(env["FOCALPOINT_SESSION_MUX_SESSION"], "worker-42");
+        assert_eq!(env["FOCALPOINT_SESSION_MUX_PANE"], "%7");
+        assert_eq!(env["FOCALPOINT_SLOT"], "4");
     }
 
     #[test]
