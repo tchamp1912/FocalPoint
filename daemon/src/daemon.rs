@@ -2456,7 +2456,7 @@ fn session_to_json(s: &Session) -> Value {
 /// `last_update`/`reaped_at` (reconstructed by the caller — see
 /// `restore_instant`). `None` on any malformed/missing required field.
 #[cfg(unix)]
-fn session_from_json(v: &serde_json::Value, last_update: Instant) -> Option<Session> {
+fn session_from_json(v: &serde_json::Value, last_update: Instant, live: bool) -> Option<Session> {
     let id = v.get("session")?.as_str()?.to_string();
     let state = crate::protocol::State::from_name(v.get("state")?.as_str()?)?;
     let mut meta = v
@@ -2493,11 +2493,11 @@ fn session_from_json(v: &serde_json::Value, last_update: Instant) -> Option<Sess
             carry.entry(key.to_string()).or_insert(value);
         }
     }
-    let attachment: Option<Attachment> = v
+    let persisted_attachment: Option<Attachment> = v
         .get("attachment")
         .cloned()
         .and_then(|value| serde_json::from_value(value).ok());
-    let health = v
+    let persisted_health = v
         .get("health")
         .and_then(Value::as_str)
         .and_then(|value| match value {
@@ -2506,8 +2506,25 @@ fn session_from_json(v: &serde_json::Value, last_update: Instant) -> Option<Sess
             "unknown" => Some(SessionHealth::Unknown),
             "detached" => Some(SessionHealth::Detached),
             _ => None,
+        });
+    // Snapshot migration: pre-attachment live rows had `attachment: null`.
+    // Represent them explicitly as unverified so the five-minute grace rule
+    // can release stale slots. Tombstones stay detached with no attachment.
+    let migrated_unverified = live
+        && persisted_attachment.is_none()
+        && persisted_health != Some(SessionHealth::Detached);
+    let attachment = persisted_attachment.or_else(|| {
+        migrated_unverified.then(|| Attachment::Unverified {
+            id: format!(
+                "unverified:restored:{}",
+                id.chars()
+                    .filter(|ch| !ch.is_control())
+                    .take(160)
+                    .collect::<String>()
+            ),
         })
-        .unwrap_or(if attachment.is_some() {
+    });
+    let health = persisted_health.unwrap_or(if attachment.is_some() {
             SessionHealth::Suspect
         } else {
             SessionHealth::Unknown
@@ -2531,7 +2548,11 @@ fn session_from_json(v: &serde_json::Value, last_update: Instant) -> Option<Sess
         health_reason: v
             .get("health_reason")
             .and_then(Value::as_str)
-            .map(str::to_string),
+            .map(str::to_string)
+            .or_else(|| {
+                migrated_unverified
+                    .then(|| "restored integration awaiting authoritative ownership".into())
+            }),
         last_verified: v
             .get("last_verified_elapsed_ms")
             .and_then(Value::as_u64)
@@ -2723,7 +2744,7 @@ fn load_snapshot(
                 .get("elapsed_ms_since_update")
                 .and_then(|x| x.as_u64())
                 .unwrap_or(0);
-            session_from_json(v, restore_instant(saved_at_unix_ms, elapsed))
+            session_from_json(v, restore_instant(saved_at_unix_ms, elapsed), true)
         })
         .collect();
 
@@ -2738,7 +2759,7 @@ fn load_snapshot(
                 .and_then(|x| x.as_u64())
                 .unwrap_or(0);
             let reaped_at = restore_instant(saved_at_unix_ms, elapsed);
-            let sess = session_from_json(v, reaped_at)?;
+            let sess = session_from_json(v, reaped_at, false)?;
             let id = sess.id.clone();
             Some((id, sess, reaped_at))
         })
@@ -5101,7 +5122,7 @@ mod tests {
             slot_history: Vec::new(),
         };
         let v = session_to_json(&original);
-        let restored = session_from_json(&v, original.last_update).expect("parses");
+        let restored = session_from_json(&v, original.last_update, true).expect("parses");
         assert_eq!(restored.id, original.id);
         assert_eq!(restored.kind, original.kind);
         assert_eq!(restored.label, original.label);
@@ -5189,12 +5210,42 @@ mod tests {
 
     #[test]
     fn session_from_json_rejects_malformed_input() {
-        assert!(session_from_json(&json!({"kind": "claude"}), Instant::now()).is_none());
+        assert!(
+            session_from_json(&json!({"kind": "claude"}), Instant::now(), true).is_none()
+        );
         assert!(session_from_json(
             &json!({"session": "x", "state": "not-a-real-state"}),
-            Instant::now()
+            Instant::now(),
+            true
         )
         .is_none());
+    }
+
+    #[test]
+    fn legacy_live_snapshot_without_attachment_migrates_to_unverified() {
+        let legacy = json!({
+            "session": "legacy-codex",
+            "state": "running",
+            "kind": "codex",
+            "slot": 6,
+            "health": "unknown",
+            "meta": {}
+        });
+
+        let live = session_from_json(&legacy, Instant::now(), true).expect("live session parses");
+        assert!(matches!(
+            live.attachment,
+            Some(Attachment::Unverified { .. })
+        ));
+        assert_eq!(live.health, SessionHealth::Unknown);
+        assert_eq!(
+            live.health_reason.as_deref(),
+            Some("restored integration awaiting authoritative ownership")
+        );
+
+        let tombstone =
+            session_from_json(&legacy, Instant::now(), false).expect("tombstone parses");
+        assert!(tombstone.attachment.is_none());
     }
 
     #[test]
