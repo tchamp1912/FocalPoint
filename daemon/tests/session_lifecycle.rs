@@ -275,7 +275,7 @@ fn pane_local_reregister_reconstructs_managed_identity() {
     let fake_tmux = d.dir.join("fake-tmux");
     std::fs::write(
         &fake_tmux,
-        "#!/bin/bash\nprintf 'fp-codex-42\\t%%4\\t/dev/ttys042\\n'\n",
+        "#!/bin/bash\nprintf 'fp-codex-42|%%4|/dev/ttys042\\n'\n",
     )
     .unwrap();
     std::fs::set_permissions(&fake_tmux, std::fs::Permissions::from_mode(0o700)).unwrap();

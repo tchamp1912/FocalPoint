@@ -14,7 +14,7 @@ fi
 shift 2
 case "$1" in
   display-message)
-    printf 'worker-42\t%%7\t/dev/ttys099\t@3\n'
+    printf 'worker-42|%%7|/dev/ttys099|@3\n'
     ;;
   select-window)
     ;;

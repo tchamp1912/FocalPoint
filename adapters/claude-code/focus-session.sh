@@ -263,12 +263,14 @@ try_managed_tmux() {
   local line session_name pane_id pane_tty window_id
   line=$("$TMUX_BIN" -L "$TARGET_MUX_SERVER" display-message -p \
     -t "$TARGET_MUX_PANE" \
-    '#{session_name}	#{pane_id}	#{pane_tty}	#{window_id}' 2>/dev/null) || line=""
+    '#{session_name}|#{pane_id}|#{pane_tty}|#{window_id}' 2>/dev/null) || line=""
   if [ -z "$line" ]; then
     focus_log "result=miss strategy=managed reason=pane-not-found"
     return 1
   fi
-  IFS=$'\t' read -r session_name pane_id pane_tty window_id <<<"$line"
+  # tmux replaces literal control characters in formatted output, so use a
+  # printable separator excluded by the validated identity fields above.
+  IFS='|' read -r session_name pane_id pane_tty window_id <<<"$line"
   if [ "$session_name" != "$TARGET_MUX_SESSION" ] \
      || [ "$pane_id" != "$TARGET_MUX_PANE" ] \
      || [ -z "$window_id" ]; then

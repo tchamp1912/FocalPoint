@@ -674,7 +674,58 @@ fn correlate_pending_managed_launch(
     }
     socket_dirs.sort();
     socket_dirs.dedup();
-    for (task_id, _) in registry.pending_managed_launches() {
+    let mut candidate_tasks: Vec<String> = registry
+        .pending_managed_launches()
+        .into_iter()
+        .map(|(task_id, _)| task_id)
+        .collect();
+    if let Some(task_id) = reported_task
+        .as_deref()
+        .filter(|task_id| valid_orchestrator_task_id(task_id))
+    {
+        candidate_tasks.push(task_id.to_string());
+    }
+    // Reservations are in-memory, while receipts are durable. After a daemon
+    // restart, rediscover receipt-owned tasks so a provider that stripped all
+    // FOCALPOINT_* hook variables can still prove its exact pane ownership.
+    if let Ok(entries) = std::fs::read_dir(&receipt_dir) {
+        for entry in entries.flatten().take(256) {
+            let path = entry.path();
+            if path.extension().and_then(|value| value.to_str()) != Some("json") {
+                continue;
+            }
+            let Some(task_id) = path.file_stem().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            if !valid_orchestrator_task_id(task_id)
+                || std::fs::metadata(&path).map_or(true, |meta| meta.len() > 64 * 1024)
+            {
+                continue;
+            }
+            let Ok(receipt) = std::fs::read(&path)
+                .ok()
+                .and_then(|data| serde_json::from_slice::<Value>(&data).ok())
+                .ok_or(())
+            else {
+                continue;
+            };
+            let active_status = receipt
+                .get("status")
+                .and_then(Value::as_str)
+                .map_or(true, |status| {
+                    matches!(status, "opening" | "launched" | "launching" | "registered")
+                });
+            if active_status
+                && receipt.get("task_id").and_then(Value::as_str) == Some(task_id)
+                && receipt.get("provider").and_then(Value::as_str) == kind
+            {
+                candidate_tasks.push(task_id.to_string());
+            }
+        }
+    }
+    candidate_tasks.sort();
+    candidate_tasks.dedup();
+    for task_id in candidate_tasks {
         if reported_task
             .as_deref()
             .is_some_and(|reported| reported != task_id)
@@ -706,12 +757,12 @@ fn correlate_pending_managed_launch(
         candidate_servers.sort();
         candidate_servers.dedup();
         for server in candidate_servers {
-            let Ok(output) = Command::new(&tmux).args(["-L", &server, "list-panes", "-a", "-F", "#{session_name}\t#{pane_id}\t#{pane_tty}\t#{pane_pid}\t#{pane_current_command}"]).output() else { continue };
+            let Ok(output) = Command::new(&tmux).args(["-L", &server, "list-panes", "-a", "-F", "#{session_name}|#{pane_id}|#{pane_tty}|#{pane_pid}|#{pane_current_command}"]).output() else { continue };
             if !output.status.success() {
                 continue;
             }
             for line in String::from_utf8_lossy(&output.stdout).lines() {
-                let fields: Vec<&str> = line.split('\t').collect();
+                let fields: Vec<&str> = line.split('|').collect();
                 if fields.len() != 5 || fields[2] != tty {
                     continue;
                 }
@@ -842,7 +893,10 @@ fn channel_wake_target(recipient: &Session) -> Option<(String, String, String, S
 /// on any normal/default tmux server is notification-only.
 #[cfg(unix)]
 fn send_channel_wake(server: &str, session: &str, pane: &str, tty: &str) {
-    let output = match Command::new("tmux")
+    let Some(tmux) = executable_named("tmux") else {
+        return;
+    };
+    let output = match Command::new(&tmux)
         .args([
             "-L",
             server,
@@ -850,7 +904,7 @@ fn send_channel_wake(server: &str, session: &str, pane: &str, tty: &str) {
             "-t",
             session,
             "-F",
-            "#{pane_id}\t#{pane_tty}",
+            "#{pane_id}|#{pane_tty}",
         ])
         .output()
     {
@@ -859,9 +913,9 @@ fn send_channel_wake(server: &str, session: &str, pane: &str, tty: &str) {
     };
     let target_is_owned = std::str::from_utf8(&output.stdout)
         .ok()
-        .is_some_and(|lines| lines.lines().any(|line| line == format!("{pane}\t{tty}")));
+        .is_some_and(|lines| lines.lines().any(|line| line == format!("{pane}|{tty}")));
     if target_is_owned {
-        let _ = Command::new("tmux")
+        let _ = Command::new(tmux)
             .args([
                 "-L",
                 server,
@@ -2837,7 +2891,7 @@ fn probe_runtime_attachments(sessions: &[Session]) -> Vec<(String, bool, Option<
                     "list-panes",
                     "-a",
                     "-F",
-                    "#{session_name}\t#{pane_id}\t#{pane_tty}",
+                    "#{session_name}|#{pane_id}|#{pane_tty}",
                 ])
                 .output()
                 .ok()
@@ -2849,7 +2903,7 @@ fn probe_runtime_attachments(sessions: &[Session]) -> Vec<(String, bool, Option<
         for (id, session, pane, tty) in expected {
             let exact = observed
                 .lines()
-                .any(|line| line == format!("{session}\t{pane}\t{tty}"));
+                .any(|line| line == format!("{session}|{pane}|{tty}"));
             results.push((
                 id,
                 exact,

@@ -412,7 +412,7 @@ pub fn re_register(
             "-p",
             "-t",
             &pane,
-            "#{session_name}\t#{pane_id}\t#{pane_tty}",
+            "#{session_name}|#{pane_id}|#{pane_tty}",
         ])
         .output()
         .map_err(|error| CliError::new(format!("cannot inspect managed pane: {error}"), 1))?;
@@ -424,7 +424,10 @@ pub fn re_register(
     }
     let identity = String::from_utf8(output.stdout)
         .map_err(|_| CliError::new("tmux returned invalid pane identity", 1))?;
-    let mut fields = identity.trim().split('\t');
+    // tmux rewrites literal control characters in format output, so a tab
+    // cannot be used as a field separator. These fields are validated below
+    // and cannot themselves contain `|`.
+    let mut fields = identity.trim().split('|');
     let mux_session = fields.next().unwrap_or("");
     let mux_pane = fields.next().unwrap_or("");
     let tty = fields.next().unwrap_or("");

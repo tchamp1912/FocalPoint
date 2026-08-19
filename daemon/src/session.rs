@@ -1471,6 +1471,24 @@ impl Registry {
                 let reserved_launch = launch_task_id
                     .as_deref()
                     .and_then(|task_id| self.managed_launch_reservations.remove(task_id));
+                let authorized_slot = reserved_launch
+                    .as_ref()
+                    .and_then(|reservation| reservation.slot)
+                    .or_else(|| {
+                        meta.as_ref()
+                            .and_then(|fields| fields.get("_authorized_requested_slot"))
+                            .and_then(Value::as_u64)
+                            .and_then(|value| u8::try_from(value).ok())
+                            .filter(|value| (1..=12).contains(value))
+                    })
+                    .filter(|requested| {
+                        !self.sessions.values().any(|session| {
+                            session.id != id && session.slot == Some(*requested)
+                        }) && !self
+                            .managed_launch_reservations
+                            .values()
+                            .any(|reservation| reservation.slot == Some(*requested))
+                    });
                 if let Some(sess) = self.sessions.get_mut(id) {
                     // Update + merge.
                     let is_claude =
@@ -1490,6 +1508,15 @@ impl Registry {
                     if let Some(mut m) = meta {
                         record_claude_precompact(&mut sess.meta, &mut m, state, is_claude);
                         apply_meta_update(&mut sess.meta, &sess.carry, m);
+                    }
+                    if let Some(slot) = authorized_slot.filter(|slot| sess.slot != Some(*slot)) {
+                        if let Some(old_slot) = sess.slot {
+                            effects.push(Effect::SlotCleared { slot: old_slot });
+                        }
+                        sess.slot = Some(slot);
+                        if sess.slot_history.last().copied() != Some(slot) {
+                            sess.slot_history.push(slot);
+                        }
                     }
                     sess.last_update = now;
                     effects.push(Effect::SessionUpsert {
@@ -2341,6 +2368,38 @@ mod tests {
         );
         assert_eq!(registry.sessions["worker-provider"].slot, Some(6));
         assert!(registry.cancel_managed_launch("worker-6").is_none());
+    }
+
+    #[test]
+    fn authoritative_receipt_correlation_restores_an_existing_sessions_slot() {
+        let mut registry = Registry::new(None);
+        let now = Instant::now();
+        registry.set_state(
+            Some("provider-session"),
+            State::Thinking,
+            Some("codex".into()),
+            None,
+            None,
+            now,
+        );
+        assert_eq!(registry.sessions["provider-session"].slot, Some(1));
+
+        let mut correlated = Map::new();
+        correlated.insert("_correlated_launch_task_id".into(), "worker-6".into());
+        correlated.insert("_authorized_requested_slot".into(), 6.into());
+        let effects = registry.set_state(
+            Some("provider-session"),
+            State::Running,
+            Some("codex".into()),
+            None,
+            Some(correlated),
+            now,
+        );
+
+        assert_eq!(registry.sessions["provider-session"].slot, Some(6));
+        assert!(effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::SlotCleared { slot: 1 })));
     }
 
     #[test]
