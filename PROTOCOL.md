@@ -117,6 +117,8 @@ Requests:
 {"cmd": "focus-next-attention"}
 {"cmd": "focus-prev-attention"}
 {"cmd": "focus-session", "session": "id"}
+{"cmd": "resume-session", "provider": "codex", "cwd": "/prepared/path",
+ "session": "provider-session-id", "title": "Parser implementation"}
 {"cmd": "launch-session", "provider": "codex", "model": "gpt-5.6-sol", "cwd": "/prepared/path",
  "task": "Implement and test the assigned task.", "task_id": "stable-task-id",
  "title": "Parser implementation",
@@ -381,9 +383,11 @@ Front-ends use it to focus a session with no live slot to press: a
 disconnected session (its terminal is usually still open — idle past the TTL,
 or an agent crash that left the window), or a slotless overflow session (>12
 live). Same env vars as above, from the session's last-known values.
-Every successful focus path (a session key, arrow navigation, or
-`focus-session`) broadcasts `{"event":"focus","session":"id"}` so every
-connected FocalPoint UI highlights the selected session.
+Focus resolves only an exact managed pane, terminal session unique ID, or
+terminal tty. It never matches provider kind/cwd/title and never generically
+activates a terminal application. Every attempt emits `focus-result` with
+`focused`, `endpoint-missing`, or `attachment-stale`; only a successful attempt
+also broadcasts `{"event":"focus","session":"id"}`.
 
 The daemon owns a complete attention order separately from numbered slots.
 `get-attention-order` returns `{"ok":true,"sessions":[...]}`.
@@ -409,15 +413,18 @@ corresponding arrow black.
 `claude`, `codex`, or `cursor`, an optional provider model id/alias, an existing
 absolute working directory, a literal
 non-empty task of at most 16384 UTF-8 bytes, and a stable task id of 1–64
-letters, digits, dots, underscores, or dashes. The daemon rejects duplicate
-task ids and starts the provider through the installed managed-session
-launcher in a new application instance/window of the terminal selected by the
-FocalPoint menu-bar app. An optional printable `title` (defaulting to
+letters, digits, dots, underscores, or dashes. The daemon makes duplicate
+requests idempotent and starts the provider through the installed managed-session
+launcher in exactly one window of the terminal selected by the FocalPoint
+menu-bar app. iTerm is addressed by bundle ID and receives
+`/bin/zsh -l '<launcher>'`; a second app instance is never created. An optional
+printable `title` (defaulting to
 `task_id`) supplies the stable human identity. The daemon reserves the next
 numbered slot before opening the terminal, returns `slot` and `title`, and
-prepends both to the provider's initial task. Reservations are consumed by the
-first hook carrying the matching task id and expire after 120 seconds if no
-registration arrives. The daemon
+prepends both to the provider's initial task. Reservations are consumed only
+after the resolved provider PID/pane tty is matched to the daemon-owned private
+tmux pane, so hooks need not forward any `FOCALPOINT_*` variables. They expire
+after 120 seconds if no exact registration arrives. The daemon
 reads that preference for each launch, so changing terminals requires no
 daemon restart; a missing or invalid preference falls back to Terminal. It
 does not create worktrees, prepare environments, install
@@ -477,6 +484,10 @@ Responses / events:
 {"ok": true, "sessions": [{"session": "id", "kind": "claude", "label": "focalpoint",
                            "name": "Backend", "slot": 1, "state": "waiting",
                            "backlogged": false, "connected": true,
+                           "health": "healthy", "attachment_type": "process",
+                           "attachment_id": "process:...",
+                           "last_activity_unix_ms": 1787130000000,
+                           "last_verified_unix_ms": 1787130000000,
                            "meta": {"cwd": "/path"}}]}
 {"event": "state", "state": "thinking"}
 {"event": "session", "session": "id", "kind": "claude", "label": "focalpoint",
@@ -484,9 +495,15 @@ Responses / events:
  "meta": {"cwd": "/path"}}
 {"event": "session-ended", "session": "id", "slot": 1}
 {"event": "session-disconnected", "session": "id", "slot": 1}
+{"event": "session-health-changed", "session": "id", "health": "suspect",
+ "reason": "provider process is absent"}
 {"event": "session-rekeyed", "old_session": "old-id", "new_session": "new-id"}
 {"event": "attention-order", "sessions": ["id-a", "id-b"]}
 {"event": "focus", "session": "id"}
+{"event": "focus-result", "session": "id", "slot": 1,
+ "attachment_id": "process:...", "strategy": "terminal-session-id",
+ "result": "endpoint-missing", "terminal_pid": 123,
+ "terminal_session_id": "unique-id", "reason": "no exact terminal endpoint"}
 {"event": "key", "control": "accept", "pressed": true}
 {"event": "dial", "delta": 2}
 {"event": "joy", "gesture": "north"}

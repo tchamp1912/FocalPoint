@@ -264,12 +264,24 @@ struct MenuContentView: View {
                                     .help("Reopening — waiting for the resumed agent to reconnect")
                                 Text("Reopening\u{2026}")
                                     .font(.caption).foregroundStyle(.secondary)
+                            } else if s.health == .unknown {
+                                Image(systemName: "questionmark.circle")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                                    .help(s.healthReason ?? s.health.display)
+                                Text("Unknown")
+                                    .font(.caption).foregroundStyle(.secondary)
                             } else if !s.connected {
                                 FocalPointMark(color: .secondary,
                                                assetName: "focalpoint-disconnected")
                                     .frame(width: 11, height: 11)
                                     .help("Disconnected — no update in a while (often just idle past the timeout). Kept for recovery; click to try to reopen its terminal, or dismiss it.")
                                 Text("Disconnected")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            } else if s.health == .suspect {
+                                Image(systemName: "exclamationmark.triangle")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                                    .help(s.healthReason ?? s.health.display)
+                                Text(s.health.display)
                                     .font(.caption).foregroundStyle(.secondary)
                             } else {
                                 StateSwatch(state: displayState, color: swatchColor, size: 7)

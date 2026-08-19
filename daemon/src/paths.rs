@@ -38,3 +38,14 @@ pub fn daemon_state_path() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("/tmp"));
     base.join("focalpoint").join("state.json")
 }
+
+/// Durable daemon-owned state directory. Launch, resume, and relaunch
+/// receipts live beside `state.json` and therefore honor `XDG_STATE_HOME`
+/// too; all launch paths must resolve this directory identically or a hook
+/// cannot correlate with the receipt that reserved its slot.
+pub fn daemon_state_dir() -> PathBuf {
+    daemon_state_path()
+        .parent()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/tmp/focalpoint"))
+}

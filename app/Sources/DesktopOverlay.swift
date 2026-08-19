@@ -540,8 +540,12 @@ struct DesktopWidgetView: View {
         let status: String
         if s.pendingReopen {
             status = "Reopening"
+        } else if s.health == .unknown {
+            status = s.healthReason.map { "Unknown — \($0)" } ?? "Unknown"
         } else if !s.connected {
             status = "Disconnected"
+        } else if s.health == .suspect {
+            status = s.healthReason.map { "\(s.health.display) — \($0)" } ?? s.health.display
         } else if model.isStale(s) {
             status = "\(AgentState.idle.display) — no update in a while"
         } else {
@@ -601,10 +605,18 @@ struct DesktopWidgetView: View {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 9)).foregroundStyle(.secondary)
                         .help("Reopening — waiting for the resumed agent to reconnect")
+                } else if s.health == .unknown {
+                    Image(systemName: "questionmark.circle")
+                        .font(.system(size: 9)).foregroundStyle(.secondary)
+                        .help(s.healthReason ?? "Unknown")
                 } else if !s.connected {
                     FocalPointMark(color: .secondary, assetName: "focalpoint-disconnected")
                         .frame(width: 12, height: 12)
                         .help("Disconnected — no update in a while. Click to try to reopen its terminal, or dismiss it.")
+                } else if s.health == .suspect {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 9)).foregroundStyle(.secondary)
+                        .help(s.healthReason ?? s.health.display)
                 } else {
                     StateSwatch(state: displayState, color: swatchColor, size: 8)
                         .help(stale ? "No update in a while — shown as idle since the agent may have died without a clean shutdown"

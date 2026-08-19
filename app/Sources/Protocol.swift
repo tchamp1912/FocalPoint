@@ -113,6 +113,12 @@ func defaultStyle(_ s: AgentState) -> StateStyle {
 
 // MARK: - Live session record
 
+enum SessionHealth: String, Codable {
+    case healthy, suspect, unknown, detached
+
+    var display: String { rawValue.capitalized }
+}
+
 /// A well-known optional per-session stat an adapter may report via
 /// `set-state --meta key=value` (PROTOCOL.md §4). Every stat is opt-in on
 /// both ends: an adapter reports whatever it can, and the UI (Settings →
@@ -220,6 +226,11 @@ struct SessionInfo: Identifiable, Equatable {
     /// it, it reconnects/recovers, or its tombstone TTL expires. `state`
     /// holds its last-known state at the moment it was reaped.
     var connected: Bool = true
+    var health: SessionHealth = .unknown
+    var healthReason: String?
+    var attachmentID: String?
+    var attachmentType: String?
+    var lastVerified: Date?
     /// True when the user parked this session in the backlog via
     /// `set-session-backlogged` (PROTOCOL.md §3): still registered and
     /// focusable by id, but it released its numbered-key slot (slot is nil)

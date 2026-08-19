@@ -198,7 +198,7 @@ fn usable_tty(raw: &str) -> Option<String> {
 
 /// Controlling terminal for `pid`, via `ps -o tty=`. Used for focus matching
 /// (iTerm/Terminal compare against `/dev/ttys00N`).
-fn tty_for_pid(pid: i32) -> Option<String> {
+pub(crate) fn tty_for_pid(pid: i32) -> Option<String> {
     let output = Command::new("ps")
         .args(["-o", "tty=", "-p", &pid.to_string()])
         .output()
@@ -240,6 +240,17 @@ fn repair_cached_identity(session_id: &str, mut identity: Identity) -> Identity 
             }
         }
     }
+    if identity.pid.is_some()
+        && (identity.boot_time.is_none()
+            || identity.process_start_time.is_none()
+            || identity.executable.is_none())
+    {
+        let (boot_time, process_start_time, executable) = process_fingerprint(identity.pid);
+        identity.boot_time = boot_time;
+        identity.process_start_time = process_start_time;
+        identity.executable = executable;
+        save_identity(session_id, &identity);
+    }
     identity
 }
 
@@ -247,6 +258,34 @@ fn repair_cached_identity(session_id: &str, mut identity: Identity) -> Identity 
 pub struct Identity {
     pub tty: Option<String>,
     pub pid: Option<i32>,
+    /// System boot epoch (seconds) and process birth time are part of the
+    /// attachment fingerprint.  A PID or tty on its own is reusable and is
+    /// therefore never authoritative session identity.
+    #[serde(default)]
+    pub boot_time: Option<u64>,
+    #[serde(default)]
+    pub process_start_time: Option<u64>,
+    #[serde(default)]
+    pub executable: Option<String>,
+}
+
+fn process_fingerprint(pid: Option<i32>) -> (Option<u64>, Option<u64>, Option<String>) {
+    let Some(pid) = pid else {
+        return (None, None, None);
+    };
+    let sys_pid = sysinfo::Pid::from_u32(pid as u32);
+    let mut system = sysinfo::System::new();
+    system.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[sys_pid]), true);
+    let Some(process) = system.process(sys_pid) else {
+        return (None, None, None);
+    };
+    (
+        Some(sysinfo::System::boot_time()),
+        Some(process.start_time()),
+        process
+            .exe()
+            .map(|path| path.to_string_lossy().into_owned()),
+    )
 }
 
 fn identity_dir() -> PathBuf {
@@ -338,9 +377,13 @@ pub fn resolve_identity(session_id: &str, target_comm: &str, refresh: bool) -> I
     // the next hook. Non-refresh calls may retain a prior usable PID while
     // repairing its tty.
     let pid = select_resolved_pid(walked_pid, cached_pid, refresh);
+    let (boot_time, process_start_time, executable) = process_fingerprint(pid);
     let identity = Identity {
         tty: resolve_tty(pid),
         pid,
+        boot_time,
+        process_start_time,
+        executable,
     };
     save_identity_or_rearm(session_id, &identity);
     identity
@@ -536,6 +579,7 @@ mod tests {
             &Identity {
                 tty: None,
                 pid: None,
+                ..Identity::default()
             },
         );
 
@@ -574,6 +618,7 @@ mod tests {
         let identity = Identity {
             tty: Some("/dev/ttys003".to_string()),
             pid: Some(4242),
+            ..Identity::default()
         };
         save_identity(id, &identity);
         assert_eq!(load_identity(id), Some(identity));

@@ -14,6 +14,7 @@
 //! emitted as a session event.
 
 use crate::protocol::{NavStates, State};
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -83,22 +84,46 @@ pub struct MetricSpec {
 /// increment is the only writer. Either way there is one unified home for
 /// it instead of the previous daemon-only special case.
 pub const METRICS: &[MetricSpec] = &[
-    MetricSpec { key: "turns", accumulation: Accumulation::CumulativeSegments },
-    MetricSpec { key: "tool_calls", accumulation: Accumulation::CumulativeSegments },
+    MetricSpec {
+        key: "turns",
+        accumulation: Accumulation::CumulativeSegments,
+    },
+    MetricSpec {
+        key: "tool_calls",
+        accumulation: Accumulation::CumulativeSegments,
+    },
     // Current active count (started - finished), not cumulative — an
     // adapter reports a point-in-time reading each update, so this is a
     // Gauge like `context_tokens`, not a segment total to sum. Explicitly
     // listed (rather than relying on the unclassified-key default) so its
     // classification is a visible decision, not an accident.
-    MetricSpec { key: "subagents", accumulation: Accumulation::Gauge },
-    MetricSpec { key: "tokens_in", accumulation: Accumulation::CumulativeSegments },
-    MetricSpec { key: "tokens_out", accumulation: Accumulation::CumulativeSegments },
-    MetricSpec { key: "cost_usd", accumulation: Accumulation::CumulativeSegments },
-    MetricSpec { key: "compactions", accumulation: Accumulation::CumulativeLineage },
+    MetricSpec {
+        key: "subagents",
+        accumulation: Accumulation::Gauge,
+    },
+    MetricSpec {
+        key: "tokens_in",
+        accumulation: Accumulation::CumulativeSegments,
+    },
+    MetricSpec {
+        key: "tokens_out",
+        accumulation: Accumulation::CumulativeSegments,
+    },
+    MetricSpec {
+        key: "cost_usd",
+        accumulation: Accumulation::CumulativeSegments,
+    },
+    MetricSpec {
+        key: "compactions",
+        accumulation: Accumulation::CumulativeLineage,
+    },
     // A subset of Claude's compactions. The daemon increments this from a
     // trusted PreCompact lifecycle marker, so it is already a lineage total
     // when a Claude continuation rekeys to a new session id.
-    MetricSpec { key: "plan_compactions", accumulation: Accumulation::CumulativeLineage },
+    MetricSpec {
+        key: "plan_compactions",
+        accumulation: Accumulation::CumulativeLineage,
+    },
 ];
 
 /// Look up `key`'s accumulation kind in `METRICS`, defaulting to `Gauge` for
@@ -219,39 +244,237 @@ fn record_claude_precompact(
     }
 }
 
-/// How many of `{label, cwd, tty, pid}` agree between `candidate` and the
-/// incoming registration's own values. Each field only counts when
-/// non-empty/present on *both* sides — an empty-vs-empty "match" (e.g. two
-/// sessions that both failed to resolve a tty) must never count, or two
-/// unrelated sessions sharing nothing real could still hit the threshold.
-/// See `Registry::find_recovery_candidate` for how the resulting score is
-/// used (≥2 required).
-fn count_identity_matches(
-    candidate: &Session,
-    incoming_label: &str,
-    incoming_cwd: &str,
-    incoming_tty: &str,
-    incoming_pid: Option<i32>,
-) -> u32 {
-    let mut n = 0;
-    if !incoming_label.is_empty() && Some(incoming_label) == candidate.label.as_deref() {
-        n += 1;
-    }
-    if !incoming_cwd.is_empty() && incoming_cwd == candidate.cwd() {
-        n += 1;
-    }
-    if !incoming_tty.is_empty() && incoming_tty == candidate.tty() {
-        n += 1;
-    }
-    if let (Some(a), Some(b)) = (incoming_pid, candidate.pid()) {
-        if a == b {
-            n += 1;
-        }
-    }
-    n
+/// Runtime health of the optional attachment; provider conversation records
+/// remain durable when an attachment becomes detached.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SessionHealth {
+    Healthy,
+    Suspect,
+    Unknown,
+    Detached,
 }
 
-/// A live, identified session.
+impl SessionHealth {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Healthy => "healthy",
+            Self::Suspect => "suspect",
+            Self::Unknown => "unknown",
+            Self::Detached => "detached",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TerminalEndpoint {
+    pub bundle_id: Option<String>,
+    pub application_pid: Option<i32>,
+    pub window_id: Option<String>,
+    pub session_id: Option<String>,
+    pub host_tty: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum Attachment {
+    Process {
+        id: String,
+        boot_time: u64,
+        pid: i32,
+        process_start_time: u64,
+        executable: String,
+        pane_tty: Option<String>,
+        terminal: TerminalEndpoint,
+    },
+    Managed {
+        id: String,
+        launch_id: String,
+        mux_server: String,
+        mux_session: String,
+        mux_pane: String,
+        pane_tty: String,
+        client_tty: Option<String>,
+        terminal: TerminalEndpoint,
+    },
+    Unverified {
+        id: String,
+    },
+}
+
+impl Attachment {
+    pub fn id(&self) -> &str {
+        match self {
+            Self::Process { id, .. } | Self::Managed { id, .. } | Self::Unverified { id } => id,
+        }
+    }
+
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Process { .. } => "process",
+            Self::Managed { .. } => "managed",
+            Self::Unverified { .. } => "unverified",
+        }
+    }
+}
+
+fn bounded_attachment_component(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| !ch.is_control())
+        .take(160)
+        .collect()
+}
+
+fn terminal_endpoint(meta: &Map<String, Value>, pane_tty: Option<&str>) -> TerminalEndpoint {
+    let text = |key: &str| {
+        meta.get(key)
+            .and_then(Value::as_str)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string)
+    };
+    TerminalEndpoint {
+        bundle_id: text("terminal_bundle_id"),
+        application_pid: meta
+            .get("terminal_application_pid")
+            .and_then(Value::as_i64)
+            .and_then(|v| i32::try_from(v).ok()),
+        window_id: text("terminal_window_id"),
+        session_id: text("terminal_session_id"),
+        host_tty: text("terminal_host_tty").or_else(|| pane_tty.map(str::to_string)),
+    }
+}
+
+fn attachment_from_meta(meta: &Map<String, Value>) -> Attachment {
+    let text = |key: &str| {
+        meta.get(key)
+            .and_then(Value::as_str)
+            .filter(|v| !v.is_empty())
+    };
+    let pid = meta
+        .get("pid")
+        .and_then(Value::as_i64)
+        .and_then(|v| i32::try_from(v).ok());
+    let boot = meta.get("process_boot_time").and_then(Value::as_u64);
+    let start = meta.get("process_start_time").and_then(Value::as_u64);
+    let executable = text("provider_executable");
+    let pane_tty = text("tty");
+    let managed = meta.get("managed").is_some_and(|value| {
+        value == &Value::Bool(true) || matches!(value.as_str(), Some("true" | "1"))
+    });
+    if managed {
+        if let (Some(server), Some(session), Some(pane), Some(tty), Some(launch_id)) = (
+            text("mux_server"),
+            text("mux_session"),
+            text("mux_pane"),
+            pane_tty,
+            text("launch_id")
+                .or_else(|| text("relaunch_id"))
+                .or_else(|| text("orchestrator_task_id")),
+        ) {
+            let id = format!(
+                "managed:{}:{}:{}",
+                bounded_attachment_component(launch_id),
+                bounded_attachment_component(server),
+                bounded_attachment_component(pane)
+            );
+            return Attachment::Managed {
+                id,
+                launch_id: launch_id.to_string(),
+                mux_server: server.to_string(),
+                mux_session: session.to_string(),
+                mux_pane: pane.to_string(),
+                pane_tty: tty.to_string(),
+                client_tty: text("mux_client_tty").map(str::to_string),
+                terminal: terminal_endpoint(meta, text("terminal_host_tty")),
+            };
+        }
+    }
+    if let (Some(pid), Some(boot_time), Some(process_start_time), Some(executable)) =
+        (pid, boot, start, executable)
+    {
+        let id = format!(
+            "process:{boot_time}:{pid}:{process_start_time}:{}",
+            bounded_attachment_component(executable)
+        );
+        return Attachment::Process {
+            id,
+            boot_time,
+            pid,
+            process_start_time,
+            executable: executable.to_string(),
+            pane_tty: pane_tty.map(str::to_string),
+            terminal: terminal_endpoint(meta, pane_tty),
+        };
+    }
+    let seed = format!(
+        "{}:{}",
+        pid.map(|v| v.to_string()).unwrap_or_default(),
+        pane_tty.unwrap_or("")
+    );
+    Attachment::Unverified {
+        id: format!("unverified:{}", bounded_attachment_component(&seed)),
+    }
+}
+
+fn update_attachment(session: &mut Session, incoming: &Map<String, Value>, now: Instant) -> bool {
+    let mut identity_view = session.meta.clone();
+    for (key, value) in incoming {
+        identity_view.insert(key.clone(), value.clone());
+    }
+    let candidate = attachment_from_meta(&identity_view);
+    let candidate_unverified = matches!(candidate, Attachment::Unverified { .. });
+    let registration = incoming
+        .get("attachment_registration")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || incoming.get("reregistered").is_some();
+    match (&session.attachment, &candidate) {
+        (Some(current), next) if current.id() == next.id() => {
+            session.attachment = Some(candidate.clone());
+            session.health = if candidate_unverified {
+                SessionHealth::Unknown
+            } else {
+                SessionHealth::Healthy
+            };
+            session.health_reason = None;
+            session.last_verified = (!candidate_unverified).then_some(now);
+            session.failed_probes = 0;
+            session.first_probe_failure = None;
+            true
+        }
+        (Some(Attachment::Unverified { .. }), _) | (None, _) => {
+            let verified = !candidate_unverified;
+            session.attachment = Some(candidate);
+            session.health = if verified {
+                SessionHealth::Healthy
+            } else {
+                SessionHealth::Unknown
+            };
+            session.health_reason =
+                (!verified).then(|| "awaiting authoritative process or tmux ownership".into());
+            session.last_verified = verified.then_some(now);
+            session.failed_probes = 0;
+            session.first_probe_failure = None;
+            true
+        }
+        (Some(_), _) if registration => {
+            session.attachment = Some(candidate);
+            session.health = SessionHealth::Healthy;
+            session.health_reason =
+                Some("runtime attachment replaced by exact registration".into());
+            session.last_verified = Some(now);
+            session.failed_probes = 0;
+            session.first_probe_failure = None;
+            true
+        }
+        // A later hook from an old process must not overwrite the attachment
+        // that won the atomic registration race.
+        (Some(_), _) => false,
+    }
+}
+
+/// A durable provider session record with an optional runtime attachment.
 #[derive(Debug, Clone)]
 pub struct Session {
     pub id: String,
@@ -273,6 +496,13 @@ pub struct Session {
     pub slot: Option<u8>,
     pub state: State,
     pub last_update: Instant,
+    pub attachment: Option<Attachment>,
+    pub health: SessionHealth,
+    pub health_reason: Option<String>,
+    pub last_verified: Option<Instant>,
+    pub failed_probes: u8,
+    pub first_probe_failure: Option<Instant>,
+    pub slot_history: Vec<u8>,
 }
 
 impl Session {
@@ -326,10 +556,21 @@ impl Session {
     /// a session whose agent crashed but whose terminal is still open, which
     /// the tty sweep alone can't see.
     pub fn pid(&self) -> Option<i32> {
-        self.meta
-            .get("pid")
-            .and_then(|v| v.as_i64())
-            .map(|n| n as i32)
+        match self.attachment.as_ref() {
+            Some(Attachment::Process { pid, .. }) => Some(*pid),
+            _ => self
+                .meta
+                .get("pid")
+                .and_then(|v| v.as_i64())
+                .map(|n| n as i32),
+        }
+    }
+
+    pub fn attachment_id(&self) -> Option<&str> {
+        self.attachment.as_ref().map(Attachment::id)
+    }
+    pub fn attachment_type(&self) -> Option<&str> {
+        self.attachment.as_ref().map(Attachment::kind)
     }
 }
 
@@ -364,6 +605,11 @@ pub enum Effect {
     /// manually dismissed, recovered, or its tombstone TTL expires. `slot` is
     /// the slot it just vacated (so the device key can be cleared).
     SessionDisconnected { id: String, slot: Option<u8> },
+    SessionHealthChanged {
+        id: String,
+        health: SessionHealth,
+        reason: Option<String>,
+    },
     /// A `Compacting` session was reunited with its post-compaction
     /// continuation under a new id (same slot, name, and history) — see
     /// `Registry::set_state`. No device command (the slot doesn't change);
@@ -374,6 +620,7 @@ pub enum Effect {
         old_id: String,
         new_id: String,
         launch_id: String,
+        source_terminal: Option<TerminalEndpoint>,
     },
     /// The daemon-owned attention order changed. This is independent of
     /// numbered-key slots: subscribers use it to highlight the next session.
@@ -408,6 +655,7 @@ struct ManagedRelaunch {
     launch_id: String,
     original_state: State,
     original_last_update: Instant,
+    source_terminal: Option<TerminalEndpoint>,
 }
 
 #[derive(Debug, Clone)]
@@ -540,16 +788,12 @@ impl Registry {
             return Ok(Vec::new());
         }
         self.attention_order = Some(order.clone());
-        if self
-            .attention_cursor
-            .as_ref()
-            .is_some_and(|id| {
-                !self
-                    .sessions
-                    .get(id)
-                    .is_some_and(|session| !session.is_backlogged())
-            })
-        {
+        if self.attention_cursor.as_ref().is_some_and(|id| {
+            !self
+                .sessions
+                .get(id)
+                .is_some_and(|session| !session.is_backlogged())
+        }) {
             self.attention_cursor = None;
         }
         Ok(vec![Effect::AttentionOrderChanged { sessions: order }])
@@ -557,16 +801,12 @@ impl Registry {
 
     fn maintain_attention_order(&mut self, effects: &mut Vec<Effect>) {
         let Some(mut order) = self.attention_order.take() else {
-            if self
-                .attention_cursor
-                .as_ref()
-                .is_some_and(|id| {
-                    !self
-                        .sessions
-                        .get(id)
-                        .is_some_and(|session| !session.is_backlogged())
-                })
-            {
+            if self.attention_cursor.as_ref().is_some_and(|id| {
+                !self
+                    .sessions
+                    .get(id)
+                    .is_some_and(|session| !session.is_backlogged())
+            }) {
                 self.attention_cursor = None;
             }
             return;
@@ -594,16 +834,12 @@ impl Registry {
                 order.push(id);
             }
         }
-        if self
-            .attention_cursor
-            .as_ref()
-            .is_some_and(|id| {
-                !self
-                    .sessions
-                    .get(id)
-                    .is_some_and(|session| !session.is_backlogged())
-            })
-        {
+        if self.attention_cursor.as_ref().is_some_and(|id| {
+            !self
+                .sessions
+                .get(id)
+                .is_some_and(|session| !session.is_backlogged())
+        }) {
             self.attention_cursor = None;
         }
         self.attention_order = Some(order.clone());
@@ -613,21 +849,40 @@ impl Registry {
     }
 
     fn navigation_index(len: usize, current: Option<usize>, forward: bool) -> Option<usize> {
-        if len == 0 { return None; }
-        Some(current
-            .map(|index| if forward { (index + 1) % len } else if index == 0 { len - 1 } else { index - 1 })
-            .unwrap_or(if forward { 0 } else { len - 1 }))
+        if len == 0 {
+            return None;
+        }
+        Some(
+            current
+                .map(|index| {
+                    if forward {
+                        (index + 1) % len
+                    } else if index == 0 {
+                        len - 1
+                    } else {
+                        index - 1
+                    }
+                })
+                .unwrap_or(if forward { 0 } else { len - 1 }),
+        )
     }
 
     fn attention_target(&self, forward: bool) -> Option<&Session> {
-        let eligible: Vec<&Session> = self.attention_order().iter()
+        let eligible: Vec<&Session> = self
+            .attention_order()
+            .iter()
             .filter_map(|id| self.sessions.get(id))
             .filter(|session| {
                 !session.is_backlogged()
-                    && matches!(session.state, State::Waiting | State::Approval | State::Error)
+                    && matches!(
+                        session.state,
+                        State::Waiting | State::Approval | State::Error
+                    )
             })
             .collect();
-        let current = self.attention_cursor.as_ref()
+        let current = self
+            .attention_cursor
+            .as_ref()
             .and_then(|id| eligible.iter().position(|session| &session.id == id));
         Self::navigation_index(eligible.len(), current, forward).map(|index| eligible[index])
     }
@@ -667,7 +922,9 @@ impl Registry {
             .filter(|session| !session.is_backlogged())
             .collect();
         ordered.sort_by_key(|s| (s.slot.is_none(), s.slot.unwrap_or(u8::MAX), s.id.clone()));
-        let current = self.session_cursor.as_ref()
+        let current = self
+            .session_cursor
+            .as_ref()
             .and_then(|id| ordered.iter().position(|s| &s.id == id));
         Self::navigation_index(ordered.len(), current, forward).map(|index| ordered[index])
     }
@@ -678,8 +935,12 @@ impl Registry {
         session
     }
 
-    pub fn next_session(&mut self) -> Option<Session> { self.cycle_sessions(true) }
-    pub fn previous_session(&mut self) -> Option<Session> { self.cycle_sessions(false) }
+    pub fn next_session(&mut self) -> Option<Session> {
+        self.cycle_sessions(true)
+    }
+    pub fn previous_session(&mut self) -> Option<Session> {
+        self.cycle_sessions(false)
+    }
 
     /// State of the session which a following chronological/slot-order
     /// navigation selects, without advancing the cursor.
@@ -774,6 +1035,12 @@ impl Registry {
                 launch_id: launch_id.to_string(),
                 original_state: source.state,
                 original_last_update: source.last_update,
+                source_terminal: match source.attachment.as_ref() {
+                    Some(
+                        Attachment::Process { terminal, .. } | Attachment::Managed { terminal, .. },
+                    ) => Some(terminal.clone()),
+                    _ => None,
+                },
             },
         );
         self.relaunch_guards
@@ -898,7 +1165,10 @@ impl Registry {
         let slot = self.lowest_free_slot();
         self.managed_launch_reservations.insert(
             task_id.to_string(),
-            ManagedLaunchReservation { slot, reserved_at: now },
+            ManagedLaunchReservation {
+                slot,
+                reserved_at: now,
+            },
         );
         Ok(slot)
     }
@@ -907,6 +1177,13 @@ impl Registry {
         self.managed_launch_reservations
             .remove(task_id)
             .and_then(|reservation| reservation.slot)
+    }
+
+    pub fn pending_managed_launches(&self) -> Vec<(String, Option<u8>)> {
+        self.managed_launch_reservations
+            .iter()
+            .map(|(task_id, reservation)| (task_id.clone(), reservation.slot))
+            .collect()
     }
 
     /// Release launches which LaunchServices accepted but which never
@@ -967,8 +1244,10 @@ impl Registry {
         // implicitly erases their old source LEDs. Clear only source slots
         // which are absent from the final map, and do it before repainting.
         // Example: [1:a, 2:b, 3:c] - b => clear 3, then paint c at 2.
-        let final_slots: std::collections::HashSet<u8> =
-            assignments.iter().filter_map(|(_, _, slot)| *slot).collect();
+        let final_slots: std::collections::HashSet<u8> = assignments
+            .iter()
+            .filter_map(|(_, _, slot)| *slot)
+            .collect();
         let mut vacated: Vec<u8> = assignments
             .iter()
             .filter_map(|(_, old_slot, _)| *old_slot)
@@ -984,6 +1263,9 @@ impl Registry {
             }
             let session = self.sessions.get_mut(&id).expect("collected live session");
             session.slot = new_slot;
+            if let Some(slot) = new_slot {
+                if session.slot_history.last().copied() != Some(slot) { session.slot_history.push(slot); }
+            }
             effects.push(Effect::SessionUpsert {
                 id: session.id.clone(),
                 kind: session.kind.clone(),
@@ -1012,7 +1294,9 @@ impl Registry {
         if backlogged {
             let old_slot = self.sessions.get(id).and_then(|session| session.slot);
             let session = self.sessions.get_mut(id).expect("validated live session");
-            session.meta.insert(BACKLOGGED_META_KEY.into(), Value::Bool(true));
+            session
+                .meta
+                .insert(BACKLOGGED_META_KEY.into(), Value::Bool(true));
             session.slot = None;
             if let Some(slot) = old_slot {
                 effects.push(Effect::SlotCleared { slot });
@@ -1022,6 +1306,9 @@ impl Registry {
             let session = self.sessions.get_mut(id).expect("validated live session");
             session.meta.remove(BACKLOGGED_META_KEY);
             session.slot = slot;
+            if let Some(slot) = slot {
+                if session.slot_history.last().copied() != Some(slot) { session.slot_history.push(slot); }
+            }
         }
 
         let session = self.sessions.get(id).expect("updated live session");
@@ -1051,63 +1338,28 @@ impl Registry {
         }
     }
 
-    /// Find the best recovery candidate for a newly-registering session, if
-    /// any — either a live `State::Compacting` session within
-    /// `COMPACT_GRACE` (the fast compaction-continuation path — a
-    /// still-visible "compacting" key almost always claimed within
-    /// seconds) or a tombstoned one within `tombstone_ttl` (only a false-reap
-    /// of the same still-running process). Live compacting candidates use the
-    /// pooled signal matcher: `label` (Claude Code's
-    /// `ai-title`, verified to survive a compaction fork even though pid/tty
-    /// don't — see identity.rs's doc comment for why those two are
-    /// OS-process-identity signals that a real fork/resume can't preserve),
-    /// `cwd`, `tty`, `pid` — **at least 2 must agree**, and `cwd` alone is
-    /// never enough (it's explicitly not unique — multiple simultaneous
-    /// sessions commonly share one). The right pair falls out naturally per
-    /// cause: label+cwd for a compaction fork (new pid, maybe new tty),
-    /// pid+cwd or pid+tty for a false-reap (same process, never actually
-    /// died). A tombstone additionally requires a matching pid: title+cwd is
-    /// not process identity and is routinely shared by unrelated fresh
-    /// sessions. Fresh-process history recovery is only allowed through the
-    /// exact `resume_session_id` marker below. Ties (same score) break by most
-    /// recent activity.
+    /// Recover only by an identical authoritative attachment fingerprint.
+    /// Provider kind, cwd, title, PID alone, and tty alone never link records.
+    /// A fresh-process history resume instead uses the exact explicit
+    /// `resume_session_id` marker handled by the caller.
     fn find_recovery_candidate(
         &self,
-        incoming_label: &str,
-        incoming_cwd: &str,
-        incoming_tty: &str,
-        incoming_pid: Option<i32>,
+        incoming_meta: &Map<String, Value>,
         now: Instant,
     ) -> Option<String> {
-        let mut best: Option<(String, u32, Instant)> = None;
-        let mut consider = |id: &str, candidate: &Session, ts: Instant| {
-            let score = count_identity_matches(
-                candidate,
-                incoming_label,
-                incoming_cwd,
-                incoming_tty,
-                incoming_pid,
-            );
-            if score < 2 {
-                return;
-            }
-            let better = match &best {
-                None => true,
-                Some((_, best_score, best_ts)) => {
-                    score > *best_score || (score == *best_score && ts > *best_ts)
-                }
-            };
-            if better {
-                best = Some((id.to_string(), score, ts));
-            }
-        };
+        let incoming = attachment_from_meta(incoming_meta);
+        if matches!(incoming, Attachment::Unverified { .. }) {
+            return None;
+        }
+        let incoming_id = incoming.id();
 
         for s in self.sessions.values() {
             if s.state == State::Compacting
                 && !self.managed_relaunches.contains_key(&s.id)
                 && now.saturating_duration_since(s.last_update) <= COMPACT_GRACE
+                && s.attachment_id() == Some(incoming_id)
             {
-                consider(&s.id, s, s.last_update);
+                return Some(s.id.clone());
             }
         }
         for (id, t) in self.tombstones.iter() {
@@ -1115,19 +1367,11 @@ impl Registry {
                 .tombstone_ttl
                 .map(|ttl| now.saturating_duration_since(t.reaped_at) <= ttl)
                 .unwrap_or(true); // None = never expire
-            if within_grace
-                && incoming_pid.is_some()
-                && incoming_pid == t.session.pid()
-            {
-                // A tombstone is only a false-reap candidate when this is
-                // demonstrably the same process. `consider` still requires a
-                // second agreeing signal, preventing a recycled pid by itself
-                // from linking two sessions.
-                consider(id, &t.session, t.reaped_at);
+            if within_grace && t.session.attachment_id() == Some(incoming_id) {
+                return Some(id.clone());
             }
         }
-
-        best.map(|(id, _, _)| id)
+        None
     }
 
     /// Apply a `set-state`. `id == None` updates the sessionless default.
@@ -1185,6 +1429,8 @@ impl Registry {
                             state,
                             is_claude,
                         );
+                        incoming_meta.insert("attachment_registration".into(), Value::Bool(true));
+                        update_attachment(&mut sess, &incoming_meta, now);
                         apply_meta_update(&mut sess.meta, &sess.carry, incoming_meta);
                         sess.last_update = now;
                         if source_id != id {
@@ -1207,6 +1453,7 @@ impl Registry {
                             old_id: source_id,
                             new_id: id.to_string(),
                             launch_id: pending.launch_id,
+                            source_terminal: pending.source_terminal,
                         });
                         self.maintain_attention_order(&mut effects);
                         self.note_aggregate(&mut effects);
@@ -1218,16 +1465,21 @@ impl Registry {
                 }
                 let launch_task_id = meta
                     .as_ref()
-                    .and_then(|fields| fields.get("orchestrator_task_id"))
+                    .and_then(|fields| fields.get("_correlated_launch_task_id"))
                     .and_then(Value::as_str)
                     .map(str::to_string);
-                let reserved_launch = launch_task_id.as_deref().and_then(|task_id| {
-                    self.managed_launch_reservations.remove(task_id)
-                });
+                let reserved_launch = launch_task_id
+                    .as_deref()
+                    .and_then(|task_id| self.managed_launch_reservations.remove(task_id));
                 if let Some(sess) = self.sessions.get_mut(id) {
                     // Update + merge.
-                    let is_claude = kind.as_deref() == Some("claude")
-                        || sess.kind.as_deref() == Some("claude");
+                    let is_claude =
+                        kind.as_deref() == Some("claude") || sess.kind.as_deref() == Some("claude");
+                    if let Some(ref m) = meta {
+                        if !update_attachment(sess, m, now) {
+                            return Vec::new();
+                        }
+                    }
                     sess.state = state;
                     if kind.is_some() {
                         sess.kind = kind;
@@ -1252,33 +1504,13 @@ impl Registry {
                 } else {
                     // Before registering a brand-new session, check for a
                     // session it might be the continuation of — either a
-                    // live `State::Compacting` one (Claude Code's
-                    // `PreCompact` hook, adapters/claude-code/hooks.sh) or a
-                    // tombstoned one (a session that disappeared via a sweep
-                    // rather than an explicit end-session — see
-                    // `reap_session`/`Tombstone` below). Claude Code exposes
-                    // no field linking a compaction continuation back to its
-                    // predecessor, and a sweep-reaped session obviously
-                    // can't link forward either, so `find_recovery_candidate`
-                    // matches on a pooled set of signals instead — see its
-                    // own doc comment for why pid/tty/cwd/label are each in
-                    // the pool and why ≥2 must agree.
+                    // live `State::Compacting` one or a detached durable
+                    // record. Runtime continuation requires the identical
+                    // authoritative attachment fingerprint; a fresh-process
+                    // history resume must carry its exact provider session id.
                     let mut incoming_meta = meta.unwrap_or_default();
-                    let incoming_cwd = incoming_meta
-                        .get("cwd")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let incoming_tty = incoming_meta
-                        .get("tty")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let incoming_pid = incoming_meta
-                        .get("pid")
-                        .and_then(|v| v.as_i64())
-                        .map(|n| n as i32);
-                    let incoming_label = label.as_deref().unwrap_or("");
-                    // History recovery has stronger identity than the pooled
-                    // matcher: focalpoint-run stamps the literal provider
+                    // History recovery has explicit logical identity:
+                    // focalpoint-run stamps the literal provider
                     // resume id into every hook. If present, select only that
                     // exact tombstone (or none). In particular, never let an
                     // unrelated same-label/same-cwd session stand in for it.
@@ -1301,13 +1533,7 @@ impl Registry {
                         // signals and safely reunites a false reap even while
                         // identity resolution has not supplied pid/tty yet.
                         None if same_id_tombstone => Some(id.to_string()),
-                        None => self.find_recovery_candidate(
-                            incoming_label,
-                            incoming_cwd,
-                            incoming_tty,
-                            incoming_pid,
-                            now,
-                        ),
+                        None => self.find_recovery_candidate(&incoming_meta, now),
                     };
                     let recovered = recovery_id.and_then(|old_id| {
                         if let Some(sess) = self.sessions.remove(&old_id) {
@@ -1418,6 +1644,8 @@ impl Registry {
                             state,
                             is_claude,
                         );
+                        incoming_meta.insert("attachment_registration".into(), Value::Bool(true));
+                        update_attachment(&mut sess, &incoming_meta, now);
                         apply_meta_update(&mut sess.meta, &sess.carry, incoming_meta);
                         sess.last_update = now;
                         effects.push(Effect::SessionRekeyed {
@@ -1439,16 +1667,19 @@ impl Registry {
                         let slot = match reserved_launch {
                             Some(reservation) => reservation.slot,
                             None => incoming_meta
-                                .get("requested_slot")
+                                .get("_authorized_requested_slot")
                                 .and_then(Value::as_u64)
                                 .and_then(|value| u8::try_from(value).ok())
                                 .filter(|value| (1..=12).contains(value))
                                 .filter(|requested| {
-                                    !self.sessions.values().any(|session| {
-                                        session.slot == Some(*requested)
-                                    }) && !self.managed_launch_reservations.values().any(
-                                        |reservation| reservation.slot == Some(*requested),
-                                    )
+                                    !self
+                                        .sessions
+                                        .values()
+                                        .any(|session| session.slot == Some(*requested))
+                                        && !self
+                                            .managed_launch_reservations
+                                            .values()
+                                            .any(|reservation| reservation.slot == Some(*requested))
                                 })
                                 .or_else(|| self.lowest_free_slot()),
                         };
@@ -1460,6 +1691,9 @@ impl Registry {
                             kind.as_deref() == Some("claude"),
                         );
                         apply_meta_update(&mut session_meta, &Map::new(), incoming_meta);
+                        let attachment = attachment_from_meta(&session_meta);
+                        let verified_attachment =
+                            !matches!(attachment, Attachment::Unverified { .. });
                         let sess = Session {
                             id: id.to_string(),
                             kind,
@@ -1470,6 +1704,21 @@ impl Registry {
                             slot,
                             state,
                             last_update: now,
+                            attachment: Some(attachment),
+                            health: if verified_attachment {
+                                SessionHealth::Healthy
+                            } else {
+                                SessionHealth::Unknown
+                            },
+                            health_reason: if verified_attachment {
+                                None
+                            } else {
+                                Some("awaiting authoritative process or tmux ownership".into())
+                            },
+                            last_verified: verified_attachment.then_some(now),
+                            failed_probes: 0,
+                            first_probe_failure: None,
+                            slot_history: slot.into_iter().collect(),
                         };
                         effects.push(Effect::SessionUpsert {
                             id: id.to_string(),
@@ -1513,6 +1762,9 @@ impl Registry {
         let Some(sess) = self.sessions.get_mut(id) else {
             return Vec::new();
         };
+        if !update_attachment(sess, &meta, now) {
+            return Vec::new();
+        }
         if kind.is_some() {
             sess.kind = kind;
         }
@@ -1598,10 +1850,8 @@ impl Registry {
     /// End a session the way a sweep does — its tty/pid/TTL genuinely looks
     /// dead, but nothing *said* it was over. Unlike `end_session`, stashes
     /// a `Tombstone` so a later matching registration can be reunited with
-    /// its history instead of starting over at zero (`find_recovery_candidate`).
-    /// Used by every sweep (TTL, dead-tty, dead-pid, stuck-compacting) and
-    /// by Part 4's startup reconciliation — never by an explicit
-    /// end-session (see `end_session`).
+    /// its history instead of starting over at zero. Used by attachment
+    /// probes and startup reconciliation, never by an explicit `end-session`.
     pub fn reap_session(&mut self, id: &str, now: Instant) -> Vec<Effect> {
         let mut effects = Vec::new();
         if let Some(sess) = self.sessions.remove(id) {
@@ -1625,6 +1875,95 @@ impl Registry {
         }
         self.maintain_attention_order(&mut effects);
         effects
+    }
+
+    /// Record one authoritative attachment probe. Ordinary disappearance is
+    /// debounced for thirty seconds; boot/PID-birth mismatches bypass the
+    /// debounce because they prove the stored attachment cannot be the same
+    /// runtime. Detaching retains the durable record as a recoverable row.
+    pub fn note_attachment_probe(
+        &mut self,
+        id: &str,
+        verified: bool,
+        reason: Option<String>,
+        immediate: bool,
+        now: Instant,
+    ) -> Vec<Effect> {
+        let Some(session) = self.sessions.get_mut(id) else {
+            return Vec::new();
+        };
+        if verified {
+            let changed =
+                session.health != SessionHealth::Healthy || session.health_reason.is_some();
+            session.health = SessionHealth::Healthy;
+            session.health_reason = None;
+            session.last_verified = Some(now);
+            session.failed_probes = 0;
+            session.first_probe_failure = None;
+            return changed
+                .then(|| Effect::SessionHealthChanged {
+                    id: id.to_string(),
+                    health: SessionHealth::Healthy,
+                    reason: None,
+                })
+                .into_iter()
+                .collect();
+        }
+        session.failed_probes = session.failed_probes.saturating_add(1);
+        let first = *session.first_probe_failure.get_or_insert(now);
+        session.health = SessionHealth::Suspect;
+        session.health_reason = reason.clone();
+        let should_detach = immediate
+            || (session.failed_probes >= 2
+                && now.saturating_duration_since(first) >= Duration::from_secs(30));
+        if should_detach {
+            session.health = SessionHealth::Detached;
+            session.attachment = None;
+            let reason = session.health_reason.clone();
+            let mut effects = vec![Effect::SessionHealthChanged {
+                id: id.to_string(),
+                health: SessionHealth::Detached,
+                reason,
+            }];
+            effects.extend(self.reap_session(id, now));
+            effects
+        } else {
+            vec![Effect::SessionHealthChanged {
+                id: id.to_string(),
+                health: SessionHealth::Suspect,
+                reason,
+            }]
+        }
+    }
+
+    pub fn expire_unverified_attachments(&mut self, now: Instant) -> Vec<Effect> {
+        let ids: Vec<String> = self
+            .sessions
+            .values()
+            .filter(|session| {
+                matches!(session.attachment, Some(Attachment::Unverified { .. }))
+                    && now.saturating_duration_since(session.last_update)
+                        >= Duration::from_secs(300)
+            })
+            .map(|session| session.id.clone())
+            .collect();
+        ids.into_iter()
+            .flat_map(|id| {
+                if let Some(session) = self.sessions.get_mut(&id) {
+                    session.health = SessionHealth::Unknown;
+                    session.health_reason =
+                        Some("unverified integration inactive for five minutes".into());
+                    session.attachment = None;
+                }
+                let mut effects = vec![Effect::SessionHealthChanged {
+                    id: id.clone(),
+                    health: SessionHealth::Unknown,
+                    reason: Some("unverified integration inactive for five minutes".into()),
+                }];
+                effects.extend(self.reap_session(&id, now));
+                effects
+            })
+            .collect()
     }
 
     /// Drop tombstones past `tombstone_ttl`. No-op when `None` (never).
@@ -1677,9 +2016,11 @@ impl Registry {
             .ok_or_else(|| format!("unknown session or no slot: {id2:?}"))?;
         if let Some(s) = self.sessions.get_mut(id1) {
             s.slot = Some(slot2);
+            if s.slot_history.last().copied() != Some(slot2) { s.slot_history.push(slot2); }
         }
         if let Some(s) = self.sessions.get_mut(id2) {
             s.slot = Some(slot1);
+            if s.slot_history.last().copied() != Some(slot1) { s.slot_history.push(slot1); }
         }
         let effects = [id1, id2]
             .into_iter()
@@ -1736,6 +2077,7 @@ impl Registry {
         let old_slot = self.sessions.get(id).and_then(|s| s.slot);
         let session = self.sessions.get_mut(id).expect("validated live session");
         session.slot = Some(target);
+        if session.slot_history.last().copied() != Some(target) { session.slot_history.push(target); }
         let mut effects = Vec::new();
         if let Some(old) = old_slot {
             effects.push(Effect::SlotCleared { slot: old });
@@ -1923,40 +2265,217 @@ mod tests {
     fn managed_launch_reserves_its_prompted_slot_until_registration() {
         let mut registry = Registry::new(None);
         let now = Instant::now();
-        assert_eq!(registry.reserve_managed_launch("worker-1", now).unwrap(), Some(1));
+        assert_eq!(
+            registry.reserve_managed_launch("worker-1", now).unwrap(),
+            Some(1)
+        );
 
         registry.set_state(
-            Some("unrelated"), State::Thinking, Some("codex".into()), None,
-            None, now,
+            Some("unrelated"),
+            State::Thinking,
+            Some("codex".into()),
+            None,
+            None,
+            now,
         );
         assert_eq!(registry.sessions.get("unrelated").unwrap().slot, Some(2));
 
         let mut meta = Map::new();
         meta.insert("orchestrator_task_id".into(), Value::from("worker-1"));
+        meta.insert("_correlated_launch_task_id".into(), Value::from("worker-1"));
         registry.set_state(
-            Some("provider-session"), State::Thinking, Some("codex".into()),
-            Some("Parser implementation".into()), Some(meta), now,
+            Some("provider-session"),
+            State::Thinking,
+            Some("codex".into()),
+            Some("Parser implementation".into()),
+            Some(meta),
+            now,
         );
-        assert_eq!(registry.sessions.get("provider-session").unwrap().slot, Some(1));
+        assert_eq!(
+            registry.sessions.get("provider-session").unwrap().slot,
+            Some(1)
+        );
         assert!(registry.cancel_managed_launch("worker-1").is_none());
+    }
+
+    #[test]
+    fn slot_six_reservation_consumes_itself_before_free_slot_calculation() {
+        let mut registry = Registry::new(None);
+        let now = Instant::now();
+        for index in 1..=5 {
+            registry.set_state(
+                Some(&format!("existing-{index}")),
+                State::Idle,
+                Some("codex".into()),
+                None,
+                None,
+                now,
+            );
+        }
+        assert_eq!(
+            registry.reserve_managed_launch("worker-6", now).unwrap(),
+            Some(6)
+        );
+        let mut unrelated = Map::new();
+        unrelated.insert("cwd".into(), "/same/repo".into());
+        registry.set_state(
+            Some("unrelated"),
+            State::Thinking,
+            Some("codex".into()),
+            Some("Same title".into()),
+            Some(unrelated),
+            now,
+        );
+        assert_eq!(registry.sessions["unrelated"].slot, Some(7));
+
+        let mut correlated = Map::new();
+        correlated.insert("orchestrator_task_id".into(), "worker-6".into());
+        correlated.insert("_correlated_launch_task_id".into(), "worker-6".into());
+        registry.set_state(
+            Some("worker-provider"),
+            State::Thinking,
+            Some("codex".into()),
+            Some("Same title".into()),
+            Some(correlated),
+            now,
+        );
+        assert_eq!(registry.sessions["worker-provider"].slot, Some(6));
+        assert!(registry.cancel_managed_launch("worker-6").is_none());
+    }
+
+    #[test]
+    fn equal_provider_cwd_and_title_never_merge_distinct_attachments() {
+        let mut registry = Registry::new(None);
+        let now = Instant::now();
+        for (id, pid, start) in [("one", 101, 11), ("two", 202, 22)] {
+            let mut meta = Map::new();
+            meta.insert("cwd".into(), "/same/repo".into());
+            meta.insert("pid".into(), pid.into());
+            meta.insert("process_boot_time".into(), 7.into());
+            meta.insert("process_start_time".into(), start.into());
+            meta.insert("provider_executable".into(), "/usr/local/bin/codex".into());
+            meta.insert("attachment_registration".into(), true.into());
+            registry.set_state(
+                Some(id),
+                State::Thinking,
+                Some("codex".into()),
+                Some("Same title".into()),
+                Some(meta),
+                now,
+            );
+        }
+        assert_eq!(registry.list().len(), 2);
+        assert_ne!(
+            registry.sessions["one"].attachment_id(),
+            registry.sessions["two"].attachment_id()
+        );
+    }
+
+    #[test]
+    fn stale_attachment_events_cannot_overwrite_a_replacement() {
+        let mut registry = Registry::new(None);
+        let now = Instant::now();
+        let process_meta = |pid: i64, start: u64, registration: bool| {
+            let mut meta = Map::new();
+            meta.insert("pid".into(), pid.into());
+            meta.insert("process_boot_time".into(), 7.into());
+            meta.insert("process_start_time".into(), start.into());
+            meta.insert("provider_executable".into(), "/usr/local/bin/codex".into());
+            if registration {
+                meta.insert("attachment_registration".into(), true.into());
+            }
+            meta
+        };
+        registry.set_state(
+            Some("conversation"),
+            State::Idle,
+            Some("codex".into()),
+            None,
+            Some(process_meta(101, 11, true)),
+            now,
+        );
+        registry.set_state(
+            Some("conversation"),
+            State::Thinking,
+            Some("codex".into()),
+            None,
+            Some(process_meta(202, 22, true)),
+            now,
+        );
+        let replacement_id = registry.sessions["conversation"]
+            .attachment_id()
+            .unwrap()
+            .to_string();
+        let stale = registry.set_state(
+            Some("conversation"),
+            State::Error,
+            Some("codex".into()),
+            None,
+            Some(process_meta(101, 11, false)),
+            now,
+        );
+        assert!(stale.is_empty());
+        assert_eq!(registry.sessions["conversation"].state, State::Thinking);
+        assert_eq!(
+            registry.sessions["conversation"].attachment_id(),
+            Some(replacement_id.as_str())
+        );
+    }
+
+    #[test]
+    fn attachment_probe_debounces_then_detaches_without_deleting_history() {
+        let mut registry = Registry::new(None);
+        let now = Instant::now();
+        let mut meta = Map::new();
+        meta.insert("pid".into(), 101.into());
+        meta.insert("process_boot_time".into(), 7.into());
+        meta.insert("process_start_time".into(), 11.into());
+        meta.insert("provider_executable".into(), "/usr/local/bin/codex".into());
+        registry.set_state(Some("conversation"), State::Idle, Some("codex".into()), None, Some(meta), now);
+        let first = registry.note_attachment_probe("conversation", false, Some("process absent".into()), false, now);
+        assert!(first.iter().any(|effect| matches!(effect, Effect::SessionHealthChanged { health: SessionHealth::Suspect, .. })));
+        assert_eq!(registry.list().len(), 1);
+        let later = now + Duration::from_secs(30);
+        let second = registry.note_attachment_probe("conversation", false, Some("process absent".into()), false, later);
+        assert!(second.iter().any(|effect| matches!(effect, Effect::SessionDisconnected { .. })));
+        assert!(registry.list().is_empty());
+        let retained = registry.session_or_tombstone("conversation").expect("durable record retained");
+        assert_eq!(retained.health, SessionHealth::Detached);
+        assert!(retained.attachment.is_none());
+    }
+
+    #[test]
+    fn unverified_activity_releases_its_slot_after_five_minutes() {
+        let mut registry = Registry::new(None);
+        let now = Instant::now();
+        registry.set_state(Some("generic"), State::Thinking, Some("generic".into()), None, None, now);
+        assert_eq!(registry.list()[0].slot, Some(1));
+        let effects = registry.expire_unverified_attachments(now + Duration::from_secs(300));
+        assert!(effects.iter().any(|effect| matches!(effect, Effect::SessionDisconnected { slot: Some(1), .. })));
+        let retained = registry.session_or_tombstone("generic").unwrap();
+        assert_eq!(retained.health, SessionHealth::Unknown);
     }
 
     #[test]
     fn abandoned_managed_launch_reservation_expires_and_releases_slot() {
         let mut registry = Registry::new(None);
         let now = Instant::now();
-        assert_eq!(registry.reserve_managed_launch("orphan", now).unwrap(), Some(1));
+        assert_eq!(
+            registry.reserve_managed_launch("orphan", now).unwrap(),
+            Some(1)
+        );
         assert!(registry
             .expire_managed_launches(now + Duration::from_secs(119), Duration::from_secs(120))
             .is_empty());
         assert_eq!(
-            registry.expire_managed_launches(
-                now + Duration::from_secs(120),
-                Duration::from_secs(120),
-            ),
+            registry
+                .expire_managed_launches(now + Duration::from_secs(120), Duration::from_secs(120),),
             vec![("orphan".into(), Some(1))],
         );
-        assert_eq!(registry.reserve_managed_launch("next", now).unwrap(), Some(1));
+        assert_eq!(
+            registry.reserve_managed_launch("next", now).unwrap(),
+            Some(1)
+        );
     }
 
     #[test]
@@ -1967,19 +2486,29 @@ mod tests {
 
         let mut requested = Map::new();
         requested.insert("requested_slot".into(), Value::from(4));
+        requested.insert("_authorized_requested_slot".into(), Value::from(4));
         requested.insert("reregistered".into(), Value::Bool(true));
         registry.set_state(
-            Some("recovered"), State::Thinking, Some("codex".into()),
-            Some("Parser implementation".into()), Some(requested), now,
+            Some("recovered"),
+            State::Thinking,
+            Some("codex".into()),
+            Some("Parser implementation".into()),
+            Some(requested),
+            now,
         );
         assert_eq!(registry.sessions.get("recovered").unwrap().slot, Some(4));
 
         let mut occupied = Map::new();
         occupied.insert("requested_slot".into(), Value::from(4));
+        occupied.insert("_authorized_requested_slot".into(), Value::from(4));
         occupied.insert("reregistered".into(), Value::Bool(true));
         registry.set_state(
-            Some("fallback"), State::Thinking, Some("codex".into()), None,
-            Some(occupied), now,
+            Some("fallback"),
+            State::Thinking,
+            Some("codex".into()),
+            None,
+            Some(occupied),
+            now,
         );
         assert_eq!(registry.sessions.get("fallback").unwrap().slot, Some(2));
     }
@@ -2024,7 +2553,10 @@ mod tests {
         r.set_state(Some("err"), State::Error, None, None, None, now);
         r.set_state(Some("running"), State::Running, None, None, None, now);
 
-        assert_eq!(r.attention_order(), vec!["err", "approval", "wait", "idle", "running"]);
+        assert_eq!(
+            r.attention_order(),
+            vec!["err", "approval", "wait", "idle", "running"]
+        );
         assert_eq!(r.next_attention().unwrap().id, "err");
         assert_eq!(r.next_attention().unwrap().id, "approval");
         assert_eq!(r.next_attention().unwrap().id, "wait");
@@ -2040,12 +2572,15 @@ mod tests {
         r.set_state(Some("wait"), State::Waiting, None, None, None, now);
         r.set_state(Some("approval"), State::Approval, None, None, None, now);
         r.set_state(Some("err"), State::Error, None, None, None, now);
-        assert_eq!(r.navigation_states(), NavStates {
-            attention_next: Some(State::Error),
-            attention_previous: Some(State::Waiting),
-            session_next: Some(State::Running),
-            session_previous: Some(State::Error),
-        });
+        assert_eq!(
+            r.navigation_states(),
+            NavStates {
+                attention_next: Some(State::Error),
+                attention_previous: Some(State::Waiting),
+                session_next: Some(State::Running),
+                session_previous: Some(State::Error),
+            }
+        );
         assert_eq!(r.next_attention().unwrap().id, "err");
         assert_eq!(r.next_attention_state(), Some(State::Approval));
         assert_eq!(r.previous_attention_state(), Some(State::Waiting));
@@ -2054,12 +2589,15 @@ mod tests {
         assert_eq!(r.next_session().unwrap().id, "run");
         assert_eq!(r.next_session().unwrap().id, "wait");
         assert_eq!(r.previous_session().unwrap().id, "run");
-        assert_eq!(r.navigation_states(), NavStates {
-            attention_next: Some(State::Waiting),
-            attention_previous: Some(State::Error),
-            session_next: Some(State::Waiting),
-            session_previous: Some(State::Error),
-        });
+        assert_eq!(
+            r.navigation_states(),
+            NavStates {
+                attention_next: Some(State::Waiting),
+                attention_previous: Some(State::Error),
+                session_next: Some(State::Waiting),
+                session_previous: Some(State::Error),
+            }
+        );
     }
 
     #[test]
@@ -2108,9 +2646,11 @@ mod tests {
             .expect("compaction clears c's old source slot");
         let repaint_destination = e
             .iter()
-            .position(|effect| matches!(effect,
-                Effect::SessionUpsert { id, slot: Some(2), .. } if id == "c"
-            ))
+            .position(|effect| {
+                matches!(effect,
+                    Effect::SessionUpsert { id, slot: Some(2), .. } if id == "c"
+                )
+            })
             .expect("compaction repaints c at its destination slot");
         assert!(clear_source < repaint_destination);
         assert_eq!(r.session_by_slot(2).unwrap().id, "c");
@@ -2135,7 +2675,11 @@ mod tests {
         assert!(backlogged.is_backlogged());
         assert_eq!(backlogged.slot, None);
         assert_eq!(r.session_by_slot(2).unwrap().id, "c");
-        assert_eq!(r.aggregate(), State::Waiting, "backlog is not aggregate-active");
+        assert_eq!(
+            r.aggregate(),
+            State::Waiting,
+            "backlog is not aggregate-active"
+        );
         assert_eq!(r.attention_order(), vec!["c", "a"]);
         assert_eq!(r.next_attention().unwrap().id, "c");
         assert_eq!(r.next_session().unwrap().id, "a");
@@ -2164,14 +2708,7 @@ mod tests {
 
         let mut spoofed = Map::new();
         spoofed.insert(BACKLOGGED_META_KEY.into(), Value::Bool(false));
-        r.set_state(
-            Some("a"),
-            State::Waiting,
-            None,
-            None,
-            Some(spoofed),
-            now,
-        );
+        r.set_state(Some("a"), State::Waiting, None, None, Some(spoofed), now);
         assert!(r.session_or_tombstone("a").unwrap().is_backlogged());
     }
 
@@ -2539,6 +3076,17 @@ mod tests {
         let mut m = Map::new();
         m.insert("cwd".into(), Value::from(cwd));
         m.insert("tty".into(), Value::from(tty));
+        if tty.is_empty() {
+            return m;
+        }
+        let pid = tty.bytes().fold(100i64, |sum, byte| sum + i64::from(byte));
+        m.insert("pid".into(), pid.into());
+        m.insert("process_boot_time".into(), 1.into());
+        m.insert("process_start_time".into(), 10.into());
+        m.insert(
+            "provider_executable".into(),
+            "/usr/local/bin/provider".into(),
+        );
         m
     }
 
@@ -2659,9 +3207,17 @@ mod tests {
 
         let s = r.session_by_slot(1).expect("slot 1 occupied");
         assert_eq!(s.id, "T");
-        assert_eq!(s.meta.get("turns"), Some(&Value::from(105)), "overwritten, not doubled to 205");
+        assert_eq!(
+            s.meta.get("turns"),
+            Some(&Value::from(105)),
+            "overwritten, not doubled to 205"
+        );
         assert_eq!(s.meta.get("tool_calls"), Some(&Value::from(420)));
-        assert_eq!(s.meta.get("compactions"), None, "no compaction actually happened");
+        assert_eq!(
+            s.meta.get("compactions"),
+            None,
+            "no compaction actually happened"
+        );
     }
 
     #[test]
@@ -2722,7 +3278,11 @@ mod tests {
         }));
         let s = r.session_by_slot(1).expect("slot 1 occupied");
         assert_eq!(s.id, "new");
-        assert_eq!(s.meta.get("turns"), Some(&Value::from(33)), "carried forward: 30 + 3");
+        assert_eq!(
+            s.meta.get("turns"),
+            Some(&Value::from(33)),
+            "carried forward: 30 + 3"
+        );
         assert_eq!(s.meta.get("compactions"), Some(&Value::from(1u64)));
     }
 
@@ -2819,10 +3379,7 @@ mod tests {
         let mut precompact = meta("/repo", "/dev/ttys004");
         precompact.insert("compaction_event".into(), Value::from("precompact"));
         precompact.insert("compaction_trigger".into(), Value::from("auto"));
-        precompact.insert(
-            "compaction_permission_mode".into(),
-            Value::from("plan"),
-        );
+        precompact.insert("compaction_permission_mode".into(), Value::from("plan"));
         r.set_state(
             Some("old"),
             State::Compacting,
@@ -2834,7 +3391,10 @@ mod tests {
         let s = r.session_by_slot(1).unwrap();
         assert_eq!(s.meta.get("compactions"), Some(&Value::from(1u64)));
         assert_eq!(s.meta.get("plan_compactions"), Some(&Value::from(1u64)));
-        assert_eq!(s.meta.get("last_compaction_trigger"), Some(&Value::from("auto")));
+        assert_eq!(
+            s.meta.get("last_compaction_trigger"),
+            Some(&Value::from("auto"))
+        );
         assert_eq!(
             s.meta.get("last_compaction_permission_mode"),
             Some(&Value::from("plan"))
@@ -2998,10 +3558,7 @@ mod tests {
                 if old_id == "old" && new_id == "new"
         )));
         assert!(r.list().iter().any(|session| session.id == "new"));
-        assert!(r
-            .tombstones_snapshot()
-            .iter()
-            .any(|(id, _, _)| id == "old"));
+        assert!(r.tombstones_snapshot().iter().any(|(id, _, _)| id == "old"));
     }
 
     #[test]
@@ -3296,6 +3853,10 @@ mod tests {
             old_id: "source".into(),
             new_id: "source".into(),
             launch_id: "launch-1".into(),
+            source_terminal: Some(TerminalEndpoint {
+                host_tty: Some("/dev/ttys004".into()),
+                ..TerminalEndpoint::default()
+            }),
         }));
         let session = &r.list()[0];
         assert_eq!(session.slot, Some(1));
@@ -3329,6 +3890,10 @@ mod tests {
             old_id: "old".into(),
             new_id: "new".into(),
             launch_id: "launch-2".into(),
+            source_terminal: Some(TerminalEndpoint {
+                host_tty: Some("/dev/ttys004".into()),
+                ..TerminalEndpoint::default()
+            }),
         }));
 
         resumable_session(&mut r, "failed", State::Waiting, now);

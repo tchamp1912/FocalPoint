@@ -571,8 +571,8 @@ final class AppModel: ObservableObject {
 
     private func handleEvent(_ e: [String: Any]) {
         guard let ev = e["event"] as? String else { return }
-        if ["state", "session", "session-ended", "session-disconnected",
-            "session-rekeyed", "managed-relaunch", "attention-order", "focus"].contains(ev) {
+        if ["state", "session", "session-ended", "session-disconnected", "session-health-changed",
+            "session-rekeyed", "managed-relaunch", "attention-order", "focus", "focus-result"].contains(ev) {
             logEventSummary(e, event: ev)
         }
         switch ev {
@@ -625,8 +625,17 @@ final class AppModel: ObservableObject {
                let idx = sessions.firstIndex(where: { $0.id == id }) {
                 log("row disconnect id=\(boundedLogField(id)) slot=\(sessions[idx].slot.map(String.init) ?? "-") state=\(sessions[idx].state.rawValue)")
                 sessions[idx].connected = false
+                if sessions[idx].health != .unknown { sessions[idx].health = .detached }
                 if focusedSessionID == id { focusedSessionID = nil }
                 sortSessions()
+            }
+        case "session-health-changed":
+            if let id = e["session"] as? String,
+               let idx = sessions.firstIndex(where: { $0.id == id }),
+               let raw = e["health"] as? String,
+               let health = SessionHealth(rawValue: raw) {
+                sessions[idx].health = health
+                sessions[idx].healthReason = e["reason"] as? String
             }
         case "session-rekeyed":
             // A `compacting` session was reunited with its post-compaction
@@ -655,6 +664,10 @@ final class AppModel: ObservableObject {
         case "focus":
             if let id = e["session"] as? String {
                 focusedSessionID = id
+            }
+        case "focus-result":
+            if e["result"] as? String != "focused" {
+                log("focus failed id=\(boundedLogField(e["session"])) result=\(boundedLogField(e["result"])) reason=\(boundedLogField(e["reason"]))")
             }
         case "usage":
             upsertUsage(e)
@@ -705,13 +718,25 @@ final class AppModel: ObservableObject {
         // list-sessions); omitted by older daemons, where the feature is
         // simply absent.
         let backlogged = e["backlogged"] as? Bool ?? false
+        let health = (e["health"] as? String).flatMap(SessionHealth.init(rawValue:)) ?? (connected ? .unknown : .detached)
+        let healthReason = e["health_reason"] as? String
+        let attachmentID = e["attachment_id"] as? String
+        let attachmentType = e["attachment_type"] as? String
+        let lastActivity = (e["last_activity_unix_ms"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue / 1000) } ?? Date()
+        let lastVerified = (e["last_verified_unix_ms"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue / 1000) }
 
         let operation: String
         if let idx = sessions.firstIndex(where: { $0.id == id }) {
             operation = "update"
             var s = sessions[idx]
-            if s.state != newState { s.state = newState; s.lastChange = Date() }
+            if s.state != newState { s.state = newState }
+            s.lastChange = lastActivity
             s.connected = connected
+            s.health = health
+            s.healthReason = healthReason
+            s.attachmentID = attachmentID
+            s.attachmentType = attachmentType
+            s.lastVerified = lastVerified
             // A live managed relaunch is correlated by the daemon. Late
             // events from the old provider must not clear its pending state;
             // only the matching replacement's managed registration does.
@@ -747,7 +772,12 @@ final class AppModel: ObservableObject {
             var s = SessionInfo(id: id, kind: kind, label: label, name: name,
                                  slot: slot, state: newState, connected: connected,
                                  cwd: cwd,
-                                 firstSeen: Date(), lastChange: Date(), stats: stats)
+                                 firstSeen: lastActivity, lastChange: lastActivity, stats: stats)
+            s.health = health
+            s.healthReason = healthReason
+            s.attachmentID = attachmentID
+            s.attachmentType = attachmentType
+            s.lastVerified = lastVerified
             s.model = model
             s.contextTokens = contextTokens
             s.reportedContextWindow = reportedContextWindow
@@ -1166,8 +1196,13 @@ final class AppModel: ObservableObject {
                 .replacingOccurrences(of: "\"", with: "\\\"")
         }
 
-        let command = "exec \(shellQuoted(file.path))"
-        let script = "tell application \"iTerm2\" to create window with default profile command \"\(appleScriptQuoted(command))\""
+        // iTerm parses this value as a program plus arguments; it does not
+        // evaluate shell builtins. Passing `exec <launcher>` therefore asks
+        // it to find an executable literally named `exec` and the session
+        // immediately dies. Invoke a real shell explicitly so quoting and
+        // `.command` scripts work consistently across iTerm versions.
+        let command = "/bin/zsh -l \(shellQuoted(file.path))"
+        let script = "tell application id \"com.googlecode.iterm2\" to create window with default profile command \"\(appleScriptQuoted(command))\""
         let process = Process()
         let errorPipe = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
@@ -1312,21 +1347,8 @@ final class AppModel: ObservableObject {
                 id: id, phase: .launched,
                 detail: "Waiting for the resumed agent to reconnect."
             )
-            guard let launchID = event["launch_id"] as? String,
-                  let tmuxServer = event["tmux_server"] as? String,
-                  let tmuxSession = event["tmux_session"] as? String else {
-                clearManagedRelaunch(id)
-                setManagedRelaunchStatus(
-                    id: id, phase: .failed,
-                    detail: "The daemon returned an incomplete launch event."
-                )
-                return
-            }
-            if attachedManagedRelaunches.insert(launchID).inserted {
-                openManagedTmuxSession(
-                    tmuxSession, tmuxServer: tmuxServer, launchID: launchID
-                )
-            }
+            // focalpointd is the sole terminal-launch owner. This event is
+            // presentation-only; opening here would create a duplicate window.
         case "complete":
             clearManagedRelaunch(id)
             setManagedRelaunchStatus(
@@ -1408,33 +1430,26 @@ final class AppModel: ObservableObject {
     }
 
     private func launchManagedSession(_ entry: SessionHistoryEntry) {
-        guard let cmd = resumeCommand(for: entry) else { return }
+        guard resumeCommand(for: entry) != nil else { return }
         let cwd = entry.cwd ?? NSHomeDirectory()
-        let quotedCwd = "'" + cwd.replacingOccurrences(of: "'", with: "'\\''") + "'"
-        let runner = NSHomeDirectory() + "/.config/focalpoint/focalpoint-run.sh"
-        let quotedRunner = "'" + runner.replacingOccurrences(of: "'", with: "'\\''") + "'"
-        let script = """
-        #!/bin/zsh -l
-        # FocalPoint managed session recovery — reopens \(entry.kind) session \(entry.sessionID).
-        cd \(quotedCwd) 2>/dev/null || cd
-        if [ ! -x \(quotedRunner) ]; then
-          print -u2 'FocalPoint managed-session launcher is not installed.'
-          exit 1
-        fi
-        exec \(quotedRunner) \(cmd)
-        """
-        let launcher = FileManager.default.temporaryDirectory
-            .appendingPathComponent("focalpoint-resume-\(entry.sessionID).command")
-        do {
-            try script.write(to: launcher, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o700],
-                                                  ofItemAtPath: launcher.path)
-        } catch {
-            log("recoverSession: failed to write launcher: \(error)")
-            return
-        }
-        openWithTerminal(launcher)
         optimisticallyReopen(entry)
+        let client = self.client
+        let targetID = entry.sessionID
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let response = client.request([
+                "cmd": "resume-session", "provider": entry.kind, "cwd": cwd,
+                "session": targetID, "title": entry.title,
+            ], timeout: 3)
+            guard response?["ok"] as? Bool == true else {
+                Task { @MainActor [weak self] in
+                    if let idx = self?.sessions.firstIndex(where: { $0.id == targetID && $0.pendingReopen }) {
+                        self?.sessions.remove(at: idx)
+                    }
+                    log("recoverSession: \(response?["error"] as? String ?? "daemon request failed")")
+                }
+                return
+            }
+        }
     }
 
     /// Put the resumed session back in the list *immediately* (as

@@ -15,12 +15,12 @@
 //! (device->subscribers). Current state lives in `Shared` so it can be pushed
 //! to a device that (re)appears.
 
-use crate::config::{Action, Config};
 use crate::channel::{valid_kind, Channels, BODY_MAX_CHARS};
+use crate::config::{Action, Config};
 use crate::protocol::{
     control_id, control_name, joy_id, joy_name, DeviceEvent, HostCmd, Pattern, State,
 };
-use crate::session::{Effect, Registry, Session};
+use crate::session::{Attachment, Effect, Registry, Session, SessionHealth, TerminalEndpoint};
 use crate::styles::{Style, StyleTable};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -39,34 +39,112 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 #[derive(Debug, Deserialize)]
 #[serde(tag = "cmd", rename_all = "kebab-case")]
 pub enum Request {
-    SetState { state: String, session: Option<String>, kind: Option<String>, label: Option<String>, meta: Option<Map<String, Value>> },
-    SetMeta { session: String, kind: Option<String>, label: Option<String>, #[serde(default)] meta: Map<String, Value> },
+    SetState {
+        state: String,
+        session: Option<String>,
+        kind: Option<String>,
+        label: Option<String>,
+        meta: Option<Map<String, Value>>,
+    },
+    SetMeta {
+        session: String,
+        kind: Option<String>,
+        label: Option<String>,
+        #[serde(default)]
+        meta: Map<String, Value>,
+    },
     GetState,
     ListSessions,
-    RenameSession { session: String, name: Option<String> },
-    SetSessionBacklogged { session: String, backlogged: bool },
-    SwapSlots { session1: String, session2: String },
-    MoveSlot { session: String, slot: u64 },
-    EndSession { session: String },
-    QuitSession { session: String },
-    StopOrchestratedSession { session: String, task_id: String },
-    ReadSessionTranscript { session: String, task_id: String, tail: Option<u64>, search: Option<String> },
-    FocusSession { session: String },
-    SetLed { index: u64, rgb: Vec<u64> },
+    RenameSession {
+        session: String,
+        name: Option<String>,
+    },
+    SetSessionBacklogged {
+        session: String,
+        backlogged: bool,
+    },
+    SwapSlots {
+        session1: String,
+        session2: String,
+    },
+    MoveSlot {
+        session: String,
+        slot: u64,
+    },
+    EndSession {
+        session: String,
+    },
+    QuitSession {
+        session: String,
+    },
+    StopOrchestratedSession {
+        session: String,
+        task_id: String,
+    },
+    ReadSessionTranscript {
+        session: String,
+        task_id: String,
+        tail: Option<u64>,
+        search: Option<String>,
+    },
+    FocusSession {
+        session: String,
+    },
+    SetLed {
+        index: u64,
+        rgb: Vec<u64>,
+    },
     GetStyles,
-    SetStyle { state: String, rgb: Vec<u64>, pattern: String, period_ms: Option<u64> },
-    SetUsage { provider: String, usage: Map<String, Value> },
+    SetStyle {
+        state: String,
+        rgb: Vec<u64>,
+        pattern: String,
+        period_ms: Option<u64>,
+    },
+    SetUsage {
+        provider: String,
+        usage: Map<String, Value>,
+    },
     GetUsage,
     Subscribe,
-    Inject { kind: String, control: Option<String>, action: Option<String>, delta: Option<i64>, gesture: Option<String> },
-    ChannelCreate { task_id: String },
-    ChannelMembers { task_id: String, channel: String },
-    ChannelClose { task_id: String, channel: String },
-    ChannelRead { task_id: String, channel: String, since: Option<u64>, tail: Option<u64> },
-    ChannelPost { task_id: String, channel: String, body: String, kind: Option<String>, to: Option<String> },
-    RelaunchManagedSession { session: String },
+    Inject {
+        kind: String,
+        control: Option<String>,
+        action: Option<String>,
+        delta: Option<i64>,
+        gesture: Option<String>,
+    },
+    ChannelCreate {
+        task_id: String,
+    },
+    ChannelMembers {
+        task_id: String,
+        channel: String,
+    },
+    ChannelClose {
+        task_id: String,
+        channel: String,
+    },
+    ChannelRead {
+        task_id: String,
+        channel: String,
+        since: Option<u64>,
+        tail: Option<u64>,
+    },
+    ChannelPost {
+        task_id: String,
+        channel: String,
+        body: String,
+        kind: Option<String>,
+        to: Option<String>,
+    },
+    RelaunchManagedSession {
+        session: String,
+    },
     GetAttentionOrder,
-    SetAttentionOrder { sessions: Vec<String> },
+    SetAttentionOrder {
+        sessions: Vec<String>,
+    },
     FocusNextAttention,
     FocusPrevAttention,
     LaunchSession {
@@ -80,6 +158,12 @@ pub enum Request {
         role: Option<String>,
         manager_task_id: Option<String>,
         channel_id: Option<String>,
+    },
+    ResumeSession {
+        provider: String,
+        cwd: String,
+        session: String,
+        title: Option<String>,
     },
     Ping,
 }
@@ -96,6 +180,27 @@ pub struct SessionDto {
     meta: Map<String, Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     connected: Option<bool>,
+    health: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    health_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attachment_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attachment_type: Option<String>,
+    last_activity_unix_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_verified_unix_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    terminal_host: Option<TerminalHostDto>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TerminalHostDto {
+    bundle_id: Option<String>,
+    application_pid: Option<i32>,
+    window_id: Option<String>,
+    session_id: Option<String>,
+    host_tty: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -110,10 +215,14 @@ pub struct StyleMap(Vec<(String, StyleDto)>);
 
 impl Serialize for StyleMap {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer {
+    where
+        S: serde::Serializer,
+    {
         use serde::ser::SerializeMap;
         let mut map = serializer.serialize_map(Some(self.0.len()))?;
-        for (name, style) in &self.0 { map.serialize_entry(name, style)?; }
+        for (name, style) in &self.0 {
+            map.serialize_entry(name, style)?;
+        }
         map.end()
     }
 }
@@ -128,22 +237,72 @@ impl Serialize for StyleMap {
 #[derive(Debug, Serialize)]
 #[serde(tag = "event", rename_all = "kebab-case")]
 pub enum Event {
-    SnapshotBegin { generation: u64 },
-    SnapshotEnd { generation: u64 },
-    State { state: String },
-    Session { #[serde(flatten)] session: SessionDto },
-    SessionEnded { session: String, slot: Option<u8> },
-    SessionDisconnected { session: String, slot: Option<u8> },
-    SessionRekeyed { old_session: String, new_session: String },
+    SnapshotBegin {
+        generation: u64,
+    },
+    SnapshotEnd {
+        generation: u64,
+    },
+    State {
+        state: String,
+    },
+    Session {
+        #[serde(flatten)]
+        session: SessionDto,
+    },
+    SessionEnded {
+        session: String,
+        slot: Option<u8>,
+    },
+    SessionDisconnected {
+        session: String,
+        slot: Option<u8>,
+    },
+    SessionHealthChanged {
+        session: String,
+        health: String,
+        reason: Option<String>,
+    },
+    SessionRekeyed {
+        old_session: String,
+        new_session: String,
+    },
     /// A controller selected this session for the configured focus action.
     /// This is presentation state for clients; the daemon never treats it as
     /// durable session metadata.
-    Focus { session: String },
-    Key { control: String, pressed: bool },
-    Dial { delta: i8 },
-    Joy { gesture: String },
-    Usage { provider: String, usage: Map<String, Value> },
-    Style { state: String, rgb: [u8; 3], pattern: String, period_ms: u16 },
+    Focus {
+        session: String,
+    },
+    FocusResult {
+        session: String,
+        slot: Option<u8>,
+        attachment_id: Option<String>,
+        strategy: String,
+        result: String,
+        terminal_pid: Option<i32>,
+        terminal_session_id: Option<String>,
+        reason: Option<String>,
+    },
+    Key {
+        control: String,
+        pressed: bool,
+    },
+    Dial {
+        delta: i8,
+    },
+    Joy {
+        gesture: String,
+    },
+    Usage {
+        provider: String,
+        usage: Map<String, Value>,
+    },
+    Style {
+        state: String,
+        rgb: [u8; 3],
+        pattern: String,
+        period_ms: u16,
+    },
 }
 
 /// All one-line non-stream responses.
@@ -156,14 +315,34 @@ pub enum Event {
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum Response {
-    Ok { ok: bool },
-    State { ok: bool, state: String },
-    Sessions { ok: bool, sessions: Vec<SessionDto> },
-    Usage { ok: bool, usage: HashMap<String, Map<String, Value>> },
-    Styles { ok: bool, styles: StyleMap },
-    Ping { ok: bool, device: bool },
+    Ok {
+        ok: bool,
+    },
+    State {
+        ok: bool,
+        state: String,
+    },
+    Sessions {
+        ok: bool,
+        sessions: Vec<SessionDto>,
+    },
+    Usage {
+        ok: bool,
+        usage: HashMap<String, Map<String, Value>>,
+    },
+    Styles {
+        ok: bool,
+        styles: StyleMap,
+    },
+    Ping {
+        ok: bool,
+        device: bool,
+    },
     Json(Value),
-    Error { ok: bool, error: String },
+    Error {
+        ok: bool,
+        error: String,
+    },
 }
 
 fn event_line(event: Event) -> String {
@@ -465,6 +644,169 @@ fn valid_focalpoint_tmux_server(server: &str) -> bool {
             .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
 }
 
+/// Recover daemon-owned launch identity even when a provider strips every
+/// FOCALPOINT_* variable before invoking hooks. The provider PID/tty is
+/// matched against exact panes on pending private tmux servers; task metadata
+/// comes only from the daemon's persisted receipt, never from a fuzzy title,
+/// cwd, provider kind, PID alone, or tty alone.
+#[cfg(unix)]
+fn correlate_pending_managed_launch(
+    registry: &Registry,
+    kind: Option<&str>,
+    meta: &mut Map<String, Value>,
+) -> Option<String> {
+    let reported_task = meta
+        .get("orchestrator_task_id")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let tty = meta.get("tty").and_then(Value::as_str)?.to_string();
+    let pid = meta.get("pid").and_then(Value::as_i64)? as i32;
+    let tmux = executable_named("tmux")?;
+    let receipt_dir = crate::paths::daemon_state_dir().join("launches");
+    let mut matches = Vec::new();
+    let uid = unsafe { libc::geteuid() };
+    let mut socket_dirs = vec![
+        PathBuf::from(format!("/tmp/tmux-{uid}")),
+        PathBuf::from(format!("/private/tmp/tmux-{uid}")),
+    ];
+    if let Some(tmp) = std::env::var_os("TMPDIR") {
+        socket_dirs.push(PathBuf::from(tmp).join(format!("tmux-{uid}")));
+    }
+    socket_dirs.sort();
+    socket_dirs.dedup();
+    for (task_id, _) in registry.pending_managed_launches() {
+        if reported_task
+            .as_deref()
+            .is_some_and(|reported| reported != task_id)
+        {
+            continue;
+        }
+        let prefix = format!("fp-{task_id}-");
+        let mut candidate_servers = Vec::new();
+        if let Some(server) = meta
+            .get("mux_server")
+            .and_then(Value::as_str)
+            .filter(|server| server.starts_with(&prefix) && valid_focalpoint_tmux_server(server))
+        {
+            candidate_servers.push(server.to_string());
+        }
+        for directory in &socket_dirs {
+            let Ok(entries) = std::fs::read_dir(directory) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let Some(server) = entry.file_name().to_str().map(str::to_string) else {
+                    continue;
+                };
+                if server.starts_with(&prefix) && valid_focalpoint_tmux_server(&server) {
+                    candidate_servers.push(server);
+                }
+            }
+        }
+        candidate_servers.sort();
+        candidate_servers.dedup();
+        for server in candidate_servers {
+            let Ok(output) = Command::new(&tmux).args(["-L", &server, "list-panes", "-a", "-F", "#{session_name}\t#{pane_id}\t#{pane_tty}\t#{pane_pid}\t#{pane_current_command}"]).output() else { continue };
+            if !output.status.success() {
+                continue;
+            }
+            for line in String::from_utf8_lossy(&output.stdout).lines() {
+                let fields: Vec<&str> = line.split('\t').collect();
+                if fields.len() != 5 || fields[2] != tty {
+                    continue;
+                }
+                let pane_pid = fields[3].parse::<i32>().ok();
+                if pane_pid != Some(pid) {
+                    continue;
+                }
+                matches.push((
+                    task_id.clone(),
+                    server.clone(),
+                    fields[0].to_string(),
+                    fields[1].to_string(),
+                ));
+            }
+        }
+    }
+    matches.sort();
+    matches.dedup();
+    if matches.len() != 1 {
+        return None;
+    }
+    let (task_id, server, session, pane) = matches.pop()?;
+    let receipt_path = receipt_dir.join(format!("{task_id}.json"));
+    let mut receipt: Value = serde_json::from_slice(&std::fs::read(&receipt_path).ok()?).ok()?;
+    if receipt.get("task_id").and_then(Value::as_str) != Some(task_id.as_str())
+        || receipt.get("provider").and_then(Value::as_str) != kind
+    {
+        return None;
+    }
+    let client_tty = Command::new(&tmux)
+        .args([
+            "-L",
+            &server,
+            "list-clients",
+            "-t",
+            &session,
+            "-F",
+            "#{client_tty}",
+        ])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .and_then(|out| String::from_utf8(out.stdout).ok())
+        .and_then(|text| {
+            text.lines()
+                .find(|line| !line.is_empty())
+                .map(str::to_string)
+        });
+    meta.insert("managed".into(), true.into());
+    meta.insert("orchestrator_task_id".into(), task_id.clone().into());
+    meta.insert("_correlated_launch_task_id".into(), task_id.clone().into());
+    if let Some(slot) = receipt.get("slot").and_then(Value::as_u64) {
+        meta.insert("_authorized_requested_slot".into(), slot.into());
+    }
+    meta.insert("mux_server".into(), server.into());
+    meta.insert("mux_session".into(), session.into());
+    meta.insert("mux_pane".into(), pane.into());
+    meta.insert("attachment_registration".into(), true.into());
+    for key in [
+        "launch_id",
+        "title",
+        "role",
+        "manager_task_id",
+        "channel_id",
+        "terminal_bundle_id",
+    ] {
+        if let Some(value) = receipt.get(key).filter(|value| !value.is_null()).cloned() {
+            let target = match key {
+                "title" => "session_title",
+                "role" => "orchestration_role",
+                key => key,
+            };
+            meta.insert(target.into(), value);
+        }
+    }
+    if let Some(client_tty) = client_tty {
+        meta.insert("mux_client_tty".into(), client_tty.clone().into());
+        meta.insert("terminal_host_tty".into(), client_tty.into());
+    }
+    receipt["status"] = "registered".into();
+    receipt["mux_server"] = meta.get("mux_server").cloned().unwrap_or(Value::Null);
+    receipt["mux_session"] = meta.get("mux_session").cloned().unwrap_or(Value::Null);
+    receipt["mux_pane"] = meta.get("mux_pane").cloned().unwrap_or(Value::Null);
+    receipt["pane_tty"] = tty.clone().into();
+    if let Ok(data) = serde_json::to_vec_pretty(&receipt) {
+        let temporary = receipt_path.with_extension(format!("json.{}.tmp", std::process::id()));
+        if std::fs::write(&temporary, data).is_ok() {
+            let _ = std::fs::rename(temporary, receipt_path);
+        }
+    }
+    eprintln!("[managed-launch] correlated task_id={} pid={} pane_tty={} server={} pane={} hook_metadata=missing",
+        diagnostic_text(&task_id), pid, diagnostic_text(&tty), diagnostic_meta(meta, "mux_server"), diagnostic_meta(meta, "mux_pane"));
+    Some(task_id)
+}
+
 #[cfg(unix)]
 fn channel_wake_target(recipient: &Session) -> Option<(String, String, String, String)> {
     if recipient.state != State::Idle
@@ -487,7 +829,12 @@ fn channel_wake_target(recipient: &Session) -> Option<(String, String, String, S
     {
         return None;
     }
-    Some((server.to_string(), session.to_string(), pane.to_string(), tty.to_string()))
+    Some((
+        server.to_string(),
+        session.to_string(),
+        pane.to_string(),
+        tty.to_string(),
+    ))
 }
 
 /// The server is private and daemon-created; still verify the exact session,
@@ -496,7 +843,15 @@ fn channel_wake_target(recipient: &Session) -> Option<(String, String, String, S
 #[cfg(unix)]
 fn send_channel_wake(server: &str, session: &str, pane: &str, tty: &str) {
     let output = match Command::new("tmux")
-        .args(["-L", server, "list-panes", "-t", session, "-F", "#{pane_id}\t#{pane_tty}"])
+        .args([
+            "-L",
+            server,
+            "list-panes",
+            "-t",
+            session,
+            "-F",
+            "#{pane_id}\t#{pane_tty}",
+        ])
         .output()
     {
         Ok(output) if output.status.success() => output,
@@ -507,7 +862,15 @@ fn send_channel_wake(server: &str, session: &str, pane: &str, tty: &str) {
         .is_some_and(|lines| lines.lines().any(|line| line == format!("{pane}\t{tty}")));
     if target_is_owned {
         let _ = Command::new("tmux")
-            .args(["-L", server, "send-keys", "-t", pane, CHANNEL_WAKE_PING, "Enter"])
+            .args([
+                "-L",
+                server,
+                "send-keys",
+                "-t",
+                pane,
+                CHANNEL_WAKE_PING,
+                "Enter",
+            ])
             .status();
     }
 }
@@ -516,7 +879,13 @@ fn send_channel_wake(server: &str, session: &str, pane: &str, tty: &str) {
 fn kill_managed_resume(prepared: &ManagedResumeLaunch) {
     // Only tear down the exact session we just created, on its private server.
     let output = match Command::new(&prepared.tmux)
-        .args(["-L", &prepared.tmux_server, "list-sessions", "-F", "#{session_name}"])
+        .args([
+            "-L",
+            &prepared.tmux_server,
+            "list-sessions",
+            "-F",
+            "#{session_name}",
+        ])
         .output()
     {
         Ok(output) if output.status.success() => output,
@@ -527,9 +896,45 @@ fn kill_managed_resume(prepared: &ManagedResumeLaunch) {
         .is_some_and(|names| names.lines().any(|name| name == prepared.tmux_session))
     {
         let _ = Command::new(&prepared.tmux)
-            .args(["-L", &prepared.tmux_server, "kill-session", "-t", &prepared.tmux_session])
+            .args([
+                "-L",
+                &prepared.tmux_server,
+                "kill-session",
+                "-t",
+                &prepared.tmux_session,
+            ])
             .status();
     }
+}
+
+#[cfg(unix)]
+fn open_managed_tmux_terminal(prepared: &ManagedResumeLaunch) -> Result<(), String> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    let directory = crate::paths::daemon_state_dir().join("launchers");
+    std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))
+        .map_err(|e| e.to_string())?;
+    let launcher = directory.join(format!("attach-{}.command", prepared.launch_id));
+    if launcher.exists() {
+        return Ok(());
+    }
+    let script = format!(
+        "#!/bin/zsh -l\nset -e\nrm -f -- {}\nexec {} -L {} attach-session -t {}\n",
+        shell_quote(&launcher.display().to_string()),
+        shell_quote(&prepared.tmux.display().to_string()),
+        shell_quote(&prepared.tmux_server),
+        shell_quote(&prepared.tmux_session)
+    );
+    let mut file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .mode(0o700)
+        .open(&launcher)
+        .map_err(|e| e.to_string())?;
+    file.write_all(script.as_bytes())
+        .and_then(|_| file.sync_all())
+        .map_err(|e| e.to_string())?;
+    open_terminal_launcher(&preferred_terminal_bundle_id(), &launcher)
 }
 
 #[cfg(unix)]
@@ -552,10 +957,7 @@ fn valid_orchestrator_model_id(id: &str) -> bool {
 #[cfg(unix)]
 fn orchestrator_session_title(title: Option<&str>, task_id: &str) -> Result<String, String> {
     let title = title.unwrap_or(task_id).trim();
-    if title.is_empty()
-        || title.chars().count() > 120
-        || title.chars().any(char::is_control)
-    {
+    if title.is_empty() || title.chars().count() > 120 || title.chars().any(char::is_control) {
         return Err("title must contain 1-120 printable characters".into());
     }
     Ok(title.to_string())
@@ -660,7 +1062,11 @@ fn cursor_provider_command(
         args.push(model.into());
     }
     args.push(prompt.into());
-    Ok(args.iter().map(|arg| shell_quote(arg)).collect::<Vec<_>>().join(" "))
+    Ok(args
+        .iter()
+        .map(|arg| shell_quote(arg))
+        .collect::<Vec<_>>()
+        .join(" "))
 }
 
 #[cfg(unix)]
@@ -704,8 +1110,60 @@ fn preferred_terminal_bundle_id() -> String {
 }
 
 #[cfg(unix)]
-fn terminal_open_args(bundle_id: &str) -> [&str; 3] {
-    ["-n", "-b", bundle_id]
+fn terminal_open_args(bundle_id: &str) -> [&str; 2] {
+    ["-b", bundle_id]
+}
+
+#[cfg(unix)]
+fn applescript_escape(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+#[cfg(unix)]
+fn open_terminal_launcher(bundle_id: &str, launcher: &Path) -> Result<(), String> {
+    let status = if bundle_id == "com.googlecode.iterm2" {
+        let command = format!("/bin/zsh -l {}", shell_quote(&launcher.display().to_string()));
+        let script = format!(
+            "tell application id \"com.googlecode.iterm2\" to create window with default profile command \"{}\"",
+            applescript_escape(&command),
+        );
+        Command::new("/usr/bin/osascript").args(["-e", &script]).status()
+    } else {
+        Command::new("/usr/bin/open").args(terminal_open_args(bundle_id)).arg(launcher).status()
+    }.map_err(|error| format!("could not open agent terminal: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("could not open agent terminal ({status})"))
+    }
+}
+
+#[cfg(unix)]
+fn close_exact_terminal_endpoint(endpoint: &TerminalEndpoint) -> Result<(), String> {
+    let (bundle, session_id, host_tty) = (
+        endpoint.bundle_id.as_deref(),
+        endpoint.session_id.as_deref(),
+        endpoint.host_tty.as_deref(),
+    );
+    let script = match (bundle, session_id, host_tty) {
+        (Some("com.googlecode.iterm2"), Some(session_id), _) => format!(
+            "tell application id \"com.googlecode.iterm2\" to repeat with w in windows\nrepeat with t in tabs of w\nrepeat with s in sessions of t\nif unique ID of s is \"{}\" then close s\nend repeat\nend repeat\nend repeat",
+            applescript_escape(session_id),
+        ),
+        (Some("com.apple.Terminal"), _, Some(tty)) => format!(
+            "tell application id \"com.apple.Terminal\" to repeat with w in windows\nrepeat with t in tabs of w\nif tty of t is \"{}\" then close t\nend repeat\nend repeat",
+            applescript_escape(tty),
+        ),
+        _ => return Err("source terminal has no exact closable endpoint".into()),
+    };
+    let status = Command::new("/usr/bin/osascript")
+        .args(["-e", &script])
+        .status()
+        .map_err(|e| e.to_string())?;
+    status
+        .success()
+        .then_some(())
+        .ok_or_else(|| format!("terminal cleanup exited with {status}"))
 }
 
 /// Safely launch one exact, user-authorized task in an already-prepared
@@ -760,9 +1218,9 @@ fn launch_orchestrated_session(
     } else {
         executable_named(provider)
     }
-        .ok_or_else(|| format!("{provider} is not installed"))?
-        .canonicalize()
-        .map_err(|e| format!("cannot resolve provider executable: {e}"))?;
+    .ok_or_else(|| format!("{provider} is not installed"))?
+    .canonicalize()
+    .map_err(|e| format!("cannot resolve provider executable: {e}"))?;
     let terminal_bundle_id = preferred_terminal_bundle_id();
     let home = dirs::home_dir().ok_or("cannot resolve home directory")?;
     let runner = home.join(".config/focalpoint/focalpoint-run.sh");
@@ -786,7 +1244,7 @@ fn launch_orchestrated_session(
         ));
     }
 
-    let state_dir = home.join(".local/state/focalpoint");
+    let state_dir = crate::paths::daemon_state_dir();
     let receipts_dir = state_dir.join("launches");
     let launchers_dir = state_dir.join("launchers");
     for directory in [&receipts_dir, &launchers_dir] {
@@ -795,6 +1253,15 @@ fn launch_orchestrated_session(
             .map_err(|e| e.to_string())?;
     }
     let receipt = receipts_dir.join(format!("{task_id}.json"));
+    if receipt.exists() {
+        let mut existing: Value = serde_json::from_slice(
+            &std::fs::read(&receipt).map_err(|e| format!("cannot read launch receipt: {e}"))?,
+        )
+        .map_err(|e| format!("invalid launch receipt: {e}"))?;
+        existing["ok"] = Value::Bool(true);
+        return Ok(existing);
+    }
+    let launch_id = new_relaunch_id();
     let mut receipt_file = OpenOptions::new()
         .create_new(true)
         .write(true)
@@ -807,8 +1274,9 @@ fn launch_orchestrated_session(
                 format!("cannot claim task id: {error}")
             }
         })?;
-    let receipt_value = serde_json::json!({
+    let mut receipt_value = serde_json::json!({
         "task_id": task_id,
+        "launch_id": launch_id,
         "title": title,
         "slot": slot,
         "provider": provider,
@@ -818,8 +1286,9 @@ fn launch_orchestrated_session(
         "terminal_bundle_id": terminal_bundle_id.clone(),
         "role": role,
         "manager_task_id": manager_task_id,
+        "channel_id": channel_id,
         "accepted_at_unix_ms": unix_ms_now(),
-        "status": "launching",
+        "status": "opening",
     });
     if let Err(error) = serde_json::to_writer_pretty(&mut receipt_file, &receipt_value)
         .map_err(std::io::Error::other)
@@ -848,8 +1317,10 @@ fn launch_orchestrated_session(
             model,
             &prompt,
             cursor_mode,
-            (cursor_mode == "headless" && cursor_wrapper.is_file() && is_executable(&cursor_wrapper))
-                .then_some(cursor_wrapper.as_path()),
+            (cursor_mode == "headless"
+                && cursor_wrapper.is_file()
+                && is_executable(&cursor_wrapper))
+            .then_some(cursor_wrapper.as_path()),
         )?
     } else {
         orchestrated_provider_command(&provider_bin, model, &prompt)
@@ -861,12 +1332,18 @@ fn launch_orchestrated_session(
         .map(|id| format!("export FOCALPOINT_CHANNEL_ID={}\n", shell_quote(id)))
         .unwrap_or_default();
     let slot_export = slot
-        .map(|slot| format!("export FOCALPOINT_SESSION_SLOT={}\n", shell_quote(&slot.to_string())))
+        .map(|slot| {
+            format!(
+                "export FOCALPOINT_SESSION_SLOT={}\n",
+                shell_quote(&slot.to_string())
+            )
+        })
         .unwrap_or_default();
     let script = format!(
-        "#!/bin/bash\nset -e\nrm -f -- {}\ncd -- {}\nexport FOCALPOINT_ORCHESTRATOR_TASK_ID={}\nexport FOCALPOINT_ORCHESTRATION_ROLE={}\nexport FOCALPOINT_SESSION_TITLE={}\n{}{}{}exec {} {}\n",
+        "#!/bin/bash\nset -e\nrm -f -- {}\ncd -- {}\nexport FOCALPOINT_LAUNCH_ID={}\nexport FOCALPOINT_ORCHESTRATOR_TASK_ID={}\nexport FOCALPOINT_ORCHESTRATION_ROLE={}\nexport FOCALPOINT_SESSION_TITLE={}\n{}{}{}exec {} {}\n",
         shell_quote(&launcher.display().to_string()),
         shell_quote(&cwd.display().to_string()),
+        shell_quote(&launch_id),
         shell_quote(task_id),
         shell_quote(role),
         shell_quote(title),
@@ -889,16 +1366,7 @@ fn launch_orchestrated_session(
             .map_err(|e| format!("cannot write launcher: {e}"))?;
         std::fs::rename(&temporary, &launcher)
             .map_err(|e| format!("cannot publish launcher: {e}"))?;
-        let status = Command::new("/usr/bin/open")
-            // A new application instance prevents terminal preferences from
-            // coalescing simultaneous launches into tabs/panes of one window.
-            .args(terminal_open_args(terminal_bundle_id.as_str()))
-            .arg(&launcher)
-            .status()
-            .map_err(|e| format!("could not open agent terminal: {e}"))?;
-        if !status.success() {
-            return Err(format!("could not open agent terminal ({status})"));
-        }
+        open_terminal_launcher(terminal_bundle_id.as_str(), &launcher)?;
         Ok(())
     })();
     if let Err(error) = launch_result {
@@ -907,9 +1375,17 @@ fn launch_orchestrated_session(
         let _ = std::fs::remove_file(&receipt);
         return Err(error);
     }
+    receipt_value["status"] = Value::String("launched".into());
+    let receipt_update = receipt.with_extension(format!("json.{}.tmp", std::process::id()));
+    if let Ok(data) = serde_json::to_vec_pretty(&receipt_value) {
+        if std::fs::write(&receipt_update, data).is_ok() {
+            let _ = std::fs::rename(&receipt_update, &receipt);
+        }
+    }
     Ok(serde_json::json!({
         "ok": true,
         "task_id": task_id,
+        "launch_id": launch_id,
         "title": title,
         "slot": slot,
         "provider": provider,
@@ -920,8 +1396,116 @@ fn launch_orchestrated_session(
         "manager_task_id": manager_task_id,
         "channel_id": channel_id,
         "terminal_bundle_id": terminal_bundle_id,
-        "status": "launching",
+        "status": "launched",
     }))
+}
+
+#[cfg(unix)]
+fn resume_managed_session(
+    provider: &str,
+    cwd: &str,
+    session: &str,
+    title: Option<&str>,
+) -> Result<Value, String> {
+    use std::os::unix::fs::OpenOptionsExt;
+    if !matches!(provider, "claude" | "codex") {
+        return Err("provider must be 'claude' or 'codex'".into());
+    }
+    if session.is_empty() || session.len() > 256 || session.chars().any(char::is_control) {
+        return Err("invalid provider session id".into());
+    }
+    let cwd =
+        std::fs::canonicalize(cwd).map_err(|e| format!("working directory is unavailable: {e}"))?;
+    if !cwd.is_dir() {
+        return Err("working directory is not a directory".into());
+    }
+    let home = dirs::home_dir().ok_or("cannot resolve home directory")?;
+    let runner = home.join(".config/focalpoint/focalpoint-run.sh");
+    if !runner.is_file() || !is_executable(&runner) {
+        return Err("managed-session launcher is not installed".into());
+    }
+    let state = crate::paths::daemon_state_dir();
+    let receipts = state.join("resumes");
+    let launchers = state.join("launchers");
+    std::fs::create_dir_all(&receipts).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&launchers).map_err(|e| e.to_string())?;
+    let key: String = session
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let receipt = receipts.join(format!("{provider}-{key}.json"));
+    if receipt.exists() {
+        let mut existing: Value =
+            serde_json::from_slice(&std::fs::read(&receipt).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        existing["ok"] = true.into();
+        return Ok(existing);
+    }
+    let terminal_bundle_id = preferred_terminal_bundle_id();
+    let launch_id = new_relaunch_id();
+    let mut value = serde_json::json!({"ok":true,"launch_id":launch_id,"provider":provider,"session":session,
+        "title":title,"cwd":cwd,"terminal_bundle_id":terminal_bundle_id,"status":"opening"});
+    let mut file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .mode(0o600)
+        .open(&receipt)
+        .map_err(|e| e.to_string())?;
+    serde_json::to_writer_pretty(&mut file, &value).map_err(|e| e.to_string())?;
+    file.sync_all().map_err(|e| e.to_string())?;
+    let launcher = launchers.join(format!("resume-{provider}-{key}.command"));
+    let provider_command = if provider == "claude" {
+        format!(
+            "{} --resume {}",
+            shell_quote(
+                &executable_named("claude")
+                    .ok_or("claude is not installed")?
+                    .display()
+                    .to_string()
+            ),
+            shell_quote(session)
+        )
+    } else {
+        format!(
+            "{} resume {}",
+            shell_quote(
+                &executable_named("codex")
+                    .ok_or("codex is not installed")?
+                    .display()
+                    .to_string()
+            ),
+            shell_quote(session)
+        )
+    };
+    let script = format!("#!/bin/zsh -l\nset -e\nrm -f -- {}\ncd -- {}\nexport FOCALPOINT_LAUNCH_ID={}\nexport FOCALPOINT_RESUME_SESSION_ID={}\nexec {} {}\n",
+        shell_quote(&launcher.display().to_string()), shell_quote(&cwd.display().to_string()), shell_quote(&launch_id), shell_quote(session),
+        shell_quote(&runner.display().to_string()), provider_command);
+    let temporary = launcher.with_extension(format!("command.{}.tmp", std::process::id()));
+    let mut launcher_file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .mode(0o700)
+        .open(&temporary)
+        .map_err(|e| e.to_string())?;
+    launcher_file
+        .write_all(script.as_bytes())
+        .and_then(|_| launcher_file.sync_all())
+        .map_err(|e| e.to_string())?;
+    std::fs::rename(&temporary, &launcher).map_err(|e| e.to_string())?;
+    open_terminal_launcher(&terminal_bundle_id, &launcher)?;
+    value["status"] = "launched".into();
+    let data = serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?;
+    let update = receipt.with_extension(format!("json.{}.tmp", std::process::id()));
+    std::fs::write(&update, data)
+        .and_then(|_| std::fs::rename(update, &receipt))
+        .map_err(|e| e.to_string())?;
+    Ok(value)
 }
 
 /// Parse an RGB triple from a JSON value (array of 3 integers 0..=255).
@@ -955,10 +1539,13 @@ fn parse_rgb_values(values: &[u64]) -> Result<[u8; 3], String> {
 }
 
 fn parse_set_style_fields(
-    state_name: &str, rgb: &[u64], pattern_name: &str, period_ms: Option<u64>,
+    state_name: &str,
+    rgb: &[u64],
+    pattern_name: &str,
+    period_ms: Option<u64>,
 ) -> Result<(State, Style), String> {
-    let state = State::from_name(state_name)
-        .ok_or_else(|| format!("unknown state: {state_name:?}"))?;
+    let state =
+        State::from_name(state_name).ok_or_else(|| format!("unknown state: {state_name:?}"))?;
     let pattern = Pattern::from_name(pattern_name).ok_or_else(|| {
         format!("unknown pattern {pattern_name:?}; expected solid|breathe|blink|strobe|off")
     })?;
@@ -967,26 +1554,52 @@ fn parse_set_style_fields(
         Some(n) if n <= u16::MAX as u64 => n as u16,
         Some(_) => return Err("period_ms must be an integer 0..=65535".to_string()),
     };
-    Ok((state, Style::new(parse_rgb_values(rgb)?, pattern, period_ms)))
+    Ok((
+        state,
+        Style::new(parse_rgb_values(rgb)?, pattern, period_ms),
+    ))
 }
 
 fn parse_inject_fields(
-    kind: &str, control: Option<&str>, action: Option<&str>, delta: Option<i64>, gesture: Option<&str>,
+    kind: &str,
+    control: Option<&str>,
+    action: Option<&str>,
+    delta: Option<i64>,
+    gesture: Option<&str>,
 ) -> Result<Vec<DeviceEvent>, String> {
     match kind {
         "key" => {
             let control = control.ok_or_else(|| "inject key requires 'control'".to_string())?;
             let id = control_id(control).ok_or_else(|| format!("unknown control: {control:?}"))?;
             match action.unwrap_or("tap") {
-                "press" => Ok(vec![DeviceEvent::Key { control: id, pressed: true }]),
-                "release" => Ok(vec![DeviceEvent::Key { control: id, pressed: false }]),
-                "tap" => Ok(vec![DeviceEvent::Key { control: id, pressed: true }, DeviceEvent::Key { control: id, pressed: false }]),
-                other => Err(format!("unknown key action {other:?}; expected press|release|tap")),
+                "press" => Ok(vec![DeviceEvent::Key {
+                    control: id,
+                    pressed: true,
+                }]),
+                "release" => Ok(vec![DeviceEvent::Key {
+                    control: id,
+                    pressed: false,
+                }]),
+                "tap" => Ok(vec![
+                    DeviceEvent::Key {
+                        control: id,
+                        pressed: true,
+                    },
+                    DeviceEvent::Key {
+                        control: id,
+                        pressed: false,
+                    },
+                ]),
+                other => Err(format!(
+                    "unknown key action {other:?}; expected press|release|tap"
+                )),
             }
         }
         "dial" => {
             let delta = delta.ok_or_else(|| "inject dial requires integer 'delta'".to_string())?;
-            if !(-128..=127).contains(&delta) { return Err(format!("delta {delta} out of range (-128..=127)")); }
+            if !(-128..=127).contains(&delta) {
+                return Err(format!("delta {delta} out of range (-128..=127)"));
+            }
             Ok(vec![DeviceEvent::Dial { delta: delta as i8 }])
         }
         "joy" => {
@@ -994,7 +1607,9 @@ fn parse_inject_fields(
             let id = joy_id(gesture).ok_or_else(|| format!("unknown gesture: {gesture:?}"))?;
             Ok(vec![DeviceEvent::Joy { gesture: id }])
         }
-        other => Err(format!("unknown inject kind {other:?}; expected key|dial|joy")),
+        other => Err(format!(
+            "unknown inject kind {other:?}; expected key|dial|joy"
+        )),
     }
 }
 
@@ -1203,12 +1818,22 @@ fn orchestrated_session_target(
 
 #[cfg(unix)]
 fn channel_actor(registry: &Registry, task_id: &str) -> Result<Session, String> {
-    if !valid_orchestrator_task_id(task_id) { return Err("invalid channel task id".into()); }
-    let matches: Vec<Session> = registry.list().into_iter().filter(|session| {
-        meta_truthy(session.meta.get("managed"))
-            && matches!(session.kind.as_deref(), Some("claude" | "codex"))
-            && session.meta.get("orchestrator_task_id").and_then(serde_json::Value::as_str) == Some(task_id)
-    }).collect();
+    if !valid_orchestrator_task_id(task_id) {
+        return Err("invalid channel task id".into());
+    }
+    let matches: Vec<Session> = registry
+        .list()
+        .into_iter()
+        .filter(|session| {
+            meta_truthy(session.meta.get("managed"))
+                && matches!(session.kind.as_deref(), Some("claude" | "codex"))
+                && session
+                    .meta
+                    .get("orchestrator_task_id")
+                    .and_then(serde_json::Value::as_str)
+                    == Some(task_id)
+        })
+        .collect();
     match matches.len() {
         1 => Ok(matches.into_iter().next().unwrap()),
         0 => Err("no live managed session owns that channel task id".into()),
@@ -1223,15 +1848,23 @@ const CHANNEL_WAKE_PING: &str = "FocalPoint: you have channel mail. Run fpctl-ag
 /// never contains a message body, kind, sender, or any other channel data.
 #[cfg(unix)]
 fn maybe_wake_channel_member(ctx: &EventCtx, channel: &str, recipient: &Session) {
-    if recipient.state != State::Idle || recipient.state == State::Waiting { return; }
+    if recipient.state != State::Idle || recipient.state == State::Waiting {
+        return;
+    }
     // The degraded tier remains visible to a human for unmanaged sessions,
     // missing panes, and a deliberately disabled managed wake.
     if !ctx.config.channel.wake_managed() || !channel_wake_allowed(recipient) {
-        ctx.broadcast(&serde_json::json!({"event":"channel-notify","channel":channel,"session":recipient.id}).to_string());
+        ctx.broadcast(
+            &serde_json::json!({"event":"channel-notify","channel":channel,"session":recipient.id})
+                .to_string(),
+        );
         return;
     }
     let Some((server, session, pane, tty)) = channel_wake_target(recipient) else {
-        ctx.broadcast(&serde_json::json!({"event":"channel-notify","channel":channel,"session":recipient.id}).to_string());
+        ctx.broadcast(
+            &serde_json::json!({"event":"channel-notify","channel":channel,"session":recipient.id})
+                .to_string(),
+        );
         return;
     };
     let allowed = {
@@ -1239,10 +1872,15 @@ fn maybe_wake_channel_member(ctx: &EventCtx, channel: &str, recipient: &Session)
         let now = Instant::now();
         match state.channel_wake_last.get(&recipient.id) {
             Some(last) if now.duration_since(*last) < Duration::from_secs(3) => false,
-            _ => { state.channel_wake_last.insert(recipient.id.clone(), now); true }
+            _ => {
+                state.channel_wake_last.insert(recipient.id.clone(), now);
+                true
+            }
         }
     };
-    if !allowed { return; }
+    if !allowed {
+        return;
+    }
     std::thread::spawn(move || {
         send_channel_wake(&server, &session, &pane, &tty);
     });
@@ -1255,13 +1893,23 @@ fn channel_public(channel: &crate::channel::Channel) -> serde_json::Value {
 }
 
 #[cfg(unix)]
-fn channel_post_target(channel: &crate::channel::Channel, actor: &str, requested_to: &str) -> Result<String, String> {
-    if !channel.members.contains_key(actor) { return Err("session is not a channel member".into()); }
+fn channel_post_target(
+    channel: &crate::channel::Channel,
+    actor: &str,
+    requested_to: &str,
+) -> Result<String, String> {
+    if !channel.members.contains_key(actor) {
+        return Err("session is not a channel member".into());
+    }
     if actor == channel.owner_session {
-        if requested_to != "channel" && !channel.members.contains_key(requested_to) { return Err("recipient is not a channel member".into()); }
+        if requested_to != "channel" && !channel.members.contains_key(requested_to) {
+            return Err("recipient is not a channel member".into());
+        }
         Ok(requested_to.to_string())
     } else {
-        if requested_to != "channel" && requested_to != channel.owner_session { return Err("workers may post only to their channel owner".into()); }
+        if requested_to != "channel" && requested_to != channel.owner_session {
+            return Err("workers may post only to their channel owner".into());
+        }
         Ok(channel.owner_session.clone())
     }
 }
@@ -1322,7 +1970,9 @@ fn gracefully_end_session(
 /// JSON line for a `state` event (PROTOCOL.md §3): the aggregate state.
 #[cfg(unix)]
 fn state_event_line(state: State) -> String {
-    event_line(Event::State { state: state.name().to_string() })
+    event_line(Event::State {
+        state: state.name().to_string(),
+    })
 }
 
 /// JSON line for a `session` event (registration or update). Carries
@@ -1342,10 +1992,25 @@ fn session_event_line(
 ) -> String {
     event_line(Event::Session {
         session: SessionDto {
-            session: id.to_string(), kind: kind.clone(), label: label.clone(), name: name.clone(),
-            slot, state: state.name().to_string(),
-            backlogged: meta.get(crate::session::BACKLOGGED_META_KEY).and_then(Value::as_bool).unwrap_or(false),
-            meta: external_meta(meta), connected: None,
+            session: id.to_string(),
+            kind: kind.clone(),
+            label: label.clone(),
+            name: name.clone(),
+            slot,
+            state: state.name().to_string(),
+            backlogged: meta
+                .get(crate::session::BACKLOGGED_META_KEY)
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            meta: external_meta(meta),
+            connected: None,
+            health: "unknown".into(),
+            health_reason: None,
+            attachment_id: None,
+            attachment_type: None,
+            last_activity_unix_ms: unix_ms_now(),
+            last_verified_unix_ms: None,
+            terminal_host: None,
         },
     })
 }
@@ -1353,7 +2018,10 @@ fn session_event_line(
 /// JSON line for a `session-ended` event.
 #[cfg(unix)]
 fn session_ended_line(id: &str, slot: Option<u8>) -> String {
-    event_line(Event::SessionEnded { session: id.to_string(), slot })
+    event_line(Event::SessionEnded {
+        session: id.to_string(),
+        slot,
+    })
 }
 
 /// JSON line for a `session-disconnected` event (PROTOCOL.md §3): a session
@@ -1363,7 +2031,10 @@ fn session_ended_line(id: &str, slot: Option<u8>) -> String {
 /// explicitly ended, dismissed, recovered, or its tombstone TTL expires.
 #[cfg(unix)]
 fn session_disconnected_line(id: &str, slot: Option<u8>) -> String {
-    event_line(Event::SessionDisconnected { session: id.to_string(), slot })
+    event_line(Event::SessionDisconnected {
+        session: id.to_string(),
+        slot,
+    })
 }
 
 /// JSON line for a `session-rekeyed` event (PROTOCOL.md §3): a `Compacting`
@@ -1373,7 +2044,10 @@ fn session_disconnected_line(id: &str, slot: Option<u8>) -> String {
 /// followed by a new registration.
 #[cfg(unix)]
 fn session_rekeyed_line(old_id: &str, new_id: &str) -> String {
-    event_line(Event::SessionRekeyed { old_session: old_id.to_string(), new_session: new_id.to_string() })
+    event_line(Event::SessionRekeyed {
+        old_session: old_id.to_string(),
+        new_session: new_id.to_string(),
+    })
 }
 
 #[cfg(unix)]
@@ -1405,13 +2079,21 @@ fn attention_order_event_line(sessions: &[String]) -> String {
 /// JSON line for a provider-wide quota snapshot.
 #[cfg(unix)]
 fn usage_event_line(provider: &str, usage: &serde_json::Map<String, serde_json::Value>) -> String {
-    event_line(Event::Usage { provider: provider.to_string(), usage: usage.clone() })
+    event_line(Event::Usage {
+        provider: provider.to_string(),
+        usage: usage.clone(),
+    })
 }
 
 /// JSON line for a `style` event (PROTOCOL.md §3).
 #[cfg(unix)]
 fn style_event_line(state: State, style: &Style) -> String {
-    event_line(Event::Style { state: state.name().to_string(), rgb: style.rgb, pattern: style.pattern.name().to_string(), period_ms: style.period_ms })
+    event_line(Event::Style {
+        state: state.name().to_string(),
+        rgb: style.rgb,
+        pattern: style.pattern.name().to_string(),
+        period_ms: style.period_ms,
+    })
 }
 
 /// JSON object of all six styles, keyed by state name in id order (for the
@@ -1422,7 +2104,11 @@ fn styles_json(table: &StyleTable) -> StyleMap {
     for (state, style) in table.iter() {
         styles.push((
             state.name().to_string(),
-            StyleDto { rgb: style.rgb, pattern: style.pattern.name().to_string(), period_ms: style.period_ms },
+            StyleDto {
+                rgb: style.rgb,
+                pattern: style.pattern.name().to_string(),
+                period_ms: style.period_ms,
+            },
         ));
     }
     StyleMap(styles)
@@ -1502,9 +2188,21 @@ fn apply_effects(
                         state: Some(state),
                     });
                 }
-                ctx.broadcast(&session_event_line(
-                    &id, &kind, &label, &name, &meta, slot, state,
-                ));
+                let authoritative = ctx
+                    .shared
+                    .lock()
+                    .unwrap()
+                    .registry
+                    .session_or_tombstone(&id);
+                if let Some(session) = authoritative {
+                    ctx.broadcast(&event_line(Event::Session {
+                        session: session_to_dto(&session, None),
+                    }));
+                } else {
+                    ctx.broadcast(&session_event_line(
+                        &id, &kind, &label, &name, &meta, slot, state,
+                    ));
+                }
             }
             Effect::SessionEnded { id, slot } => {
                 session_effect = true;
@@ -1534,6 +2232,23 @@ fn apply_effects(
                 }
                 ctx.broadcast(&session_disconnected_line(&id, slot));
             }
+            Effect::SessionHealthChanged { id, health, reason } => {
+                session_effect = true;
+                eprintln!(
+                    "[probe] session={} health={} reason={}",
+                    diagnostic_text(&id),
+                    health.name(),
+                    reason
+                        .as_deref()
+                        .map(diagnostic_text)
+                        .unwrap_or_else(|| "-".into())
+                );
+                ctx.broadcast(&event_line(Event::SessionHealthChanged {
+                    session: id,
+                    health: health.name().to_string(),
+                    reason,
+                }));
+            }
             Effect::SessionRekeyed { old_id, new_id } => {
                 // No device command: the slot/state don't change here — the
                 // SessionUpsert that immediately follows (Registry::set_state
@@ -1547,15 +2262,24 @@ fn apply_effects(
                 ctx.broadcast(&session_rekeyed_line(&old_id, &new_id));
             }
             Effect::ManagedRelaunchCompleted {
-                old_id: _,
+                old_id,
                 new_id,
                 launch_id,
+                source_terminal,
             } => {
                 session_effect = true;
                 eprintln!("[managed-relaunch] complete session={new_id} launch_id={launch_id}");
                 ctx.broadcast(&managed_relaunch_event_line(
                     &new_id, &launch_id, "complete", None, None, None,
                 ));
+                if let Some(endpoint) = source_terminal {
+                    std::thread::spawn(move || {
+                        match close_exact_terminal_endpoint(&endpoint) {
+                        Ok(()) => eprintln!("[managed-relaunch] source-cleanup old_session={} result=closed", diagnostic_text(&old_id)),
+                        Err(reason) => eprintln!("[managed-relaunch] source-cleanup old_session={} result=left-open reason={}", diagnostic_text(&old_id), diagnostic_text(&reason)),
+                    }
+                    });
+                }
             }
             Effect::AttentionOrderChanged { sessions } => {
                 session_effect = true;
@@ -1584,16 +2308,58 @@ fn apply_effects(
 #[cfg(unix)]
 fn session_to_dto(s: &Session, connected: Option<bool>) -> SessionDto {
     let meta = external_meta(&s.meta);
+    let now = Instant::now();
+    let wall = unix_ms_now();
+    let instant_to_unix_ms = |instant: Instant| {
+        wall.saturating_sub(now.saturating_duration_since(instant).as_millis() as u64)
+    };
+    let endpoint: Option<&TerminalEndpoint> = match s.attachment.as_ref() {
+        Some(Attachment::Process { terminal, .. } | Attachment::Managed { terminal, .. }) => {
+            Some(terminal)
+        }
+        _ => None,
+    };
     SessionDto {
-        session: s.id.clone(), kind: s.kind.clone(), label: s.label.clone(), name: s.name.clone(),
-        slot: s.slot, state: s.state.name().to_string(), backlogged: s.is_backlogged(), meta, connected,
+        session: s.id.clone(),
+        kind: s.kind.clone(),
+        label: s.label.clone(),
+        name: s.name.clone(),
+        slot: s.slot,
+        state: s.state.name().to_string(),
+        backlogged: s.is_backlogged(),
+        meta,
+        connected: connected.or(Some(s.health != SessionHealth::Detached)),
+        health: s.health.name().to_string(),
+        health_reason: s.health_reason.clone(),
+        attachment_id: s.attachment_id().map(str::to_string),
+        attachment_type: s.attachment_type().map(str::to_string),
+        last_activity_unix_ms: instant_to_unix_ms(s.last_update),
+        last_verified_unix_ms: s.last_verified.map(instant_to_unix_ms),
+        terminal_host: endpoint.map(|value| TerminalHostDto {
+            bundle_id: value.bundle_id.clone(),
+            application_pid: value.application_pid,
+            window_id: value.window_id.clone(),
+            session_id: value.session_id.clone(),
+            host_tty: value.host_tty.clone(),
+        }),
     }
 }
 
 fn public_meta(meta: &Map<String, Value>) -> Map<String, Value> {
     meta.iter()
         .filter(|(key, _)| {
-            !key.starts_with("_carry_") && key.as_str() != crate::session::BACKLOGGED_META_KEY
+            !key.starts_with('_')
+                && key.as_str() != crate::session::BACKLOGGED_META_KEY
+                && !key.starts_with("terminal_")
+                && key.as_str() != "mux_client_tty"
+                && !matches!(
+                    key.as_str(),
+                    "attachment_registration"
+                        | "process_boot_time"
+                        | "process_start_time"
+                        | "provider_executable"
+                        | "terminal_application_pid"
+                )
         })
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect()
@@ -1623,6 +2389,12 @@ fn session_to_json(s: &Session) -> Value {
         "state": s.state.name(),
         "backlogged": s.is_backlogged(),
         "meta": public_meta(&s.meta),
+        "carry": s.carry,
+        "health": s.health.name(),
+        "health_reason": s.health_reason,
+        "attachment": s.attachment,
+        "slot_history": s.slot_history,
+        "last_verified_elapsed_ms": s.last_verified.map(|instant| Instant::now().saturating_duration_since(instant).as_millis() as u64),
     })
 }
 
@@ -1633,8 +2405,15 @@ fn session_to_json(s: &Session) -> Value {
 fn session_from_json(v: &serde_json::Value, last_update: Instant) -> Option<Session> {
     let id = v.get("session")?.as_str()?.to_string();
     let state = crate::protocol::State::from_name(v.get("state")?.as_str()?)?;
-    let mut meta = v.get("meta").and_then(|m| m.as_object()).cloned().unwrap_or_default();
-    let backlogged = v.get("backlogged").and_then(Value::as_bool).unwrap_or(false);
+    let mut meta = v
+        .get("meta")
+        .and_then(|m| m.as_object())
+        .cloned()
+        .unwrap_or_default();
+    let backlogged = v
+        .get("backlogged")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     if backlogged {
         meta.insert(
             crate::session::BACKLOGGED_META_KEY.into(),
@@ -1643,12 +2422,42 @@ fn session_from_json(v: &serde_json::Value, last_update: Instant) -> Option<Sess
     }
     // Read snapshots written before carry-forward data was made internal, but
     // never expose those legacy keys again.
-    let mut carry = v.get("carry").and_then(|c| c.as_object()).cloned().unwrap_or_default();
-    for key in ["turns", "tool_calls", "subagents", "tokens_in", "tokens_out", "cost_usd"] {
+    let mut carry = v
+        .get("carry")
+        .and_then(|c| c.as_object())
+        .cloned()
+        .unwrap_or_default();
+    for key in [
+        "turns",
+        "tool_calls",
+        "subagents",
+        "tokens_in",
+        "tokens_out",
+        "cost_usd",
+    ] {
         if let Some(value) = meta.remove(&format!("_carry_{key}")) {
             carry.entry(key.to_string()).or_insert(value);
         }
     }
+    let attachment: Option<Attachment> = v
+        .get("attachment")
+        .cloned()
+        .and_then(|value| serde_json::from_value(value).ok());
+    let health = v
+        .get("health")
+        .and_then(Value::as_str)
+        .and_then(|value| match value {
+            "healthy" => Some(SessionHealth::Healthy),
+            "suspect" => Some(SessionHealth::Suspect),
+            "unknown" => Some(SessionHealth::Unknown),
+            "detached" => Some(SessionHealth::Detached),
+            _ => None,
+        })
+        .unwrap_or(if attachment.is_some() {
+            SessionHealth::Suspect
+        } else {
+            SessionHealth::Unknown
+        });
     Some(Session {
         id,
         kind: v.get("kind").and_then(|x| x.as_str()).map(str::to_string),
@@ -1663,6 +2472,29 @@ fn session_from_json(v: &serde_json::Value, last_update: Instant) -> Option<Sess
         },
         state,
         last_update,
+        attachment,
+        health,
+        health_reason: v
+            .get("health_reason")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        last_verified: v
+            .get("last_verified_elapsed_ms")
+            .and_then(Value::as_u64)
+            .and_then(|elapsed| Instant::now().checked_sub(Duration::from_millis(elapsed))),
+        failed_probes: 0,
+        first_probe_failure: None,
+        slot_history: v
+            .get("slot_history")
+            .and_then(Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(Value::as_u64)
+                    .filter_map(|v| u8::try_from(v).ok())
+                    .collect()
+            })
+            .unwrap_or_default(),
     })
 }
 
@@ -1674,6 +2506,33 @@ fn unix_ms_now() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+#[cfg(unix)]
+fn reconcile_opening_launch_receipts() {
+    let directory = crate::paths::daemon_state_dir().join("launches");
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(data) = std::fs::read(&path) else {
+            continue;
+        };
+        let Ok(mut receipt) = serde_json::from_slice::<Value>(&data) else {
+            continue;
+        };
+        if receipt.get("status").and_then(Value::as_str) != Some("opening") {
+            continue;
+        }
+        receipt["status"] = Value::String("needs-user-retry".into());
+        if let Ok(data) = serde_json::to_vec_pretty(&receipt) {
+            let temporary = path.with_extension(format!("json.{}.tmp", std::process::id()));
+            if std::fs::write(&temporary, data).is_ok() {
+                let _ = std::fs::rename(temporary, path);
+            }
+        }
+    }
 }
 
 /// Reconstruct an `Instant` from a snapshot's elapsed-ms-since-`saved_at`
@@ -1747,7 +2606,9 @@ fn save_snapshot(shared: &Mutex<Shared>) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let Ok(data) = serde_json::to_vec(&snapshot) else { return };
+    let Ok(data) = serde_json::to_vec(&snapshot) else {
+        return;
+    };
     let tmp = path.with_extension(format!("json.tmp.{}", std::process::id()));
     let result = (|| -> std::io::Result<()> {
         let mut file = OpenOptions::new()
@@ -1783,7 +2644,8 @@ fn load_snapshot(
     let empty = || {
         (
             Registry::new(ttl).with_tombstone_ttl(tombstone_ttl),
-            HashMap::new(), Channels::default(),
+            HashMap::new(),
+            Channels::default(),
         )
     };
     let Ok(data) = std::fs::read_to_string(crate::paths::daemon_state_path()) else {
@@ -1847,7 +2709,11 @@ fn load_snapshot(
         });
     let mut registry = Registry::restore(ttl, tombstone_ttl, sessions, tombstones);
     registry.restore_attention_order(attention_order);
-    let channels = root.get("channels").cloned().and_then(|value| serde_json::from_value(value).ok()).unwrap_or_default();
+    let channels = root
+        .get("channels")
+        .cloned()
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or_default();
     (registry, usage, channels)
 }
 
@@ -1862,36 +2728,143 @@ fn load_snapshot(
 #[cfg(unix)]
 fn reconcile_on_startup(shared: &Mutex<Shared>) {
     let now = Instant::now();
-    let dead: Vec<String> = {
-        let s = shared.lock().unwrap();
-        s.registry
-            .list()
-            .into_iter()
-            .filter(|sess| {
-                let tty = sess.tty();
-                let tty_dead = !tty.is_empty() && !std::path::Path::new(&tty).exists();
-                let pid_dead = matches!(sess.pid(), Some(pid) if !process_is_alive(pid));
-                tty_dead || pid_dead
-            })
-            .map(|sess| sess.id)
-            .collect()
-    };
-    if dead.is_empty() {
-        return;
-    }
+    let sessions = shared.lock().unwrap().registry.list();
+    let probes = probe_runtime_attachments(&sessions);
     let mut s = shared.lock().unwrap();
-    for id in dead {
-        s.registry.reap_session(&id, now);
+    for (id, verified, reason, immediate) in probes {
+        // Startup must reconcile before clients can observe the snapshot. A
+        // definitive mismatch detaches immediately; a transient miss begins
+        // the normal debounce and remains suspect.
+        s.registry
+            .note_attachment_probe(&id, verified, reason, immediate, now);
     }
+}
+
+#[cfg(unix)]
+fn probe_runtime_attachments(sessions: &[Session]) -> Vec<(String, bool, Option<String>, bool)> {
+    let mut managed: HashMap<String, Vec<(String, String, String, String)>> = HashMap::new();
+    let mut results = Vec::new();
+    for session in sessions {
+        match session.attachment.as_ref() {
+            Some(Attachment::Process {
+                boot_time,
+                pid,
+                process_start_time,
+                executable,
+                pane_tty,
+                ..
+            }) => {
+                let current_boot = sysinfo::System::boot_time();
+                if current_boot != *boot_time {
+                    results.push((
+                        session.id.clone(),
+                        false,
+                        Some("system boot identity changed".into()),
+                        true,
+                    ));
+                    continue;
+                }
+                let sys_pid = sysinfo::Pid::from_u32(*pid as u32);
+                let mut system = sysinfo::System::new();
+                system.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[sys_pid]), true);
+                let Some(process) = system.process(sys_pid) else {
+                    results.push((
+                        session.id.clone(),
+                        false,
+                        Some("provider process is absent".into()),
+                        false,
+                    ));
+                    continue;
+                };
+                if process.start_time() != *process_start_time {
+                    results.push((
+                        session.id.clone(),
+                        false,
+                        Some("provider PID birth time changed".into()),
+                        true,
+                    ));
+                    continue;
+                }
+                let executable_matches = process
+                    .exe()
+                    .is_some_and(|path| path.to_string_lossy() == executable.as_str());
+                if !executable_matches {
+                    results.push((
+                        session.id.clone(),
+                        false,
+                        Some("provider executable changed".into()),
+                        true,
+                    ));
+                    continue;
+                }
+                if let Some(expected_tty) = pane_tty {
+                    if crate::identity::tty_for_pid(*pid).as_deref() != Some(expected_tty.as_str())
+                    {
+                        results.push((
+                            session.id.clone(),
+                            false,
+                            Some("provider controlling tty changed".into()),
+                            false,
+                        ));
+                        continue;
+                    }
+                }
+                results.push((session.id.clone(), true, None, false));
+            }
+            Some(Attachment::Managed {
+                mux_server,
+                mux_session,
+                mux_pane,
+                pane_tty,
+                ..
+            }) => {
+                managed.entry(mux_server.clone()).or_default().push((
+                    session.id.clone(),
+                    mux_session.clone(),
+                    mux_pane.clone(),
+                    pane_tty.clone(),
+                ));
+            }
+            Some(Attachment::Unverified { .. }) | None => {}
+        }
+    }
+    for (server, expected) in managed {
+        let output = executable_named("tmux").and_then(|tmux| {
+            Command::new(tmux)
+                .args([
+                    "-L",
+                    &server,
+                    "list-panes",
+                    "-a",
+                    "-F",
+                    "#{session_name}\t#{pane_id}\t#{pane_tty}",
+                ])
+                .output()
+                .ok()
+        });
+        let observed = output
+            .filter(|output| output.status.success())
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .unwrap_or_default();
+        for (id, session, pane, tty) in expected {
+            let exact = observed
+                .lines()
+                .any(|line| line == format!("{session}\t{pane}\t{tty}"));
+            results.push((
+                id,
+                exact,
+                (!exact).then(|| "managed tmux pane ownership is unavailable".into()),
+                false,
+            ));
+        }
+    }
+    results
 }
 
 /// Run the focus action for `session` (PROTOCOL.md §3 Focus), exposing the
 /// session via `FOCALPOINT_SESSION_*` env vars (empty string for missing values).
 #[cfg(unix)]
-fn focus_environment(
-    session: &crate::session::Session,
-    slot: u8,
-) -> Vec<(&'static str, String)> {
+fn focus_environment(session: &crate::session::Session, slot: u8) -> Vec<(&'static str, String)> {
     let meta_text = |key: &str| {
         session
             .meta
@@ -1920,6 +2893,31 @@ fn focus_environment(
         ("FOCALPOINT_SESSION_MUX_SERVER", meta_text("mux_server")),
         ("FOCALPOINT_SESSION_MUX_SESSION", meta_text("mux_session")),
         ("FOCALPOINT_SESSION_MUX_PANE", meta_text("mux_pane")),
+        (
+            "FOCALPOINT_TERMINAL_BUNDLE_ID",
+            meta_text("terminal_bundle_id"),
+        ),
+        (
+            "FOCALPOINT_TERMINAL_APPLICATION_PID",
+            session
+                .meta
+                .get("terminal_application_pid")
+                .and_then(Value::as_i64)
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+        ),
+        (
+            "FOCALPOINT_TERMINAL_WINDOW_ID",
+            meta_text("terminal_window_id"),
+        ),
+        (
+            "FOCALPOINT_TERMINAL_SESSION_ID",
+            meta_text("terminal_session_id"),
+        ),
+        (
+            "FOCALPOINT_TERMINAL_HOST_TTY",
+            meta_text("terminal_host_tty"),
+        ),
         ("FOCALPOINT_SLOT", slot.to_string()),
     ]
 }
@@ -1939,8 +2937,57 @@ fn run_focus(ctx: &EventCtx, session: &crate::session::Session, slot: u8) {
         diagnostic_meta(&session.meta, "mux_pane"),
         diagnostic_meta(&session.meta, "managed"),
     );
-    let env = focus_environment(session, slot);
-    crate::actions::run_with_env(&focus, &env);
+    let (terminal_pid, terminal_session_id) = match session.attachment.as_ref() {
+        Some(Attachment::Process { terminal, .. } | Attachment::Managed { terminal, .. }) => {
+            (terminal.application_pid, terminal.session_id.clone())
+        }
+        _ => (None, None),
+    };
+    let strategy = match session.attachment.as_ref() {
+        Some(Attachment::Managed { .. }) => "managed-tmux",
+        Some(Attachment::Process { terminal, .. }) if terminal.session_id.is_some() => {
+            "terminal-session-id"
+        }
+        Some(Attachment::Process { .. }) => "terminal-tty",
+        _ => "none",
+    }
+    .to_string();
+    let attachment_id = session.attachment_id().map(str::to_string);
+    let preflight_reason = if session.attachment.is_none() {
+        Some("session has no runtime attachment".to_string())
+    } else if session.health == SessionHealth::Detached {
+        Some("runtime attachment is stale".to_string())
+    } else {
+        None
+    };
+    let outcome = if let Some(reason) = preflight_reason {
+        Err(reason)
+    } else {
+        let env = focus_environment(session, slot);
+        crate::actions::run_with_env_status(&focus, &env)
+    };
+    let (result, reason) = match outcome {
+        Ok(()) => {
+            ctx.broadcast(&event_line(Event::Focus {
+                session: session.id.clone(),
+            }));
+            ("focused".to_string(), None)
+        }
+        Err(reason) if session.health == SessionHealth::Detached => {
+            ("attachment-stale".to_string(), Some(reason))
+        }
+        Err(reason) => ("endpoint-missing".to_string(), Some(reason)),
+    };
+    ctx.broadcast(&event_line(Event::FocusResult {
+        session: session.id.clone(),
+        slot: (slot != 0).then_some(slot),
+        attachment_id,
+        strategy,
+        result,
+        terminal_pid,
+        terminal_session_id,
+        reason,
+    }));
 }
 
 /// Translate a device event into a JSON event line, broadcast it to
@@ -1953,7 +3000,10 @@ fn handle_device_event(ev: DeviceEvent, ctx: &EventCtx) {
         }
         DeviceEvent::Key { control, pressed } => {
             let name = control_name(control);
-            let line = event_line(Event::Key { control: name.clone(), pressed });
+            let line = event_line(Event::Key {
+                control: name.clone(),
+                pressed,
+            });
             ctx.broadcast(&line);
             // Fire the bound action on press (release is reported but not acted
             // on, to avoid double-firing).
@@ -1972,8 +3022,8 @@ fn handle_device_event(ev: DeviceEvent, ctx: &EventCtx) {
                         .cloned();
                     match session {
                         Some(session) => {
-                            ctx.broadcast(&event_line(Event::Focus { session: session.id.clone() }));
-                            run_focus(ctx, &session, slot)
+                            let ctx = ctx.clone();
+                            std::thread::spawn(move || run_focus(&ctx, &session, slot));
                         }
                         None => crate::actions::run(&ctx.config.action_for(&name)),
                     }
@@ -1992,8 +3042,9 @@ fn handle_device_event(ev: DeviceEvent, ctx: &EventCtx) {
                         (session, navigation)
                     };
                     if let Some(session) = session {
-                        ctx.broadcast(&event_line(Event::Focus { session: session.id.clone() }));
-                        run_focus(ctx, &session, session.slot.unwrap_or(0));
+                        let ctx = ctx.clone();
+                        let slot = session.slot.unwrap_or(0);
+                        std::thread::spawn(move || run_focus(&ctx, &session, slot));
                     }
                     let _ = ctx.host_tx.send(HostCmd::SetNavState(navigation_states));
                 } else {
@@ -2019,7 +3070,9 @@ fn handle_device_event(ev: DeviceEvent, ctx: &EventCtx) {
         }
         DeviceEvent::Joy { gesture } => {
             let name = joy_name(gesture);
-            let line = event_line(Event::Joy { gesture: name.to_string() });
+            let line = event_line(Event::Joy {
+                gesture: name.to_string(),
+            });
             ctx.broadcast(&line);
             crate::actions::run(&ctx.config.joystick_for(name));
         }
@@ -2295,6 +3348,7 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
     use tokio::net::UnixListener;
 
     let config = Arc::new(Config::load()?);
+    reconcile_opening_launch_receipts();
     let tombstone_ttl = config.session.tombstone_ttl();
     // Restore sessions/tombstones/usage from the last run (Part 4) instead
     // of always starting fresh — a daemon restart shouldn't blank
@@ -2357,10 +3411,9 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
                     let now = Instant::now();
                     (
                         shared.registry.expire_tombstones(now),
-                        shared.registry.expire_managed_launches(
-                            now,
-                            Duration::from_secs(120),
-                        ),
+                        shared
+                            .registry
+                            .expire_managed_launches(now, Duration::from_secs(120)),
                     )
                 };
                 for (task_id, slot) in expired_launches {
@@ -2377,92 +3430,36 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
         });
     }
 
-    // Periodic dead-tty sweep: reap a session whose focus target was a real
-    // terminal (Claude Code sets `--meta tty=$(tty)`) the moment that pty
-    // device stops existing — closing the terminal destroys it, a hard OS
-    // fact, unlike inferring death from a failed AppleScript window match
-    // (which would misfire for any terminal app other than Terminal/iTerm,
-    // or when the daemon lacks Accessibility access). Runs independent of
-    // time-based staleness — sessions with no `tty` meta (Codex, Cursor) are
-    // untouched by this and remain live until their adapter sends SessionEnd.
+    // Attachment health is probed independently of adapter activity. Process
+    // fingerprints and private tmux ownership are authoritative; ordinary
+    // failures require two observations spanning thirty seconds.
     {
         let ctx = ctx.clone();
         let host_tx = host_tx.clone();
         tokio::spawn(async move {
-            let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(15));
             loop {
                 tick.tick().await;
-                let dead: Vec<String> = {
-                    let shared = ctx.shared.lock().unwrap();
-                    shared
-                        .registry
-                        .list()
+                let sessions = ctx.shared.lock().unwrap().registry.list();
+                let probes = probe_runtime_attachments(&sessions);
+                let _transition = ctx.transition.lock().unwrap();
+                let effects: Vec<Effect> = {
+                    let mut shared = ctx.shared.lock().unwrap();
+                    let now = Instant::now();
+                    let mut effects: Vec<Effect> = probes
                         .into_iter()
-                        .filter(|s| {
-                            let tty = s.tty();
-                            !tty.is_empty() && !std::path::Path::new(&tty).exists()
+                        .flat_map(|(id, ok, reason, immediate)| {
+                            shared
+                                .registry
+                                .note_attachment_probe(&id, ok, reason, immediate, now)
                         })
-                        .map(|s| s.id)
-                        .collect()
+                        .collect();
+                    effects.extend(shared.registry.expire_unverified_attachments(now));
+                    effects
                 };
-                if dead.is_empty() {
-                    continue;
+                if !effects.is_empty() {
+                    apply_effects(effects, &ctx, &host_tx);
                 }
-                let _transition = ctx.transition.lock().unwrap();
-                let effects: Vec<Effect> = {
-                    let mut shared = ctx.shared.lock().unwrap();
-                    let now = Instant::now();
-                    dead.iter()
-                        .flat_map(|id| shared.registry.reap_session(id, now))
-                        .collect()
-                };
-                apply_effects(effects, &ctx, &host_tx);
-            }
-        });
-    }
-
-    // Periodic dead-process sweep: reap a session whose own agent process
-    // has verifiably exited (Claude Code sets `--meta pid=<pid>`, found by
-    // walking the hook's process ancestry to the nearest `claude` process —
-    // see adapters/claude-code/hooks.sh) via kill(pid, 0) — a hard OS fact,
-    // same tier of confidence as the dead-tty sweep above, for the one
-    // failure mode that sweep can't see: the agent crashes (OOM, segfault,
-    // force-quit) but the terminal it ran in stays open, so its pty never
-    // disappears. PID reuse by the OS after the real process exits is a
-    // known, low-probability false-negative — the same class of risk the
-    // tty sweep already accepts for pty reuse — not worth guarding against
-    // at this scale. Sessions with no `pid` meta (Codex, Cursor, or a Claude
-    // session where ancestry-walking failed) are untouched by this and keep
-    // relying on the tty sweep, TTL, or their own end-session signal.
-    {
-        let ctx = ctx.clone();
-        let host_tx = host_tx.clone();
-        tokio::spawn(async move {
-            let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
-            loop {
-                tick.tick().await;
-                let dead: Vec<String> = {
-                    let shared = ctx.shared.lock().unwrap();
-                    shared
-                        .registry
-                        .list()
-                        .into_iter()
-                        .filter(|s| matches!(s.pid(), Some(pid) if !process_is_alive(pid)))
-                        .map(|s| s.id)
-                        .collect()
-                };
-                if dead.is_empty() {
-                    continue;
-                }
-                let _transition = ctx.transition.lock().unwrap();
-                let effects: Vec<Effect> = {
-                    let mut shared = ctx.shared.lock().unwrap();
-                    let now = Instant::now();
-                    dead.iter()
-                        .flat_map(|id| shared.registry.reap_session(id, now))
-                        .collect()
-                };
-                apply_effects(effects, &ctx, &host_tx);
             }
         });
     }
@@ -2618,11 +3615,30 @@ fn dispatch(
         Err(e) => return err(&format!("invalid request: {e}")),
     };
     match request {
-        Request::SetState { state: name, session, kind, label, meta } => {
+        Request::SetState {
+            state: name,
+            session,
+            kind,
+            mut label,
+            mut meta,
+        } => {
             let _transition = ctx.transition.lock().unwrap();
-            let joins_channel = meta.as_ref().is_some_and(|meta| {
-                meta.get("channel_id").and_then(Value::as_str).is_some()
-            });
+            if session.is_some() && matches!(kind.as_deref(), Some("claude" | "codex" | "cursor")) {
+                let fields = meta.get_or_insert_with(Map::new);
+                correlate_pending_managed_launch(
+                    &shared.lock().unwrap().registry,
+                    kind.as_deref(),
+                    fields,
+                );
+                if let Some(authoritative_title) =
+                    fields.get("session_title").and_then(Value::as_str)
+                {
+                    label = Some(authoritative_title.to_string());
+                }
+            }
+            let joins_channel = meta
+                .as_ref()
+                .is_some_and(|meta| meta.get("channel_id").and_then(Value::as_str).is_some());
             let state = match State::from_name(&name) {
                 Some(s) => s,
                 None => return err(&format!("unknown state: {name:?}")),
@@ -2654,7 +3670,9 @@ fn dispatch(
                 // Managed launch exports this id; the adapter reports it back
                 // in metadata when the real provider session registers.
                 if let (Some(id), Some(meta)) = (session.as_deref(), meta.as_ref()) {
-                    if let Some(channel_id) = meta.get("channel_id").and_then(serde_json::Value::as_str) {
+                    if let Some(channel_id) =
+                        meta.get("channel_id").and_then(serde_json::Value::as_str)
+                    {
                         if let Some(channel) = shared.channels.channels.get_mut(channel_id) {
                             channel.join_at_tail(id.to_string());
                         }
@@ -2667,9 +3685,17 @@ fn dispatch(
             }
             ok()
         }
-        Request::SetMeta { session, kind, label, meta } => {
+        Request::SetMeta {
+            session,
+            kind,
+            label,
+            meta,
+        } => {
             let _transition = ctx.transition.lock().unwrap();
-            let joining_channel = meta.get("channel_id").and_then(serde_json::Value::as_str).map(str::to_string);
+            let joining_channel = meta
+                .get("channel_id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string);
             eprintln!(
                 "[session-input] cmd=set-meta id={} task_id={} requested_slot={} pid={} tty={} mux_server={} mux_session={} mux_pane={} managed={} relaunch={} reregistered={}",
                 diagnostic_text(&session),
@@ -2688,9 +3714,10 @@ fn dispatch(
             // see `Registry::merge_meta`.
             let effects = {
                 let mut shared = shared.lock().unwrap();
-                let effects = shared.registry.merge_meta(
-                    &session, kind, label, meta, Instant::now(),
-                );
+                let effects =
+                    shared
+                        .registry
+                        .merge_meta(&session, kind, label, meta, Instant::now());
                 if let Some(channel_id) = joining_channel.as_deref() {
                     if let Some(channel) = shared.channels.channels.get_mut(channel_id) {
                         channel.join_at_tail(session.to_string());
@@ -2715,11 +3742,17 @@ fn dispatch(
                 let s = shared.lock().unwrap();
                 (s.registry.list(), s.registry.tombstones_snapshot())
             };
-            let mut arr: Vec<SessionDto> = sessions.iter().map(|s| session_to_dto(s, Some(true))).collect();
+            let mut arr: Vec<SessionDto> = sessions
+                .iter()
+                .map(|s| session_to_dto(s, Some(true)))
+                .collect();
             for (_id, sess, _reaped_at) in &tombstones {
                 arr.push(session_to_dto(sess, Some(false)));
             }
-            Dispatch::Reply(Response::Sessions { ok: true, sessions: arr })
+            Dispatch::Reply(Response::Sessions {
+                ok: true,
+                sessions: arr,
+            })
         }
         Request::SetUsage { provider, usage } => {
             let _transition = ctx.transition.lock().unwrap();
@@ -2749,7 +3782,10 @@ fn dispatch(
             apply_effects(effects, ctx, host_tx);
             ok()
         }
-        Request::SetSessionBacklogged { session: id, backlogged } => {
+        Request::SetSessionBacklogged {
+            session: id,
+            backlogged,
+        } => {
             let _transition = ctx.transition.lock().unwrap();
             let effects = match shared
                 .lock()
@@ -2763,7 +3799,10 @@ fn dispatch(
             apply_effects(effects, ctx, host_tx);
             ok()
         }
-        Request::SwapSlots { session1: id1, session2: id2 } => {
+        Request::SwapSlots {
+            session1: id1,
+            session2: id2,
+        } => {
             let _transition = ctx.transition.lock().unwrap();
             let result = shared.lock().unwrap().registry.swap_slots(&id1, &id2);
             match result {
@@ -2776,12 +3815,7 @@ fn dispatch(
         }
         Request::MoveSlot { session: id, slot } => {
             let _transition = ctx.transition.lock().unwrap();
-            let effects = match shared
-                .lock()
-                .unwrap()
-                .registry
-                .move_slot(&id, slot)
-            {
+            let effects = match shared.lock().unwrap().registry.move_slot(&id, slot) {
                 Ok(effects) => effects,
                 Err(message) => return err(&message),
             };
@@ -2804,7 +3838,10 @@ fn dispatch(
                     diagnostic_meta(&session.meta, "managed"),
                 );
             } else {
-                eprintln!("[session] end-request id={} current=-", diagnostic_text(&id));
+                eprintln!(
+                    "[session] end-request id={} current=-",
+                    diagnostic_text(&id)
+                );
             }
             apply_effects(effects, ctx, host_tx);
             ok()
@@ -2847,12 +3884,18 @@ fn dispatch(
             }
             ok()
         }
-        Request::StopOrchestratedSession { session: id, task_id } => {
-            let session =
-                match orchestrated_session_target(&shared.lock().unwrap().registry, &id, &task_id) {
-                    Ok(session) => session,
-                    Err(message) => return err(&message),
-                };
+        Request::StopOrchestratedSession {
+            session: id,
+            task_id,
+        } => {
+            let session = match orchestrated_session_target(
+                &shared.lock().unwrap().registry,
+                &id,
+                &task_id,
+            ) {
+                Ok(session) => session,
+                Err(message) => return err(&message),
+            };
             eprintln!(
                 "[orchestrator] stop id={} task_id={} pid={}",
                 diagnostic_text(&id),
@@ -2867,7 +3910,12 @@ fn dispatch(
                 "ok": true, "session": id, "task_id": task_id, "status": "stopping"
             })))
         }
-        Request::ReadSessionTranscript { session: id, task_id, tail, search } => {
+        Request::ReadSessionTranscript {
+            session: id,
+            task_id,
+            tail,
+            search,
+        } => {
             let tail = tail.unwrap_or(20);
             if !(1..=8_000).contains(&tail) {
                 return err("read-session-transcript 'tail' must be 1-8000");
@@ -2883,11 +3931,14 @@ fn dispatch(
                 }
                 Some(_) => return err("transcript search must be 1-256 printable characters"),
             };
-            let session =
-                match orchestrated_session_target(&shared.lock().unwrap().registry, &id, &task_id) {
-                    Ok(session) => session,
-                    Err(message) => return err(&message),
-                };
+            let session = match orchestrated_session_target(
+                &shared.lock().unwrap().registry,
+                &id,
+                &task_id,
+            ) {
+                Ok(session) => session,
+                Err(message) => return err(&message),
+            };
             let path = match orchestrated_transcript_path(&session) {
                 Ok(path) => path,
                 Err(message) => return err(&message),
@@ -2909,61 +3960,157 @@ fn dispatch(
         }
         Request::ChannelCreate { task_id } => {
             let _transition = ctx.transition.lock().unwrap();
-            let actor = match channel_actor(&shared.lock().unwrap().registry, &task_id) { Ok(actor) => actor, Err(message) => return err(&message) };
-            if actor.meta.get("orchestration_role").and_then(serde_json::Value::as_str) != Some("orchestrator") { return err("only an orchestrator may create a channel"); }
+            let actor = match channel_actor(&shared.lock().unwrap().registry, &task_id) {
+                Ok(actor) => actor,
+                Err(message) => return err(&message),
+            };
+            if actor
+                .meta
+                .get("orchestration_role")
+                .and_then(serde_json::Value::as_str)
+                != Some("orchestrator")
+            {
+                return err("only an orchestrator may create a channel");
+            }
             let channel = shared.lock().unwrap().channels.create(actor.id, task_id);
             save_snapshot(shared);
-            Dispatch::Reply(Response::Json(serde_json::json!({"ok": true, "channel_id": channel.id})))
+            Dispatch::Reply(Response::Json(
+                serde_json::json!({"ok": true, "channel_id": channel.id}),
+            ))
         }
-        Request::ChannelClose { task_id, channel: channel_id } => {
+        Request::ChannelClose {
+            task_id,
+            channel: channel_id,
+        } => {
             let _transition = ctx.transition.lock().unwrap();
-            let actor = match channel_actor(&shared.lock().unwrap().registry, &task_id) { Ok(actor) => actor, Err(message) => return err(&message) };
+            let actor = match channel_actor(&shared.lock().unwrap().registry, &task_id) {
+                Ok(actor) => actor,
+                Err(message) => return err(&message),
+            };
             let mut state = shared.lock().unwrap();
-            let Some(channel) = state.channels.channels.get(&channel_id) else { return err("unknown channel"); };
-            if channel.owner_session != actor.id { return err("only the creating orchestrator may close this channel"); }
+            let Some(channel) = state.channels.channels.get(&channel_id) else {
+                return err("unknown channel");
+            };
+            if channel.owner_session != actor.id {
+                return err("only the creating orchestrator may close this channel");
+            }
             state.channels.channels.remove(&channel_id);
             drop(state);
             save_snapshot(shared);
-            Dispatch::Reply(Response::Json(serde_json::json!({"ok": true, "channel_id": channel_id, "closed": true})))
+            Dispatch::Reply(Response::Json(
+                serde_json::json!({"ok": true, "channel_id": channel_id, "closed": true}),
+            ))
         }
-        Request::ChannelMembers { task_id, channel: channel_id } => {
-            let actor = match channel_actor(&shared.lock().unwrap().registry, &task_id) { Ok(actor) => actor, Err(message) => return err(&message) };
+        Request::ChannelMembers {
+            task_id,
+            channel: channel_id,
+        } => {
+            let actor = match channel_actor(&shared.lock().unwrap().registry, &task_id) {
+                Ok(actor) => actor,
+                Err(message) => return err(&message),
+            };
             let state = shared.lock().unwrap();
-            let Some(channel) = state.channels.channels.get(&channel_id) else { return err("unknown channel"); };
-            if !channel.members.contains_key(&actor.id) { return err("session is not a channel member"); }
-            Dispatch::Reply(Response::Json(serde_json::json!({"ok": true, "channel": channel_public(channel)})))
+            let Some(channel) = state.channels.channels.get(&channel_id) else {
+                return err("unknown channel");
+            };
+            if !channel.members.contains_key(&actor.id) {
+                return err("session is not a channel member");
+            }
+            Dispatch::Reply(Response::Json(
+                serde_json::json!({"ok": true, "channel": channel_public(channel)}),
+            ))
         }
-        Request::ChannelRead { task_id, channel: channel_id, since, tail } => {
+        Request::ChannelRead {
+            task_id,
+            channel: channel_id,
+            since,
+            tail,
+        } => {
             let _transition = ctx.transition.lock().unwrap();
-            let actor = match channel_actor(&shared.lock().unwrap().registry, &task_id) { Ok(actor) => actor, Err(message) => return err(&message) };
+            let actor = match channel_actor(&shared.lock().unwrap().registry, &task_id) {
+                Ok(actor) => actor,
+                Err(message) => return err(&message),
+            };
             let tail = tail.unwrap_or(20);
-            if !(1..=100).contains(&tail) { return err("channel read tail must be 1-100"); }
+            if !(1..=100).contains(&tail) {
+                return err("channel read tail must be 1-100");
+            }
             let mut state = shared.lock().unwrap();
-            let Some(channel) = state.channels.channels.get_mut(&channel_id) else { return err("unknown channel"); };
-            let (messages, next) = match channel.read(&actor.id, since, tail as usize) { Ok(value) => value, Err(message) => return err(&message) };
+            let Some(channel) = state.channels.channels.get_mut(&channel_id) else {
+                return err("unknown channel");
+            };
+            let (messages, next) = match channel.read(&actor.id, since, tail as usize) {
+                Ok(value) => value,
+                Err(message) => return err(&message),
+            };
             drop(state);
             save_snapshot(shared);
-            Dispatch::Reply(Response::Json(serde_json::json!({"ok":true,"channel_id":channel_id,"messages":messages,"next_cursor":next})))
+            Dispatch::Reply(Response::Json(
+                serde_json::json!({"ok":true,"channel_id":channel_id,"messages":messages,"next_cursor":next}),
+            ))
         }
-        Request::ChannelPost { task_id, channel: channel_id, body, kind, to } => {
+        Request::ChannelPost {
+            task_id,
+            channel: channel_id,
+            body,
+            kind,
+            to,
+        } => {
             let _transition = ctx.transition.lock().unwrap();
-            let actor = match channel_actor(&shared.lock().unwrap().registry, &task_id) { Ok(actor) => actor, Err(message) => return err(&message) };
+            let actor = match channel_actor(&shared.lock().unwrap().registry, &task_id) {
+                Ok(actor) => actor,
+                Err(message) => return err(&message),
+            };
             let kind = kind.unwrap_or_else(|| "note".to_string());
-            if !valid_kind(&kind) { return err("invalid channel message kind"); }
-            if body.chars().count() > BODY_MAX_CHARS { return err("channel body exceeds 4096 characters"); }
+            if !valid_kind(&kind) {
+                return err("invalid channel message kind");
+            }
+            if body.chars().count() > BODY_MAX_CHARS {
+                return err("channel body exceeds 4096 characters");
+            }
             let requested_to = to.as_deref().unwrap_or("channel");
             let (message, recipients) = {
                 let mut state = shared.lock().unwrap();
-                let Some(channel) = state.channels.channels.get_mut(&channel_id) else { return err("unknown channel"); };
-                let recipient = match channel_post_target(channel, &actor.id, requested_to) { Ok(to) => to, Err(message) => return err(&message) };
-                let message = channel.post(actor.id.clone(), recipient.clone(), kind, body, unix_ms_now());
-                let recipient_ids: Vec<String> = if recipient == "channel" { channel.members.keys().filter(|id| **id != actor.id).cloned().collect() } else { vec![recipient] };
+                let Some(channel) = state.channels.channels.get_mut(&channel_id) else {
+                    return err("unknown channel");
+                };
+                let recipient = match channel_post_target(channel, &actor.id, requested_to) {
+                    Ok(to) => to,
+                    Err(message) => return err(&message),
+                };
+                let message = channel.post(
+                    actor.id.clone(),
+                    recipient.clone(),
+                    kind,
+                    body,
+                    unix_ms_now(),
+                );
+                let recipient_ids: Vec<String> = if recipient == "channel" {
+                    channel
+                        .members
+                        .keys()
+                        .filter(|id| **id != actor.id)
+                        .cloned()
+                        .collect()
+                } else {
+                    vec![recipient]
+                };
                 (message, recipient_ids)
             };
-            let recipient_sessions: Vec<Session> = { let state = shared.lock().unwrap(); recipients.iter().filter_map(|id| state.registry.session_or_tombstone(id)).collect() };
-            for recipient in recipient_sessions { maybe_wake_channel_member(ctx, &channel_id, &recipient); }
+            let recipient_sessions: Vec<Session> = {
+                let state = shared.lock().unwrap();
+                recipients
+                    .iter()
+                    .filter_map(|id| state.registry.session_or_tombstone(id))
+                    .collect()
+            };
+            for recipient in recipient_sessions {
+                maybe_wake_channel_member(ctx, &channel_id, &recipient);
+            }
             save_snapshot(shared);
-            Dispatch::Reply(Response::Json(serde_json::json!({"ok":true,"message":message})))
+            Dispatch::Reply(Response::Json(
+                serde_json::json!({"ok":true,"message":message}),
+            ))
         }
         Request::RelaunchManagedSession { session: id } => {
             let _transition = ctx.transition.lock().unwrap();
@@ -3053,6 +4200,26 @@ fn dispatch(
                     ));
                     return;
                 }
+                if let Err(message) = open_managed_tmux_terminal(&prepared) {
+                    eprintln!("[managed-relaunch] terminal open failed session={id} launch_id={thread_launch_id}: {message}");
+                    kill_managed_resume(&prepared);
+                    let _transition = ctx.transition.lock().unwrap();
+                    let effects = ctx.shared.lock().unwrap().registry.fail_managed_relaunch(
+                        &id,
+                        &thread_launch_id,
+                        Instant::now(),
+                    );
+                    apply_effects(effects, &ctx, &host_tx);
+                    ctx.broadcast(&managed_relaunch_event_line(
+                        &id,
+                        &thread_launch_id,
+                        "failed",
+                        None,
+                        None,
+                        Some(&message),
+                    ));
+                    return;
+                }
                 ctx.broadcast(&managed_relaunch_event_line(
                     &id,
                     &thread_launch_id,
@@ -3097,7 +4264,9 @@ fn dispatch(
         }
         Request::GetAttentionOrder => {
             let sessions = shared.lock().unwrap().registry.attention_order();
-            Dispatch::Reply(Response::Json(serde_json::json!({ "ok": true, "sessions": sessions })))
+            Dispatch::Reply(Response::Json(
+                serde_json::json!({ "ok": true, "sessions": sessions }),
+            ))
         }
         Request::SetAttentionOrder { sessions } => {
             let _transition = ctx.transition.lock().unwrap();
@@ -3128,7 +4297,9 @@ fn dispatch(
                 let slot = session.slot.unwrap_or(0);
                 std::thread::spawn(move || run_focus(&ctx, &session, slot));
             }
-            Dispatch::Reply(Response::Json(serde_json::json!({ "ok": true, "session": selected })))
+            Dispatch::Reply(Response::Json(
+                serde_json::json!({ "ok": true, "session": selected }),
+            ))
         }
         Request::FocusPrevAttention => {
             let _transition = ctx.transition.lock().unwrap();
@@ -3145,9 +4316,22 @@ fn dispatch(
                 let slot = session.slot.unwrap_or(0);
                 std::thread::spawn(move || run_focus(&ctx, &session, slot));
             }
-            Dispatch::Reply(Response::Json(serde_json::json!({ "ok": true, "session": selected })))
+            Dispatch::Reply(Response::Json(
+                serde_json::json!({ "ok": true, "session": selected }),
+            ))
         }
-        Request::LaunchSession { provider, cwd, model, cursor_mode, task, task_id, title, role, manager_task_id, channel_id } => {
+        Request::LaunchSession {
+            provider,
+            cwd,
+            model,
+            cursor_mode,
+            task,
+            task_id,
+            title,
+            role,
+            manager_task_id,
+            channel_id,
+        } => {
             let role = role.as_deref().unwrap_or("worker");
             let title = match orchestrator_session_title(title.as_deref(), &task_id) {
                 Ok(title) => title,
@@ -3165,13 +4349,35 @@ fn dispatch(
                     return err(&message);
                 }
                 if let Some(channel_id) = channel_id.as_deref() {
-                    let Some(channel) = state.channels.channels.get(channel_id) else { return err("unknown channel"); };
-                    let Some(manager) = manager_task_id.as_deref() else { return err("launch --channel requires manager_task_id"); };
-                    if channel.owner_task_id != manager { return err("channel is not owned by that orchestrator task"); }
+                    let Some(channel) = state.channels.channels.get(channel_id) else {
+                        return err("unknown channel");
+                    };
+                    let Some(manager) = manager_task_id.as_deref() else {
+                        return err("launch --channel requires manager_task_id");
+                    };
+                    if channel.owner_task_id != manager {
+                        return err("channel is not owned by that orchestrator task");
+                    }
                 }
-                match state.registry.reserve_managed_launch(&task_id, Instant::now()) {
+                match state
+                    .registry
+                    .reserve_managed_launch(&task_id, Instant::now())
+                {
                     Ok(slot) => slot,
-                    Err(message) => return err(&message),
+                    Err(message) => {
+                        let existing = std::fs::read(
+                            crate::paths::daemon_state_dir()
+                                .join("launches")
+                                .join(format!("{task_id}.json")),
+                        )
+                            .ok()
+                            .and_then(|data| serde_json::from_slice::<Value>(&data).ok());
+                        if let Some(mut receipt) = existing {
+                            receipt["ok"] = true.into();
+                            return Dispatch::Reply(Response::Json(receipt));
+                        }
+                        return err(&message);
+                    }
                 }
             };
             eprintln!(
@@ -3204,17 +4410,33 @@ fn dispatch(
                 }
                 Err(message) => {
                     let _transition = ctx.transition.lock().unwrap();
-                    shared.lock().unwrap().registry.cancel_managed_launch(&task_id);
+                    shared
+                        .lock()
+                        .unwrap()
+                        .registry
+                        .cancel_managed_launch(&task_id);
                     eprintln!(
                         "[managed-launch] failed task_id={} title={} slot={} provider={} error={}",
-                        diagnostic_text(&task_id), diagnostic_text(&title),
-                        slot.map(|value| value.to_string()).unwrap_or_else(|| "overflow".into()),
-                        diagnostic_text(&provider), diagnostic_text(&message),
+                        diagnostic_text(&task_id),
+                        diagnostic_text(&title),
+                        slot.map(|value| value.to_string())
+                            .unwrap_or_else(|| "overflow".into()),
+                        diagnostic_text(&provider),
+                        diagnostic_text(&message),
                     );
                     err(&message)
                 }
             }
         }
+        Request::ResumeSession {
+            provider,
+            cwd,
+            session,
+            title,
+        } => match resume_managed_session(&provider, &cwd, &session, title.as_deref()) {
+            Ok(response) => Dispatch::Reply(Response::Json(response)),
+            Err(message) => err(&message),
+        },
         Request::FocusSession { session: id } => {
             // Run the [session] focus action for a session looked up by id —
             // including a disconnected (tombstoned) one, whose terminal is
@@ -3230,15 +4452,24 @@ fn dispatch(
                 Some(sess) => {
                     let ctx = ctx.clone();
                     let slot = sess.slot.unwrap_or(0);
-                    ctx.broadcast(&event_line(Event::Focus { session: sess.id.clone() }));
                     std::thread::spawn(move || run_focus(&ctx, &sess, slot));
                     ok()
                 }
                 None => err(&format!("unknown session: {id}")),
             }
         }
-        Request::Inject { kind, control, action, delta, gesture } => match parse_inject_fields(
-            &kind, control.as_deref(), action.as_deref(), delta, gesture.as_deref(),
+        Request::Inject {
+            kind,
+            control,
+            action,
+            delta,
+            gesture,
+        } => match parse_inject_fields(
+            &kind,
+            control.as_deref(),
+            action.as_deref(),
+            delta,
+            gesture.as_deref(),
         ) {
             Ok(events) => {
                 // Feed through the exact same dispatch path as real hardware
@@ -3252,14 +4483,20 @@ fn dispatch(
         },
         Request::GetState => {
             let state = shared.lock().unwrap().registry.aggregate();
-            Dispatch::Reply(Response::State { ok: true, state: state.name().to_string() })
+            Dispatch::Reply(Response::State {
+                ok: true,
+                state: state.name().to_string(),
+            })
         }
         Request::SetLed { index, rgb } => {
             let index = match u8::try_from(index) {
                 Ok(index) => index,
                 Err(_) => return err("set-led requires integer 'index' in 0..=255 (255 = all)"),
             };
-            let c = match parse_rgb_values(&rgb) { Ok(rgb) => rgb, Err(message) => return err(&message) };
+            let c = match parse_rgb_values(&rgb) {
+                Ok(rgb) => rgb,
+                Err(message) => return err(&message),
+            };
             let _ = host_tx.send(HostCmd::SetLed {
                 index,
                 r: c[0],
@@ -3270,14 +4507,23 @@ fn dispatch(
         }
         Request::GetStyles => {
             let styles = shared.lock().unwrap().styles;
-            Dispatch::Reply(Response::Styles { ok: true, styles: styles_json(&styles) })
+            Dispatch::Reply(Response::Styles {
+                ok: true,
+                styles: styles_json(&styles),
+            })
         }
-        Request::SetStyle { state: state_name, rgb, pattern, period_ms } => {
+        Request::SetStyle {
+            state: state_name,
+            rgb,
+            pattern,
+            period_ms,
+        } => {
             let _transition = ctx.transition.lock().unwrap();
-            let (state, style) = match parse_set_style_fields(&state_name, &rgb, &pattern, period_ms) {
-                Ok(pair) => pair,
-                Err(e) => return err(&e),
-            };
+            let (state, style) =
+                match parse_set_style_fields(&state_name, &rgb, &pattern, period_ms) {
+                    Ok(pair) => pair,
+                    Err(e) => return err(&e),
+                };
             // Persist first: if the config write fails, don't mutate runtime
             // (keeps runtime and on-disk config consistent).
             let path = match Config::path() {
@@ -3295,14 +4541,20 @@ fn dispatch(
         Request::Subscribe => Dispatch::Subscribe,
         Request::Ping => {
             let present = shared.lock().unwrap().device_present;
-            Dispatch::Reply(Response::Ping { ok: true, device: present })
+            Dispatch::Reply(Response::Ping {
+                ok: true,
+                device: present,
+            })
         }
     }
 }
 
 #[cfg(unix)]
 fn err(msg: &str) -> Dispatch {
-    Dispatch::Reply(Response::Error { ok: false, error: msg.to_string() })
+    Dispatch::Reply(Response::Error {
+        ok: false,
+        error: msg.to_string(),
+    })
 }
 
 #[cfg(unix)]
@@ -3417,6 +4669,13 @@ mod tests {
             slot: Some(4),
             state: State::Thinking,
             last_update: Instant::now(),
+            attachment: None,
+            health: SessionHealth::Unknown,
+            health_reason: None,
+            last_verified: None,
+            failed_probes: 0,
+            first_probe_failure: None,
+            slot_history: vec![4],
         };
         let env: std::collections::HashMap<_, _> =
             focus_environment(&session, 4).into_iter().collect();
@@ -3430,12 +4689,16 @@ mod tests {
 
     #[test]
     fn channel_rejects_non_member_and_worker_to_worker_posts() {
-        let mut channel = crate::channel::Channel::new("ch-1".into(), "owner".into(), "task".into());
+        let mut channel =
+            crate::channel::Channel::new("ch-1".into(), "owner".into(), "task".into());
         channel.join_at_tail("worker-a".into());
         channel.join_at_tail("worker-b".into());
         assert!(channel_post_target(&channel, "outsider", "channel").is_err());
         assert!(channel_post_target(&channel, "worker-a", "worker-b").is_err());
-        assert_eq!(channel_post_target(&channel, "worker-a", "channel").unwrap(), "owner");
+        assert_eq!(
+            channel_post_target(&channel, "worker-a", "channel").unwrap(),
+            "owner"
+        );
     }
 
     #[test]
@@ -3443,15 +4706,37 @@ mod tests {
         let mut meta = serde_json::Map::new();
         meta.insert("managed".into(), serde_json::json!(true));
         meta.insert("mux_pane".into(), serde_json::json!("%12"));
-        let session = Session { id: "s".into(), kind: Some("claude".into()), label: None, name: None,
-            meta, carry: serde_json::Map::new(), slot: Some(1), state: State::Idle, last_update: Instant::now() };
+        let session = Session {
+            id: "s".into(),
+            kind: Some("claude".into()),
+            label: None,
+            name: None,
+            meta,
+            carry: serde_json::Map::new(),
+            slot: Some(1),
+            state: State::Idle,
+            last_update: Instant::now(),
+            attachment: None,
+            health: SessionHealth::Unknown,
+            health_reason: None,
+            last_verified: None,
+            failed_probes: 0,
+            first_probe_failure: None,
+            slot_history: vec![1],
+        };
         // A legacy/default-server pane is never enough to wake.
         assert!(!channel_wake_allowed(&session));
 
         let mut owned = session.clone();
-        owned.meta.insert("mux_server".into(), serde_json::json!("fp-worker-42"));
-        owned.meta.insert("mux_session".into(), serde_json::json!("fp-claude-42"));
-        owned.meta.insert("tty".into(), serde_json::json!("/dev/ttys042"));
+        owned
+            .meta
+            .insert("mux_server".into(), serde_json::json!("fp-worker-42"));
+        owned
+            .meta
+            .insert("mux_session".into(), serde_json::json!("fp-claude-42"));
+        owned
+            .meta
+            .insert("tty".into(), serde_json::json!("/dev/ttys042"));
         assert!(channel_wake_allowed(&owned));
 
         owned.state = State::Waiting;
@@ -3483,10 +4768,10 @@ mod tests {
     }
 
     #[test]
-    fn managed_launch_forces_a_new_terminal_application_instance() {
+    fn managed_launch_never_forces_a_second_terminal_application_instance() {
         assert_eq!(
             terminal_open_args("com.apple.Terminal"),
-            ["-n", "-b", "com.apple.Terminal"],
+            ["-b", "com.apple.Terminal"],
         );
     }
 
@@ -3507,7 +4792,10 @@ mod tests {
 
     #[test]
     fn orchestrator_titles_are_bounded_printable_and_default_to_task_id() {
-        assert_eq!(orchestrator_session_title(None, "worker-1").unwrap(), "worker-1");
+        assert_eq!(
+            orchestrator_session_title(None, "worker-1").unwrap(),
+            "worker-1"
+        );
         assert_eq!(
             orchestrator_session_title(Some(" Parser implementation "), "worker-1").unwrap(),
             "Parser implementation",
@@ -3646,13 +4934,19 @@ mod tests {
                 None,
                 "Task:\nInspect it.",
                 "headless",
-                Some(Path::new("/Users/me/.config/focalpoint/adapters/cursor-cli-focalpoint.sh")),
+                Some(Path::new(
+                    "/Users/me/.config/focalpoint/adapters/cursor-cli-focalpoint.sh"
+                )),
             )
             .unwrap(),
             "'/Users/me/.config/focalpoint/adapters/cursor-cli-focalpoint.sh' 'Task:\nInspect it.'"
         );
         assert!(cursor_provider_command(
-            Path::new("/opt/homebrew/bin/cursor-agent"), None, "Task", "headless", None,
+            Path::new("/opt/homebrew/bin/cursor-agent"),
+            None,
+            "Task",
+            "headless",
+            None,
         )
         .unwrap_err()
         .contains("headless adapter is not installed"));
@@ -3744,6 +5038,13 @@ mod tests {
             slot: None,
             state: State::Thinking,
             last_update: Instant::now(),
+            attachment: None,
+            health: SessionHealth::Unknown,
+            health_reason: None,
+            last_verified: None,
+            failed_probes: 0,
+            first_probe_failure: None,
+            slot_history: Vec::new(),
         };
         let v = session_to_json(&original);
         let restored = session_from_json(&v, original.last_update).expect("parses");
@@ -3758,7 +5059,10 @@ mod tests {
         let external = session_to_dto(&original, None);
         assert!(external.backlogged);
         assert!(external.meta.get("transcript_path").is_none());
-        assert!(external.meta.get(crate::session::BACKLOGGED_META_KEY).is_none());
+        assert!(external
+            .meta
+            .get(crate::session::BACKLOGGED_META_KEY)
+            .is_none());
         assert_eq!(external.meta["turns"], json!(7));
     }
 
@@ -3767,36 +5071,65 @@ mod tests {
         let request: Request = serde_json::from_value(json!({
             "cmd": "set-state", "state": "running", "session": "s1",
             "kind": "claude", "meta": {"cwd": "/repo"}
-        })).expect("typed request decodes");
-        assert!(matches!(request, Request::SetState { state, session: Some(session), .. }
-            if state == "running" && session == "s1"));
+        }))
+        .expect("typed request decodes");
+        assert!(
+            matches!(request, Request::SetState { state, session: Some(session), .. }
+            if state == "running" && session == "s1")
+        );
 
         let request: Request = serde_json::from_value(json!({
             "cmd": "inject", "kind": "dial", "delta": -1
-        })).expect("typed inject decodes");
+        }))
+        .expect("typed inject decodes");
         assert!(matches!(request, Request::Inject { kind, delta: Some(-1), .. } if kind == "dial"));
 
         let request: Request = serde_json::from_value(json!({
             "cmd": "set-session-backlogged", "session": "s1", "backlogged": true
-        })).expect("typed backlog request decodes");
-        assert!(matches!(request, Request::SetSessionBacklogged { session, backlogged: true }
-            if session == "s1"));
+        }))
+        .expect("typed backlog request decodes");
+        assert!(
+            matches!(request, Request::SetSessionBacklogged { session, backlogged: true }
+            if session == "s1")
+        );
     }
 
     #[test]
     fn dto_session_payload_never_exposes_carry_bookkeeping() {
         let session = Session {
-            id: "s1".into(), kind: Some("claude".into()), label: None, name: None,
-            meta: Map::from_iter([("turns".into(), json!(8)), ("_carry_turns".into(), json!(5))]),
+            id: "s1".into(),
+            kind: Some("claude".into()),
+            label: None,
+            name: None,
+            meta: Map::from_iter([
+                ("turns".into(), json!(8)),
+                ("_carry_turns".into(), json!(5)),
+            ]),
             carry: Map::from_iter([("turns".into(), json!(5))]),
-            slot: Some(1), state: State::Running, last_update: Instant::now(),
+            slot: Some(1),
+            state: State::Running,
+            last_update: Instant::now(),
+            attachment: None,
+            health: SessionHealth::Unknown,
+            health_reason: None,
+            last_verified: None,
+            failed_probes: 0,
+            first_probe_failure: None,
+            slot_history: vec![1],
         };
         let payload = session_to_json(&session);
         assert_eq!(payload["backlogged"], json!(false));
         assert!(payload["meta"].get("_carry_turns").is_none());
-        assert!(payload.get("carry").is_none());
-        let event = session_event_line(&session.id, &session.kind, &session.label, &session.name,
-            &session.meta, session.slot, session.state);
+        assert_eq!(payload["carry"]["turns"], json!(5));
+        let event = session_event_line(
+            &session.id,
+            &session.kind,
+            &session.label,
+            &session.name,
+            &session.meta,
+            session.slot,
+            session.state,
+        );
         assert!(!event.contains("_carry_"));
     }
 
@@ -3933,9 +5266,25 @@ mod tests {
     #[test]
     fn focus_event_matches_protocol() {
         assert_eq!(
-            event_line(Event::Focus { session: "session-123".into() }),
+            event_line(Event::Focus {
+                session: "session-123".into()
+            }),
             r#"{"event":"focus","session":"session-123"}"#
         );
+    }
+
+    #[test]
+    fn focus_result_carries_exact_failure_diagnostics() {
+        let value: Value = serde_json::from_str(&event_line(Event::FocusResult {
+            session: "slot-1".into(), slot: Some(1), attachment_id: Some("process:1:2:3:codex".into()),
+            strategy: "terminal-session-id".into(), result: "endpoint-missing".into(),
+            terminal_pid: Some(42), terminal_session_id: Some("unique-session".into()),
+            reason: Some("no exact terminal endpoint".into()),
+        })).unwrap();
+        assert_eq!(value["event"], "focus-result");
+        assert_eq!(value["session"], "slot-1");
+        assert_eq!(value["result"], "endpoint-missing");
+        assert_eq!(value["terminal_session_id"], "unique-session");
     }
 
     #[cfg(unix)]

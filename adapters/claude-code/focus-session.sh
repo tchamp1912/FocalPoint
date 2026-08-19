@@ -9,37 +9,18 @@
 #
 # Goal: bring the terminal window/tab running that session to the front.
 #
-# Matching strategy, in order:
+# Exact matching strategy, in order:
 #   0. MANAGED sessions: if this session is running inside a FocalPoint-managed
 #      tmux pane, focus it precisely via `tmux select-window`/`switch-client`
 #      instead of AppleScript window-hunting — see try_managed_tmux() below.
-#   1. EXACT tty match ($FOCALPOINT_SESSION_TTY, e.g. "/dev/ttys003") against
+#   1. iTerm session unique ID, when the registration captured one.
+#   2. EXACT tty match ($FOCALPOINT_SESSION_TTY, e.g. "/dev/ttys003") against
 #      iTerm2's `tty of session` / Terminal's `tty of tab`. This is precise —
 #      no two sessions ever share a tty — and is what claude-code/hooks.sh
 #      supplies via `--meta tty=$(...)`.
-#   2. Falls back to a fuzzy title/tty-string match on the basename of
-#      $FOCALPOINT_SESSION_CWD, for adapters that don't send tty. Windows
-#      whose tty is already claimed by a *registered* session are skipped:
-#      the fuzzy path only ever runs for a tty-less session, so a window
-#      some session registered by tty is by definition not ours — without
-#      this, a tty-less session's repo-name needle can land on another
-#      session's window whose generated tab title happens to mention the
-#      repo (confirmed live: a Codex session's "vibekey" needle matched a
-#      Claude Code window titled "Review Vibekey open source hardware
-#      plan").
-#   3. Falls back to just activating whichever of iTerm2/Terminal is running.
-#
-# HONEST LIMITATION: step 2 was this script's ORIGINAL and only strategy, and
-# it doesn't actually work for Claude Code sessions in practice — Claude Code
-# titles iTerm2/Terminal tabs with a generated task summary (e.g. "Fix drag
-# stutter"), not the cwd, so the cwd's basename may never appear in the title
-# at all (confirmed empirically: none of it showed up in a real session's
-# title). It also can't disambiguate two sessions open in the same repo
-# (common). Step 1 (tty) has neither problem, so treat step 2 as a
-# best-effort fallback for adapters that can't supply a tty, not the primary
-# mechanism. Not every terminal is supported at all (Warp, Alacritty, VS
-# Code's integrated terminal, tmux panes aren't queried here) — tmux users in
-# particular may prefer replacing this script with a `tmux` pane switch.
+# If none resolves, the script exits nonzero and deliberately activates
+# nothing. cwd, title, provider kind, PID alone, and generic app activation
+# are never focus identities.
 #
 # Must never hang the daemon's action dispatch: every osascript call below
 # runs under a hard timeout via run_osa().
@@ -77,6 +58,8 @@ TARGET_TTY="${FOCALPOINT_SESSION_TTY:-}"
 TARGET_MUX_SERVER="${FOCALPOINT_SESSION_MUX_SERVER:-}"
 TARGET_MUX_SESSION="${FOCALPOINT_SESSION_MUX_SESSION:-}"
 TARGET_MUX_PANE="${FOCALPOINT_SESSION_MUX_PANE:-}"
+TARGET_TERMINAL_SESSION_ID="${FOCALPOINT_TERMINAL_SESSION_ID:-}"
+TARGET_TERMINAL_PID="${FOCALPOINT_TERMINAL_APPLICATION_PID:-}"
 # The generic /dev/tty alias is not unique per session — treat as missing so
 # focus falls through rather than matching every colliding session at once.
 if [ "$TARGET_TTY" = "/dev/tty" ]; then
@@ -362,6 +345,44 @@ APPLESCRIPT
   [ "$result" = "matched" ]
 }
 
+try_iterm_session_id() {
+  [ -n "$TARGET_TERMINAL_SESSION_ID" ] || return 1
+  app_running "iTerm2" || return 1
+  local id_esc script result
+  id_esc="$(osa_escape "$TARGET_TERMINAL_SESSION_ID")"
+  script=$(cat <<APPLESCRIPT
+tell application id "com.googlecode.iterm2"
+  set found to false
+  repeat with w in windows
+    repeat with t in tabs of w
+      repeat with s in sessions of t
+        try
+          if (unique ID of s) is "$id_esc" then
+            select t
+            select w
+            set found to true
+            exit repeat
+          end if
+        end try
+      end repeat
+      if found then exit repeat
+    end repeat
+    if found then exit repeat
+  end repeat
+  if found then return "matched"
+  return "nomatch"
+end tell
+APPLESCRIPT
+)
+  result="$(run_osa "$script")"
+  [ "$result" = "matched" ] || return 1
+  if [ -n "$TARGET_TERMINAL_PID" ]; then
+    /usr/bin/osascript -l JavaScript -e "ObjC.import('AppKit'); var a=$.NSRunningApplication.runningApplicationWithProcessIdentifier($TARGET_TERMINAL_PID); if (a) a.activateWithOptions($.NSApplicationActivateIgnoringOtherApps);" >/dev/null 2>&1 || return 1
+  else
+    run_osa 'tell application id "com.googlecode.iterm2" to activate' >/dev/null 2>&1 || return 1
+  fi
+}
+
 try_terminal_tty() {
   [ -n "$TARGET_TTY" ] || return 1
   app_running "Terminal" || return 1
@@ -397,106 +418,22 @@ APPLESCRIPT
   [ "$result" = "matched" ]
 }
 
-try_iterm() {
-  [ -n "$NEEDLE" ] || return 1
-  app_running "iTerm2" || return 1
-
-  local needle_esc script result
-  needle_esc="$(osa_escape "$NEEDLE")"
-  script=$(cat <<APPLESCRIPT
-tell application "iTerm2"
-  set claimed to $(osa_claimed_ttys)
-  set found to false
-  repeat with w in windows
-    repeat with t in tabs of w
-      repeat with s in sessions of t
-        try
-          if (claimed does not contain (tty of s)) and ((name of s contains "$needle_esc") or (tty of s contains "$needle_esc")) then
-            select t
-            select w
-            set found to true
-            exit repeat
-          end if
-        end try
-      end repeat
-      if found then exit repeat
-    end repeat
-    if found then exit repeat
-  end repeat
-  if found then activate
-  if found then
-    return "matched"
-  else
-    return "nomatch"
-  end if
-end tell
-APPLESCRIPT
-)
-  result="$(run_osa "$script")"
-  [ "$result" = "matched" ]
-}
-
-try_terminal() {
-  [ -n "$NEEDLE" ] || return 1
-  app_running "Terminal" || return 1
-
-  local needle_esc script result
-  needle_esc="$(osa_escape "$NEEDLE")"
-  script=$(cat <<APPLESCRIPT
-tell application "Terminal"
-  set claimed to $(osa_claimed_ttys)
-  set found to false
-  repeat with w in windows
-    repeat with tb in tabs of w
-      try
-        if (claimed does not contain (tty of tb)) and ((custom title of tb contains "$needle_esc") or (tty of tb contains "$needle_esc")) then
-          set selected of tb to true
-          set index of w to 1
-          set found to true
-          exit repeat
-        end if
-      end try
-    end repeat
-    if found then exit repeat
-  end repeat
-  if found then activate
-  if found then
-    return "matched"
-  else
-    return "nomatch"
-  end if
-end tell
-APPLESCRIPT
-)
-  result="$(run_osa "$script")"
-  [ "$result" = "matched" ]
-}
-
-fallback_activate() {
-  if app_running "iTerm2"; then
-    run_osa 'tell application "iTerm2" to activate' >/dev/null 2>&1 || true
-  elif app_running "Terminal"; then
-    run_osa 'tell application "Terminal" to activate' >/dev/null 2>&1 || true
-  fi
-}
-
 if try_managed_tmux; then
-  :
+  focus_log "result=focused strategy=managed"
 elif command -v osascript >/dev/null 2>&1; then
-  if try_iterm_tty; then
+  if try_iterm_session_id; then
+    focus_log "result=focused strategy=iterm-session-id"
+  elif try_iterm_tty; then
     focus_log "result=focused strategy=iterm-tty"
   elif try_terminal_tty; then
     focus_log "result=focused strategy=terminal-tty"
-  elif try_iterm; then
-    focus_log "result=focused strategy=iterm-fuzzy"
-  elif try_terminal; then
-    focus_log "result=focused strategy=terminal-fuzzy"
   else
-    focus_log "result=fallback strategy=activate"
-    fallback_activate
+    focus_log "result=endpoint-missing strategy=exact reason=no-exact-terminal-endpoint"
+    exit 2
   fi
 else
-  focus_log "result=miss strategy=none reason=osascript-unavailable"
+  focus_log "result=endpoint-missing strategy=none reason=osascript-unavailable"
+  exit 2
 fi
 
 exit 0

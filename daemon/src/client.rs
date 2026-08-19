@@ -98,13 +98,62 @@ fn apply_identity(
     }
     let identity = crate::identity::resolve_identity(session, kind, refresh_identity);
     if !meta_obj.contains_key("tty") {
-        if let Some(tty) = identity.tty {
+        if let Some(tty) = identity.tty.clone() {
             meta_obj.insert("tty".to_string(), serde_json::Value::from(tty));
         }
     }
     if !meta_obj.contains_key("pid") {
         if let Some(pid) = identity.pid {
             meta_obj.insert("pid".to_string(), serde_json::Value::from(pid));
+        }
+    }
+    if !meta_obj.contains_key("process_boot_time") {
+        if let Some(value) = identity.boot_time {
+            meta_obj.insert("process_boot_time".to_string(), value.into());
+        }
+    }
+    if !meta_obj.contains_key("process_start_time") {
+        if let Some(value) = identity.process_start_time {
+            meta_obj.insert("process_start_time".to_string(), value.into());
+        }
+    }
+    if !meta_obj.contains_key("provider_executable") {
+        if let Some(value) = identity.executable {
+            meta_obj.insert("provider_executable".to_string(), value.into());
+        }
+    }
+    // SessionStart and explicit re-registration are the only lifecycle
+    // points allowed to replace an existing attachment fingerprint.
+    if refresh_identity {
+        meta_obj.insert("attachment_registration".to_string(), true.into());
+    }
+    if !meta_obj.contains_key("terminal_bundle_id") {
+        let bundle = match std::env::var("TERM_PROGRAM").ok().as_deref() {
+            Some("iTerm.app" | "iTerm2") => Some("com.googlecode.iterm2"),
+            Some("Apple_Terminal") => Some("com.apple.Terminal"),
+            _ => None,
+        };
+        if let Some(bundle) = bundle {
+            meta_obj.insert("terminal_bundle_id".into(), bundle.into());
+        }
+    }
+    if !meta_obj.contains_key("terminal_session_id") {
+        let terminal_session = std::env::var("ITERM_SESSION_ID")
+            .ok()
+            .and_then(|value| {
+                value
+                    .rsplit_once(':')
+                    .map(|(_, id)| id.to_string())
+                    .or(Some(value))
+            })
+            .or_else(|| std::env::var("TERM_SESSION_ID").ok());
+        if let Some(value) = terminal_session.filter(|value| !value.is_empty()) {
+            meta_obj.insert("terminal_session_id".into(), value.into());
+        }
+    }
+    if !meta_obj.contains_key("terminal_host_tty") {
+        if let Some(tty) = identity.tty {
+            meta_obj.insert("terminal_host_tty".into(), tty.into());
         }
     }
 }
@@ -317,12 +366,14 @@ pub fn re_register(
         .or_else(|| task_id.clone())
         .unwrap_or_else(|| format!("Recovered {kind} session"));
     if title.is_empty() || title.chars().count() > 120 || title.chars().any(char::is_control) {
-        return Err(CliError::new("--title must contain 1-120 printable characters", 2));
+        return Err(CliError::new(
+            "--title must contain 1-120 printable characters",
+            2,
+        ));
     }
 
-    let server = managed_tmux_server().ok_or_else(|| {
-        CliError::new("not inside a managed tmux session (TMUX is missing)", 1)
-    })?;
+    let server = managed_tmux_server()
+        .ok_or_else(|| CliError::new("not inside a managed tmux session (TMUX is missing)", 1))?;
     if !server.starts_with("fp-")
         || server.len() > 96
         || !server
@@ -334,9 +385,8 @@ pub fn re_register(
             1,
         ));
     }
-    let pane = std::env::var("TMUX_PANE").map_err(|_| {
-        CliError::new("cannot identify this tmux pane (TMUX_PANE is missing)", 1)
-    })?;
+    let pane = std::env::var("TMUX_PANE")
+        .map_err(|_| CliError::new("cannot identify this tmux pane (TMUX_PANE is missing)", 1))?;
     if pane.len() < 2
         || pane.len() > 32
         || !pane.starts_with('%')
@@ -352,9 +402,7 @@ pub fn re_register(
     ]
     .into_iter()
     .flatten()
-    .find(|candidate| {
-        candidate.as_os_str() == "tmux" || candidate.is_file()
-    })
+    .find(|candidate| candidate.as_os_str() == "tmux" || candidate.is_file())
     .ok_or_else(|| CliError::new("tmux is not installed", 1))?;
     let output = std::process::Command::new(tmux)
         .args([
@@ -397,13 +445,23 @@ pub fn re_register(
         format!("tty={tty}"),
         "reregistered=true".to_string(),
     ];
-    if let Some(value) = task_id { meta.push(format!("orchestrator_task_id={value}")); }
-    if let Some(value) = role { meta.push(format!("orchestration_role={value}")); }
-    if let Some(value) = manager_task_id { meta.push(format!("manager_task_id={value}")); }
-    if let Some(value) = slot { meta.push(format!("requested_slot={value}")); }
+    if let Some(value) = task_id {
+        meta.push(format!("orchestrator_task_id={value}"));
+    }
+    if let Some(value) = role {
+        meta.push(format!("orchestration_role={value}"));
+    }
+    if let Some(value) = manager_task_id {
+        meta.push(format!("manager_task_id={value}"));
+    }
+    if let Some(value) = slot {
+        meta.push(format!("requested_slot={value}"));
+    }
     meta.push(format!("session_title={title}"));
     if let Ok(value) = std::env::var("FOCALPOINT_CHANNEL_ID") {
-        if valid_managed_id(&value, 64) { meta.push(format!("channel_id={value}")); }
+        if valid_managed_id(&value, 64) {
+            meta.push(format!("channel_id={value}"));
+        }
     }
     let cwd = std::env::current_dir().ok();
     set_state(
@@ -417,7 +475,8 @@ pub fn re_register(
     )?;
     eprintln!(
         "re-registered {session} as {} · {title} on {server}/{mux_session}/{mux_pane}",
-        slot.map(|value| format!("session #{value}")).unwrap_or_else(|| "an unnumbered session".into())
+        slot.map(|value| format!("session #{value}"))
+            .unwrap_or_else(|| "an unnumbered session".into())
     );
     Ok(())
 }
@@ -694,7 +753,8 @@ pub fn styles(json: bool) -> Result<(), CliError> {
         "idle",
         "thinking",
         "running",
-        "waiting", "approval",
+        "waiting",
+        "approval",
         "done",
         "error",
         "compacting",

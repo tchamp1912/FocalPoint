@@ -14,11 +14,10 @@
 //! manually smoke-testing Part 4's persistence). `/tmp/fp-test-<pid>-<n>`
 //! stays short and always exists.
 //!
-//! Deterministic matching: tests that exercise the pooled recovery matcher
-//! (Part 3) always pass explicit `--meta tty=...`/`--meta pid=...` rather
-//! than relying on `--kind claude|codex` auto-resolution (Part 1) — the
-//! test process's own real ancestry/terminal is irrelevant noise here, and
-//! multiple tests run in parallel from the same `cargo test` runner.
+//! Deterministic matching: tests that exercise attachment recovery pass a
+//! complete boot/PID/start-time/executable fingerprint rather than relying
+//! on provider ancestry auto-resolution. Tests that simulate history resume
+//! use the exact `resume_session_id` marker.
 
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
@@ -27,6 +26,33 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
+
+fn current_process_attachment_meta() -> [String; 4] {
+    let pid = sysinfo::Pid::from_u32(std::process::id());
+    let system = sysinfo::System::new_all();
+    let process = system.process(pid).expect("current test process");
+    [
+        format!("pid={}", pid.as_u32()),
+        format!("process_boot_time={}", sysinfo::System::boot_time()),
+        format!("process_start_time={}", process.start_time()),
+        format!(
+            "provider_executable={}",
+            process
+                .exe()
+                .expect("current test executable")
+                .to_string_lossy()
+        ),
+    ]
+}
+
+fn missing_process_attachment_meta(pid: u32, start_time: u64) -> [String; 4] {
+    [
+        format!("pid={pid}"),
+        format!("process_boot_time={}", sysinfo::System::boot_time()),
+        format!("process_start_time={start_time}"),
+        "provider_executable=/definitely/missing/focalpoint-provider".into(),
+    ]
+}
 
 fn short_tmp_dir() -> PathBuf {
     static COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -274,7 +300,10 @@ fn pane_local_reregister_reconstructs_managed_identity() {
     let session = &sessions.as_array().unwrap()[0];
     assert_eq!(session["session"], "provider-session");
     assert_eq!(session["label"], "Parser implementation");
-    assert_eq!(session["slot"], 4);
+    // The pane proof is sufficient to reconstruct the managed attachment,
+    // but a caller-provided slot is not authoritative. Without the matching
+    // daemon launch receipt/reservation it receives the normal free slot.
+    assert_eq!(session["slot"], 1);
     assert_eq!(session["meta"]["managed"], "true");
     assert_eq!(session["meta"]["mux_server"], "fp-worker-42");
     assert_eq!(session["meta"]["mux_session"], "fp-codex-42");
@@ -437,6 +466,7 @@ fn basic_lifecycle_and_explicit_end_session_leaves_no_tombstone() {
 #[test]
 fn compaction_continuation_carries_stats_and_resets_context() {
     let d = TestDaemon::start();
+    let attachment = current_process_attachment_meta();
 
     d.cli_ok(&[
         "set-state",
@@ -459,6 +489,14 @@ fn compaction_continuation_carries_stats_and_resets_context() {
         "cost_usd=1.5",
         "--meta",
         "context_tokens=116821",
+        "--meta",
+        &attachment[0],
+        "--meta",
+        &attachment[1],
+        "--meta",
+        &attachment[2],
+        "--meta",
+        &attachment[3],
     ]);
     d.cli_ok(&[
         "set-state",
@@ -471,6 +509,14 @@ fn compaction_continuation_carries_stats_and_resets_context() {
         "/tmp/proj",
         "--meta",
         "tty=/dev/test-tty-1",
+        "--meta",
+        &attachment[0],
+        "--meta",
+        &attachment[1],
+        "--meta",
+        &attachment[2],
+        "--meta",
+        &attachment[3],
     ]);
     d.cli_ok(&[
         "set-state",
@@ -493,6 +539,14 @@ fn compaction_continuation_carries_stats_and_resets_context() {
         "cost_usd=0.2",
         "--meta",
         "context_tokens=4000",
+        "--meta",
+        &attachment[0],
+        "--meta",
+        &attachment[1],
+        "--meta",
+        &attachment[2],
+        "--meta",
+        &attachment[3],
     ]);
 
     let sessions = d.cli_json(&["sessions", "--json"]);
@@ -521,6 +575,7 @@ fn compaction_continuation_carries_stats_and_resets_context() {
 #[test]
 fn dead_pid_sweep_reaps_and_tombstone_is_recoverable() {
     let d = TestDaemon::start();
+    let attachment = missing_process_attachment_meta(999_999_999, 101);
 
     d.cli_ok(&[
         "set-state",
@@ -532,9 +587,15 @@ fn dead_pid_sweep_reaps_and_tombstone_is_recoverable() {
         "--cwd",
         "/tmp/proj",
         "--meta",
-        "pid=999999999", // not a real process on any sane system
+        &attachment[0], // not a real process on any sane system
         "--meta",
         "tty=/dev/test-tty-dead",
+        "--meta",
+        &attachment[1],
+        "--meta",
+        &attachment[2],
+        "--meta",
+        &attachment[3],
     ]);
     assert_eq!(
         d.cli_json(&["sessions", "--json"])
@@ -544,14 +605,10 @@ fn dead_pid_sweep_reaps_and_tombstone_is_recoverable() {
         1
     );
 
-    // The real dead-pid sweep (daemon.rs) runs on a 30s cadence — wait for
-    // it to actually reap this session, rather than asserting the mechanism
-    // in isolation. This is the one test in this file that genuinely proves
-    // the periodic sweep is wired to `reap_session` end to end in a live
-    // running daemon. A reaped session is no longer dropped from the list —
-    // it stays visible as `connected: false` (disconnected) until ended,
-    // dismissed, recovered, or its tombstone TTL expires.
-    d.wait_until(Duration::from_secs(45), || {
+    // The real attachment probe runs every 15 seconds and requires failures
+    // spanning 30 seconds before detaching an absent process. This proves the
+    // debounce and durable disconnected row end to end in a live daemon.
+    d.wait_until(Duration::from_secs(70), || {
         d.cli_json(&["sessions", "--json"])
             .as_array()
             .unwrap()
@@ -559,9 +616,9 @@ fn dead_pid_sweep_reaps_and_tombstone_is_recoverable() {
             .any(|s| s["session"] == "old" && s["connected"] == serde_json::json!(false))
     });
 
-    // Recover via pid+cwd (2 signals) — a different tty, as if reattached
-    // in a new terminal. Recovery consumes the tombstone, so only the
-    // reconnected session remains.
+    // Once detached, the obsolete runtime attachment is gone. A new logical
+    // id can recover the durable record only through the exact provider
+    // resume id; tty, cwd, and the former fingerprint are not fallbacks.
     d.cli_ok(&[
         "set-state",
         "thinking",
@@ -572,9 +629,17 @@ fn dead_pid_sweep_reaps_and_tombstone_is_recoverable() {
         "--cwd",
         "/tmp/proj",
         "--meta",
-        "pid=999999999",
+        "resume_session_id=old",
+        "--meta",
+        &attachment[0],
         "--meta",
         "tty=/dev/test-tty-other",
+        "--meta",
+        &attachment[1],
+        "--meta",
+        &attachment[2],
+        "--meta",
+        &attachment[3],
     ]);
     let sessions = d.cli_json(&["sessions", "--json"]);
     let arr = sessions.as_array().unwrap();
@@ -585,6 +650,8 @@ fn dead_pid_sweep_reaps_and_tombstone_is_recoverable() {
 #[test]
 fn shared_label_and_cwd_do_not_recover_a_dead_tty_tombstone() {
     let d = TestDaemon::start();
+    let old_attachment = missing_process_attachment_meta(111_111, 201);
+    let new_attachment = missing_process_attachment_meta(222_222, 202);
 
     d.cli_ok(&[
         "set-state",
@@ -600,7 +667,13 @@ fn shared_label_and_cwd_do_not_recover_a_dead_tty_tombstone() {
         "--meta",
         "tty=/dev/fp-test-nonexistent-1",
         "--meta",
-        "pid=111111",
+        &old_attachment[0],
+        "--meta",
+        &old_attachment[1],
+        "--meta",
+        &old_attachment[2],
+        "--meta",
+        &old_attachment[3],
         "--meta",
         "turns=7",
     ]);
@@ -612,10 +685,9 @@ fn shared_label_and_cwd_do_not_recover_a_dead_tty_tombstone() {
         1
     );
 
-    // Dead-tty sweep: the pty device never existed, so reap is deterministic
-    // once the 30s interval fires — same cadence as the dead-pid test above.
-    // The reaped session stays visible as `connected: false`.
-    d.wait_until(Duration::from_secs(45), || {
+    // The authoritative process is absent (and the pty never existed), so
+    // the debounced attachment probe eventually leaves a disconnected row.
+    d.wait_until(Duration::from_secs(70), || {
         d.cli_json(&["sessions", "--json"])
             .as_array()
             .unwrap()
@@ -639,7 +711,13 @@ fn shared_label_and_cwd_do_not_recover_a_dead_tty_tombstone() {
         "--meta",
         "tty=/dev/fp-test-nonexistent-2",
         "--meta",
-        "pid=222222",
+        &new_attachment[0],
+        "--meta",
+        &new_attachment[1],
+        "--meta",
+        &new_attachment[2],
+        "--meta",
+        &new_attachment[3],
         "--meta",
         "turns=1",
     ]);
@@ -689,6 +767,7 @@ fn restart_persists_session_and_usage() {
 #[test]
 fn restart_preserves_tombstone_for_recovery() {
     let mut d = TestDaemon::start();
+    let resumed_attachment = current_process_attachment_meta();
 
     d.cli_ok(&[
         "set-state",
@@ -704,12 +783,18 @@ fn restart_preserves_tombstone_for_recovery() {
         "--meta",
         "pid=999999998",
         "--meta",
+        "process_boot_time=0",
+        "--meta",
+        "process_start_time=1",
+        "--meta",
+        "provider_executable=/definitely/missing/focalpoint-provider",
+        "--meta",
         "turns=12",
     ]);
 
     // Restart while the session is still "live" on disk — startup
-    // reconciliation reaps the dead pid into a tombstone immediately (no
-    // 30s sweep wait), and Part 4 must persist that tombstone across the
+    // reconciliation sees a definitive boot-identity mismatch and detaches
+    // immediately (no debounce), and the snapshot must preserve history on
     // same load path a real reboot uses. The reaped session stays visible
     // as a disconnected (`connected: false`) row rather than vanishing.
     d.restart();
@@ -731,9 +816,17 @@ fn restart_preserves_tombstone_for_recovery() {
         "--label",
         "Survives Restart",
         "--meta",
-        "pid=999999998",
+        "resume_session_id=old",
         "--meta",
         "tty=/dev/fp-test-other",
+        "--meta",
+        &resumed_attachment[0],
+        "--meta",
+        &resumed_attachment[1],
+        "--meta",
+        &resumed_attachment[2],
+        "--meta",
+        &resumed_attachment[3],
     ]);
     let sessions = d.cli_json(&["sessions", "--json"]);
     let arr = sessions.as_array().unwrap();

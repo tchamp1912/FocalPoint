@@ -25,6 +25,35 @@ pub fn run_with_env(action: &Action, env: &[(&str, String)]) {
     }
 }
 
+/// Focus is the one action whose outcome is part of the protocol. Run it to
+/// completion so the daemon can emit `focus-result`; ordinary actions remain
+/// detached through `run_with_env`.
+pub fn run_with_env_status(action: &Action, env: &[(&str, String)]) -> Result<(), String> {
+    match action {
+        Action::None => Err("no focus action is configured".into()),
+        Action::Shell { run } => {
+            let mut command = std::process::Command::new("sh");
+            command.arg("-c").arg(run);
+            for (key, value) in env {
+                command.env(key, value);
+            }
+            let status = command.status().map_err(|error| error.to_string())?;
+            status
+                .success()
+                .then_some(())
+                .ok_or_else(|| format!("focus action exited with {status}"))
+        }
+        Action::Keystroke { keys } => {
+            run_keystroke(keys);
+            Ok(())
+        }
+        Action::Paste { text } => {
+            run_paste(text);
+            Ok(())
+        }
+    }
+}
+
 fn run_shell(cmd: &str, env: &[(&str, String)]) {
     let mut command = std::process::Command::new("sh");
     command.arg("-c").arg(cmd);

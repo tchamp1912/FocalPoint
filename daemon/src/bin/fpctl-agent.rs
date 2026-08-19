@@ -77,7 +77,10 @@ enum AgentCommand {
         cursor_mode: CursorLaunchMode,
     },
     /// Pull-first mailbox operations for the current managed agent task.
-    Channel { #[command(subcommand)] command: ChannelCommand },
+    Channel {
+        #[command(subcommand)]
+        command: ChannelCommand,
+    },
     /// Gracefully stop a FocalPoint-launched session with matching ownership.
     Stop {
         #[arg(long)]
@@ -103,10 +106,32 @@ enum AgentCommand {
 #[derive(Subcommand, Debug)]
 enum ChannelCommand {
     Create,
-    Post { #[arg(long)] channel: String, #[arg(long)] body: String, #[arg(long, default_value = "note")] kind: String, #[arg(long)] to: Option<String> },
-    Read { #[arg(long)] channel: String, #[arg(long)] since: Option<u64>, #[arg(long, default_value_t = 20)] tail: u16 },
-    Members { #[arg(long)] channel: String },
-    Close { #[arg(long)] channel: String },
+    Post {
+        #[arg(long)]
+        channel: String,
+        #[arg(long)]
+        body: String,
+        #[arg(long, default_value = "note")]
+        kind: String,
+        #[arg(long)]
+        to: Option<String>,
+    },
+    Read {
+        #[arg(long)]
+        channel: String,
+        #[arg(long)]
+        since: Option<u64>,
+        #[arg(long, default_value_t = 20)]
+        tail: u16,
+    },
+    Members {
+        #[arg(long)]
+        channel: String,
+    },
+    Close {
+        #[arg(long)]
+        channel: String,
+    },
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
@@ -221,12 +246,28 @@ fn sanitized_sessions(response: &Value) -> Result<Value, String> {
     let mut safe_rows = Vec::new();
     for row in rows.iter().take(100) {
         let mut safe = serde_json::Map::new();
-        for key in ["session", "kind", "label", "name", "state"] {
+        for key in [
+            "session",
+            "kind",
+            "label",
+            "name",
+            "state",
+            "health",
+            "health_reason",
+            "attachment_id",
+            "attachment_type",
+        ] {
             if let Some(value) = row.get(key).and_then(bounded_string) {
                 safe.insert(key.into(), value);
             }
         }
-        for key in ["slot", "connected", "backlogged"] {
+        for key in [
+            "slot",
+            "connected",
+            "backlogged",
+            "last_activity_unix_ms",
+            "last_verified_unix_ms",
+        ] {
             if let Some(value) = row
                 .get(key)
                 .filter(|v| v.is_number() || v.is_boolean() || v.is_null())
@@ -262,6 +303,21 @@ fn sanitized_sessions(response: &Value) -> Result<Value, String> {
             }
         }
         safe.insert("meta".into(), Value::Object(meta));
+        if let Some(host) = row.get("terminal_host").and_then(Value::as_object) {
+            let mut sanitized_host = serde_json::Map::new();
+            for key in ["bundle_id", "window_id", "session_id", "host_tty"] {
+                if let Some(value) = host.get(key).and_then(bounded_string) {
+                    sanitized_host.insert(key.into(), value);
+                }
+            }
+            if let Some(value) = host
+                .get("application_pid")
+                .filter(|value| value.is_number())
+            {
+                sanitized_host.insert("application_pid".into(), value.clone());
+            }
+            safe.insert("terminal_host".into(), Value::Object(sanitized_host));
+        }
         safe_rows.push(Value::Object(safe));
     }
     Ok(json!({"ok": true, "sessions": safe_rows}))
@@ -348,11 +404,30 @@ fn run(command: AgentCommand) -> Result<(), String> {
             let task_id = std::env::var("FOCALPOINT_ORCHESTRATOR_TASK_ID")
                 .map_err(|_| "channel commands require a FocalPoint-managed session".to_string())?;
             match command {
-                ChannelCommand::Create => request(json!({"cmd":"channel-create","task_id":task_id}))?,
-                ChannelCommand::Post { channel, body, kind, to } => request(json!({"cmd":"channel-post","task_id":task_id,"channel":channel,"body":body,"kind":kind,"to":to}))?,
-                ChannelCommand::Read { channel, since, tail } => request(json!({"cmd":"channel-read","task_id":task_id,"channel":channel,"since":since,"tail":tail}))?,
-                ChannelCommand::Members { channel } => request(json!({"cmd":"channel-members","task_id":task_id,"channel":channel}))?,
-                ChannelCommand::Close { channel } => request(json!({"cmd":"channel-close","task_id":task_id,"channel":channel}))?,
+                ChannelCommand::Create => {
+                    request(json!({"cmd":"channel-create","task_id":task_id}))?
+                }
+                ChannelCommand::Post {
+                    channel,
+                    body,
+                    kind,
+                    to,
+                } => request(
+                    json!({"cmd":"channel-post","task_id":task_id,"channel":channel,"body":body,"kind":kind,"to":to}),
+                )?,
+                ChannelCommand::Read {
+                    channel,
+                    since,
+                    tail,
+                } => request(
+                    json!({"cmd":"channel-read","task_id":task_id,"channel":channel,"since":since,"tail":tail}),
+                )?,
+                ChannelCommand::Members { channel } => {
+                    request(json!({"cmd":"channel-members","task_id":task_id,"channel":channel}))?
+                }
+                ChannelCommand::Close { channel } => {
+                    request(json!({"cmd":"channel-close","task_id":task_id,"channel":channel}))?
+                }
             }
         }
         AgentCommand::Stop { session, task_id } => request(json!({
@@ -456,8 +531,17 @@ mod tests {
     #[test]
     fn launch_accepts_cursor_mode() {
         let parsed = Cli::try_parse_from([
-            "fpctl-agent", "launch", "--provider", "cursor", "--cursor-mode",
-            "attachable", "--cwd", "/tmp", "--task", "Inspect it.", "--task-id",
+            "fpctl-agent",
+            "launch",
+            "--provider",
+            "cursor",
+            "--cursor-mode",
+            "attachable",
+            "--cwd",
+            "/tmp",
+            "--task",
+            "Inspect it.",
+            "--task-id",
             "cursor-1",
         ])
         .unwrap();
@@ -487,7 +571,9 @@ mod tests {
     #[test]
     fn relaunch_command_parses_only_an_exact_session_id() {
         let parsed = Cli::try_parse_from(["fpctl-agent", "relaunch", "session-123"]).unwrap();
-        assert!(matches!(parsed.command, AgentCommand::Relaunch { session } if session == "session-123"));
+        assert!(
+            matches!(parsed.command, AgentCommand::Relaunch { session } if session == "session-123")
+        );
     }
 
     #[test]
