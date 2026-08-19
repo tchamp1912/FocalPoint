@@ -27,6 +27,8 @@ APP_DIR="$SCRIPT_DIR/app"
 PACKAGING_DIR="$SCRIPT_DIR/packaging"
 ORCHESTRATOR_DIR="$SCRIPT_DIR/orchestrator"
 ORCHESTRATOR_SKILL_SOURCE="$SCRIPT_DIR/skills/focalpoint-orchestrator"
+# shellcheck source=packaging/install-lib.sh
+source "$PACKAGING_DIR/install-lib.sh"
 
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/focalpoint"
 ADAPTER_INSTALL_DIR="$CONFIG_DIR/adapters"
@@ -48,6 +50,8 @@ LEGACY_ATTENTION_PLIST_PATH="$LAUNCH_AGENTS_DIR/${LEGACY_ATTENTION_LABEL}.plist"
 LEGACY_RANKER_LABEL="dev.focalpoint.attention-tier2"
 LEGACY_RANKER_PLIST_PATH="$LAUNCH_AGENTS_DIR/${LEGACY_RANKER_LABEL}.plist"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/focalpoint"
+ADAPTER_MANIFEST="$ADAPTER_INSTALL_DIR/.focalpoint-installed-files"
+APP_BUNDLE_ID="dev.focalpoint.menubar"
 HOOK_MARKER=".config/focalpoint/adapters/hooks.sh"
 # Distinct from HOOK_MARKER above: the "cursor-" prefix means neither marker
 # is a substring of the other's path, so the Claude and Cursor merge/removal
@@ -157,6 +161,8 @@ This will, all idempotently:
   - install the FocalPoint orchestrator skill for Codex and Claude Code
   - refresh the Claude Code + Codex + Cursor adapter scripts under
     ~/.config/focalpoint/adapters/
+  - remove obsolete files previously recorded as FocalPoint-managed, plus
+    stale managed binaries and duplicate FocalPoint app installations
   - merge FocalPoint's hooks into ~/.claude/settings.json and
     ~/.cursor/hooks.json (each backed up first; skipped cleanly if already
     merged)
@@ -213,6 +219,15 @@ for bin in focalpoint focalpointd fpctl-agent; do
 done
 ok "installed $BIN_DIR/{focalpoint,focalpointd,fpctl-agent}"
 
+# A previous install may have fallen back to ~/.local/bin and a later one to
+# /opt/homebrew/bin (or vice versa). Remove only FocalPoint's exact managed
+# symlinks/copies from the inactive root; unrelated binaries are untouched.
+for stale_bin_dir in /opt/homebrew/bin "$HOME/.local/bin"; do
+  prune_managed_binary_root \
+    "$stale_bin_dir" "$BIN_DIR" "$DAEMON_DIR/target" \
+    focalpoint focalpointd fpctl-agent focalpoint-attention focalpoint-tier2
+done
+
 FOCALPOINT_BIN="$BIN_DIR/focalpoint"
 FOCALPOINTD_BIN="$BIN_DIR/focalpointd"
 
@@ -267,13 +282,16 @@ fi
 step "FocalPoint orchestrator skill"
 
 for skill_dest in "$CODEX_SKILL_DIR" "$CLAUDE_SKILL_DIR"; do
-  mkdir -p "$skill_dest"
-  # cp -R updates files but does not remove paths dropped from the source.
-  # Delete only known obsolete skill artifacts from earlier releases.
-  rm -f "$skill_dest/references/policy.md" \
-    "$skill_dest/scripts/focalpoint_control.py"
-  rmdir "$skill_dest/references" "$skill_dest/scripts" 2>/dev/null || true
-  cp -R "$ORCHESTRATOR_SKILL_SOURCE/." "$skill_dest/"
+  skill_parent="$(dirname "$skill_dest")"
+  skill_stage="$skill_parent/.focalpoint-orchestrator.tmp.$$"
+  mkdir -p "$skill_parent"
+  rm -rf "$skill_stage"
+  mkdir -p "$skill_stage"
+  cp -R "$ORCHESTRATOR_SKILL_SOURCE/." "$skill_stage/"
+  # The named skill directory is wholly installer-owned. Publish the fully
+  # staged source tree so files removed by a newer release cannot linger.
+  rm -rf "$skill_dest"
+  mv "$skill_stage" "$skill_dest"
   ok "refreshed $skill_dest"
 done
 
@@ -284,6 +302,19 @@ done
 step "Adapter scripts"
 
 mkdir -p "$ADAPTER_INSTALL_DIR"
+
+ADAPTER_FILES=(
+  hooks.sh
+  focus-session.sh
+  statusline-usage.sh
+  codex-notify.sh
+  codex-hooks.sh
+  cursor-hooks.sh
+  focus-cursor.sh
+  cursor-cli-focalpoint.sh
+)
+prune_manifested_files \
+  "$ADAPTER_INSTALL_DIR" "$ADAPTER_MANIFEST" "${ADAPTER_FILES[@]}"
 
 install_script() {
   local src="$1" dest="$ADAPTER_INSTALL_DIR/$2"
@@ -300,6 +331,8 @@ install_script "$ADAPTERS_DIR/codex-cli/hooks.sh" codex-hooks.sh
 install_script "$ADAPTERS_DIR/cursor/hooks.sh" cursor-hooks.sh
 install_script "$ADAPTERS_DIR/cursor/focus-cursor.sh" focus-cursor.sh
 install_script "$ADAPTERS_DIR/cursor-cli/wrap.sh" cursor-cli-focalpoint.sh
+write_owned_manifest "$ADAPTER_MANIFEST" "${ADAPTER_FILES[@]}"
+ok "recorded managed adapter manifest $ADAPTER_MANIFEST"
 
 # ---------------------------------------------------------------------------
 # 7. Merge Claude Code hooks into ~/.claude/settings.json
@@ -456,6 +489,19 @@ if [ -f "$APP_DIR/build.sh" ]; then
     pkill -x FocalPoint >/dev/null 2>&1 || true
     rm -rf "$APPS_DIR/FocalPoint.app"
     cp -R "$APP_DIR/FocalPoint.app" "$APPS_DIR/FocalPoint.app"
+    for stale_apps_dir in /Applications "$HOME/Applications"; do
+      [ "$stale_apps_dir" != "$APPS_DIR" ] || continue
+      stale_app="$stale_apps_dir/FocalPoint.app"
+      [ -d "$stale_app" ] || continue
+      stale_bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
+        "$stale_app/Contents/Info.plist" 2>/dev/null || true)"
+      if [ "$stale_bundle_id" = "$APP_BUNDLE_ID" ]; then
+        rm -rf "$stale_app"
+        ok "removed stale duplicate $stale_app"
+      else
+        info "leaving $stale_app alone — bundle id is not $APP_BUNDLE_ID"
+      fi
+    done
     APP_STATUS="built + installed to $APPS_DIR/FocalPoint.app"
     ok "$APP_STATUS"
     open "$APPS_DIR/FocalPoint.app" && ok "launched FocalPoint.app"

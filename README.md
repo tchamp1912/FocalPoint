@@ -221,6 +221,12 @@ git pull
 ./install.sh
 ```
 
+On every update, the installer also prunes obsolete files that a previous
+FocalPoint release recorded as managed, removes managed binary copies from an
+inactive install prefix, replaces the agent skill as an exact source snapshot,
+and removes a duplicate FocalPoint app from the inactive Applications folder.
+User configuration, session history, logs, and unrelated files are preserved.
+
 To preview or perform a clean uninstall:
 
 ```sh
