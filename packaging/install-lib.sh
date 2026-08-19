@@ -49,18 +49,34 @@ prune_managed_binary_root() {
     return 0
   }
 
-  local bin link installed target
+  local bin link installed target legacy_marker
   for bin in "$@"; do
     link="$root/$bin"
     installed="$root/.focalpoint-installed-$bin"
     if [ -L "$link" ]; then
       target="$(readlink "$link")"
       case "$target" in
-        "$installed"|"$repo_marker"*)
+        "$installed"|"$repo_marker"*|*/daemon/target/release/"$bin")
           rm -f -- "$link"
           printf 'removed stale managed link %s\n' "$link"
           ;;
       esac
+    fi
+    # Very old installations could leave a direct executable rather than a
+    # managed link. Prove it is one of our binaries using its exact embedded
+    # CLI description before deleting it; a same-named unrelated executable
+    # is preserved.
+    legacy_marker=""
+    case "$bin" in
+      focalpoint) legacy_marker="Control the FocalPoint macropad" ;;
+      focalpointd) legacy_marker="FocalPoint host daemon" ;;
+      fpctl-agent) legacy_marker="Safe FocalPoint orchestration controller" ;;
+    esac
+    if [ -n "$legacy_marker" ] && [ -f "$link" ] && [ ! -L "$link" ] \
+      && [ -x "$link" ] \
+      && /usr/bin/strings -a "$link" | /usr/bin/grep -F "$legacy_marker" >/dev/null; then
+      rm -f -- "$link"
+      printf 'removed stale legacy FocalPoint binary %s\n' "$link"
     fi
     if [ -e "$installed" ] || [ -L "$installed" ]; then
       rm -f -- "$installed"

@@ -37,4 +37,13 @@ test ! -e "$STALE/focalpoint"
 test ! -e "$STALE/.focalpoint-installed-focalpoint"
 test -f "$STALE/unrelated"
 
+printf '%s\n' '#!/bin/sh' 'echo Control the FocalPoint macropad' > "$STALE/focalpoint"
+chmod +x "$STALE/focalpoint"
+printf '%s\n' '#!/bin/sh' 'echo unrelated' > "$STALE/focalpointd"
+chmod +x "$STALE/focalpointd"
+prune_managed_binary_root \
+  "$STALE" "$ACTIVE" "$ROOT/daemon/target" focalpoint focalpointd
+test ! -e "$STALE/focalpoint"
+test -f "$STALE/focalpointd"
+
 echo "install cleanup tests passed"
