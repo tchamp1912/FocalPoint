@@ -3425,6 +3425,7 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
     let config = Arc::new(Config::load()?);
     reconcile_opening_launch_receipts();
     let tombstone_ttl = config.session.tombstone_ttl();
+    let unverified_ttl = config.session.unverified_ttl();
     // Restore sessions/tombstones/usage from the last run (Part 4) instead
     // of always starting fresh — a daemon restart shouldn't blank
     // `focalpoint sessions`/`focalpoint usage` until adapters naturally
@@ -3529,7 +3530,11 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
                                 .note_attachment_probe(&id, ok, reason, immediate, now)
                         })
                         .collect();
-                    effects.extend(shared.registry.expire_unverified_attachments(now));
+                    effects.extend(
+                        shared
+                            .registry
+                            .expire_unverified_attachments(now, unverified_ttl),
+                    );
                     effects
                 };
                 if !effects.is_empty() {

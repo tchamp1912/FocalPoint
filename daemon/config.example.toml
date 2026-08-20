@@ -56,9 +56,13 @@ ccw  = "echo effort-down"
 #
 # Session update age is shown as a UI-only stale indication. It never ends a
 # session; existing ttl_minutes settings are accepted but ignored.
+# Integrations without authoritative process/tmux ownership also stay live by
+# default. Set unverified_ttl_minutes to a positive value only if you want an
+# inactivity heartbeat timeout for those integrations; 0/omitted means off.
 # ---------------------------------------------------------------------------
 [session]
 focus = { type = "shell", run = "~/.config/focalpoint/adapters/focus-session.sh" }
+unverified_ttl_minutes = 0
 
 # ---------------------------------------------------------------------------
 # [styles.<state>] — per-state render styles (PROTOCOL.md §3 Styles).

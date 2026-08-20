@@ -395,7 +395,20 @@ final class AppModel: ObservableObject {
         cursorUsageEnabled = d.object(forKey: "cursorUsageEnabled") as? Bool ?? true
         tokenBudget = d.object(forKey: "tokenBudget") as? Int
         costBudget = d.object(forKey: "costBudget") as? Double
-        staleThresholdMinutes = d.object(forKey: "staleThresholdMinutes") as? Int ?? 5
+        // The old shipped five-minute default was persisted by the property
+        // observer, making it indistinguishable from an explicit setting.
+        // Migrate that one legacy value to the new default-off behavior once;
+        // preserve every non-default value a user deliberately chose.
+        if !d.bool(forKey: "staleThresholdDefaultOffMigrated") {
+            if d.object(forKey: "staleThresholdMinutes") as? Int == 5 {
+                d.removeObject(forKey: "staleThresholdMinutes")
+            }
+            d.set(true, forKey: "staleThresholdDefaultOffMigrated")
+        }
+        // No implicit idle presentation timeout. Authoritative process/tmux
+        // attachments have their own daemon heartbeat, and integrations that
+        // cannot be verified should not look dead merely because they are quiet.
+        staleThresholdMinutes = d.object(forKey: "staleThresholdMinutes") as? Int
         if let data = d.data(forKey: "contextWindowByKind"),
            let decoded = try? JSONDecoder().decode([String: Int].self, from: data) {
             contextWindowByKind = decoded
@@ -515,6 +528,10 @@ final class AppModel: ObservableObject {
     /// layered heuristic, not a real daemon state.
     func isStale(_ s: SessionInfo) -> Bool {
         guard let staleThresholdMinutes else { return false }
+        // A healthy attachment is re-proven by focalpointd every 15 seconds.
+        // Adapter activity may be old while the provider is still alive, so
+        // never override that authoritative heartbeat with an age heuristic.
+        guard s.health != .healthy else { return false }
         guard [AgentState.thinking, .running, .waiting, .approval].contains(s.state) else { return false }
         return Date().timeIntervalSince(s.lastChange) >= Double(staleThresholdMinutes) * 60
     }

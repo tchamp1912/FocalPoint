@@ -1963,14 +1963,30 @@ impl Registry {
         }
     }
 
-    pub fn expire_unverified_attachments(&mut self, now: Instant) -> Vec<Effect> {
+    pub fn expire_unverified_attachments(
+        &mut self,
+        now: Instant,
+        ttl: Option<Duration>,
+    ) -> Vec<Effect> {
         let ids: Vec<String> = self
             .sessions
             .values()
             .filter(|session| {
-                matches!(session.attachment, Some(Attachment::Unverified { .. }))
-                    && now.saturating_duration_since(session.last_update)
-                        >= Duration::from_secs(300)
+                let Some(Attachment::Unverified { id }) = session.attachment.as_ref() else {
+                    return false;
+                };
+                // One-time snapshot migration cleanup remains bounded so an
+                // old pre-attachment row cannot permanently reclaim a live
+                // slot after upgrade. New unverified sessions obey the
+                // configurable timeout, which is disabled by default.
+                let effective_ttl = if id.starts_with("unverified:restored:") {
+                    Some(Duration::from_secs(300))
+                } else {
+                    ttl
+                };
+                effective_ttl.is_some_and(|limit| {
+                    now.saturating_duration_since(session.last_update) >= limit
+                })
             })
             .map(|session| session.id.clone())
             .collect();
@@ -1979,13 +1995,13 @@ impl Registry {
                 if let Some(session) = self.sessions.get_mut(&id) {
                     session.health = SessionHealth::Unknown;
                     session.health_reason =
-                        Some("unverified integration inactive for five minutes".into());
+                        Some("unverified integration heartbeat timeout expired".into());
                     session.attachment = None;
                 }
                 let mut effects = vec![Effect::SessionHealthChanged {
                     id: id.clone(),
                     health: SessionHealth::Unknown,
-                    reason: Some("unverified integration inactive for five minutes".into()),
+                    reason: Some("unverified integration heartbeat timeout expired".into()),
                 }];
                 effects.extend(self.reap_session(&id, now));
                 effects
@@ -2509,10 +2525,33 @@ mod tests {
         let now = Instant::now();
         registry.set_state(Some("generic"), State::Thinking, Some("generic".into()), None, None, now);
         assert_eq!(registry.list()[0].slot, Some(1));
-        let effects = registry.expire_unverified_attachments(now + Duration::from_secs(300));
+        let effects = registry.expire_unverified_attachments(
+            now + Duration::from_secs(300),
+            Some(Duration::from_secs(300)),
+        );
         assert!(effects.iter().any(|effect| matches!(effect, Effect::SessionDisconnected { slot: Some(1), .. })));
         let retained = registry.session_or_tombstone("generic").unwrap();
         assert_eq!(retained.health, SessionHealth::Unknown);
+    }
+
+    #[test]
+    fn unverified_activity_never_disconnects_when_timeout_is_off() {
+        let mut registry = Registry::new(None);
+        let now = Instant::now();
+        registry.set_state(
+            Some("generic"),
+            State::Thinking,
+            Some("generic".into()),
+            None,
+            None,
+            now,
+        );
+        let effects = registry.expire_unverified_attachments(
+            now + Duration::from_secs(24 * 60 * 60),
+            None,
+        );
+        assert!(effects.is_empty());
+        assert_eq!(registry.list()[0].slot, Some(1));
     }
 
     #[test]

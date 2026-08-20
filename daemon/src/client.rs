@@ -137,14 +137,22 @@ fn apply_identity(
             meta_obj.insert("terminal_bundle_id".into(), bundle.into());
         }
     }
+    if !meta_obj.contains_key("terminal_application_pid") {
+        if let Some(value) = identity.terminal_application_pid {
+            meta_obj.insert("terminal_application_pid".into(), value.into());
+        }
+    }
     if !meta_obj.contains_key("terminal_session_id") {
-        let terminal_session = std::env::var("ITERM_SESSION_ID")
-            .ok()
-            .and_then(|value| {
-                value
-                    .rsplit_once(':')
-                    .map(|(_, id)| id.to_string())
-                    .or(Some(value))
+        let terminal_session = identity
+            .terminal_session_id
+            .clone()
+            .or_else(|| {
+                std::env::var("ITERM_SESSION_ID").ok().and_then(|value| {
+                    value
+                        .rsplit_once(':')
+                        .map(|(_, id)| id.to_string())
+                        .or(Some(value))
+                })
             })
             .or_else(|| std::env::var("TERM_SESSION_ID").ok());
         if let Some(value) = terminal_session.filter(|value| !value.is_empty()) {

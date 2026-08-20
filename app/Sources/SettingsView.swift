@@ -438,7 +438,7 @@ struct IntegrationsSettingsView: View {
 
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Stale sessions").font(.subheadline).bold()
-                    Text("A session can be left showing \u{201C}Thinking\u{201D}/\u{201C}Running\u{201D}/\u{201C}Waiting\u{201D} forever if its agent process dies without a clean shutdown \u{2014} crashed, terminal closed, laptop slept. After this many minutes with no update, that session dims and shows as possibly-stale instead of implying it's still working. This is only a display heads-up — it doesn't end the session; the daemon's own longer session.ttl_minutes (config.toml) still owns that. Leave blank to turn this off.")
+                    Text("For integrations whose process or tmux pane cannot be verified, optionally dim an active-looking session after this many minutes without an adapter event. Healthy sessions use the daemon's 15-second attachment heartbeat and never become stale from age alone. This is display-only and defaults to Off.")
                         .font(.caption).foregroundStyle(.secondary)
                     Divider()
                     HStack {

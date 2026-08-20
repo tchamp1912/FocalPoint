@@ -182,7 +182,9 @@ drives an age-based session removal.
   it: `tty` catches "the terminal closed," `pid` catches "the agent itself
   crashed but the terminal is still open" — neither alone covers both failure
   modes. Sessions with no `pid` are unaffected. Time since the last update
-  never ends or disconnects a session; front-ends may show it as stale. Any
+  does not disconnect a session by default; front-ends may show it as stale.
+  An integration with no authoritative process/tmux attachment can opt into
+  `unverified_ttl_minutes` (default `0`, off). Any
   end reason frees the session's slot (`SET_KEY_STATE slot 0xFF` on the
   device).
 - **Two removal paths.** An explicit `end-session` (adapter `SessionEnd`, or
@@ -388,6 +390,9 @@ terminal tty. It never matches provider kind/cwd/title and never generically
 activates a terminal application. Every attempt emits `focus-result` with
 `focused`, `endpoint-missing`, or `attachment-stale`; only a successful attempt
 also broadcasts `{"event":"focus","session":"id"}`.
+On macOS, exact iTerm matching enumerates each running iTerm application PID;
+this keeps a legacy separately-launched iTerm instance addressable without
+allowing bundle-ID activation to raise a different instance.
 
 The daemon owns a complete attention order separately from numbered slots.
 `get-attention-order` returns `{"ok":true,"sessions":[...]}`.
@@ -677,6 +682,7 @@ ccw  = "echo effort-down"
 # Runs when a numbered key with a live session is pressed (see §3 Focus).
 # The session is exposed via FOCALPOINT_SESSION_* env vars.
 focus = { type = "shell", run = "~/.config/focalpoint/adapters/focus-session.sh" }
+unverified_ttl_minutes = 0 # optional adapter-heartbeat timeout; 0/omitted = off
 tombstone_ttl_minutes = 30   # how long a sweep-reaped session stays recoverable (0 = never)
 
 [channel]

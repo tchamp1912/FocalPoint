@@ -204,8 +204,10 @@ still delivered). Key actions fire on **press**; the dial runs `cw`/`ccw`
 depending on tick direction.
 
 The `[session]` block configures the `focus` action (see Multi-session tracking).
-Update age is only a UI stale indication; the daemon retains a session until
-explicit end or verified PID/TTY death. `[styles.<state>]` blocks override the
+Update age is only a UI stale indication by default; the daemon retains a
+session until explicit end or authoritative process/tmux death. Integrations
+without authoritative ownership can opt into an inactivity disconnect with
+`unverified_ttl_minutes`; it defaults to `0` (off). `[styles.<state>]` blocks override the
 default render styles (see Render styles above); the daemon rewrites them in
 place on `set-style`.
 

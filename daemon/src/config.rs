@@ -52,6 +52,10 @@ pub struct SessionConfig {
     /// is a UI-only stale indication and never ends a session.
     #[serde(default)]
     pub ttl_minutes: Option<u64>,
+    /// Optional inactivity timeout for integrations whose provider process or
+    /// managed tmux pane cannot be authoritatively verified. Absent/0 => off.
+    #[serde(default)]
+    pub unverified_ttl_minutes: Option<u64>,
     /// How long a session reaped by a sweep (not an explicit end-session)
     /// stays recoverable — see `session::Registry::find_recovery_candidate`.
     /// Absent => 30; `0` => never (a session "left through a reboot" stays
@@ -79,6 +83,15 @@ impl SessionConfig {
     /// code deliberately does not use it.
     pub fn ttl(&self) -> Option<std::time::Duration> {
         match self.ttl_minutes.unwrap_or(60) {
+            0 => None,
+            m => Some(std::time::Duration::from_secs(m * 60)),
+        }
+    }
+
+    /// Effective unverified-session inactivity timeout. Disabled by default:
+    /// lack of a heartbeat is not proof that a session ended.
+    pub fn unverified_ttl(&self) -> Option<std::time::Duration> {
+        match self.unverified_ttl_minutes.unwrap_or(0) {
             0 => None,
             m => Some(std::time::Duration::from_secs(m * 60)),
         }
@@ -337,6 +350,17 @@ ttl_minutes = 30
         // 0 => never.
         let cfg = Config::from_toml("[session]\nttl_minutes = 0\n").expect("parse");
         assert_eq!(cfg.session.ttl(), None);
+    }
+
+    #[test]
+    fn unverified_ttl_defaults_to_off() {
+        assert_eq!(Config::default().session.unverified_ttl(), None);
+        let cfg = Config::from_toml("[session]\nunverified_ttl_minutes = 5\n")
+            .expect("parse");
+        assert_eq!(
+            cfg.session.unverified_ttl(),
+            Some(std::time::Duration::from_secs(5 * 60))
+        );
     }
 
     #[test]

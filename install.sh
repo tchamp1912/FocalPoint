@@ -166,6 +166,7 @@ This will, all idempotently:
   - merge FocalPoint's hooks into ~/.claude/settings.json and
     ~/.cursor/hooks.json (each backed up first; skipped cleanly if already
     merged)
+  - build the exact multi-process iTerm focus helper
   - build the macOS keyboard-backlight helper (non-fatal if it fails)
   - build + install the FocalPoint.app menu bar app, if this checkout has one
   - install a launchd user agent so focalpointd starts automatically$( [ "$USE_MOCK" -eq 1 ] && echo " (--mock-device)" )
@@ -312,6 +313,7 @@ ADAPTER_FILES=(
   cursor-hooks.sh
   focus-cursor.sh
   cursor-cli-focalpoint.sh
+  focalpoint-iterm-focus
 )
 prune_manifested_files \
   "$ADAPTER_INSTALL_DIR" "$ADAPTER_MANIFEST" "${ADAPTER_FILES[@]}"
@@ -331,6 +333,21 @@ install_script "$ADAPTERS_DIR/codex-cli/hooks.sh" codex-hooks.sh
 install_script "$ADAPTERS_DIR/cursor/hooks.sh" cursor-hooks.sh
 install_script "$ADAPTERS_DIR/cursor/focus-cursor.sh" focus-cursor.sh
 install_script "$ADAPTERS_DIR/cursor-cli/wrap.sh" cursor-cli-focalpoint.sh
+
+ITERM_FOCUS_HELPER="$ADAPTER_INSTALL_DIR/focalpoint-iterm-focus"
+ITERM_FOCUS_HELPER_TMP="$ADAPTER_INSTALL_DIR/.focalpoint-iterm-focus.tmp.$$"
+if "$ADAPTERS_DIR/mac-focus/build.sh" "$ITERM_FOCUS_HELPER_TMP" \
+     >/tmp/focalpoint-iterm-focus-build.log 2>&1; then
+  chmod +x "$ITERM_FOCUS_HELPER_TMP"
+  mv "$ITERM_FOCUS_HELPER_TMP" "$ITERM_FOCUS_HELPER"
+  ITERM_FOCUS_STATUS="built"
+  ok "built $ITERM_FOCUS_HELPER"
+else
+  rm -f "$ITERM_FOCUS_HELPER_TMP"
+  ITERM_FOCUS_STATUS="build failed"
+  fail "failed to build exact iTerm focus helper — see /tmp/focalpoint-iterm-focus-build.log"
+  exit 1
+fi
 write_owned_manifest "$ADAPTER_MANIFEST" "${ADAPTER_FILES[@]}"
 ok "recorded managed adapter manifest $ADAPTER_MANIFEST"
 
@@ -621,6 +638,7 @@ cat <<EOF
   tmux config        $TMUX_CONFIG_STATUS
   tmux dependency    $TMUX_STATUS
   adapter scripts    refreshed in $ADAPTER_INSTALL_DIR
+  iTerm focus helper $ITERM_FOCUS_STATUS
   Claude Code hooks  $HOOKS_STATUS
   Cursor hooks       $CURSOR_STATUS
   Codex CLI          $CODEX_STATUS
