@@ -5,8 +5,9 @@
 // the app CANNOT run a formation itself. It launches exactly ONE agent — the
 // formation's orchestrator — via the daemon's `launch-session` primitive, and
 // that orchestrator validates, expands, and sequences the crew (spec §3, §5.2).
-// The app never parses a manifest into launch calls, never picks providers per
-// role, and never creates channels.
+// The app never expands a manifest into launch calls and never creates
+// channels. Preflight records explicit provider/model choices as reviewed data;
+// the orchestrator revalidates and materializes them through current APIs.
 //
 // Manifests are read with a small TOML subset parser (below) — swiftc-only
 // build means no package dependencies, and the schema (docs/workflows-schema.md)
@@ -385,8 +386,8 @@ enum TomlParser {
 // MARK: - Formation packages (docs/workflows-schema.md §Formation packages)
 
 /// A valid, loadable formation package found under the workflows directory.
-/// Holds only what the menu needs to render and launch; the orchestrator does
-/// full validation and resolution at run time.
+/// The validated data the menu and preflight need to render an honest launch
+/// review. The orchestrator repeats validation at materialization time.
 struct FormationPackage: Identifiable, Equatable {
     let id: String            // directory name
     let name: String
@@ -395,6 +396,11 @@ struct FormationPackage: Identifiable, Equatable {
     let roleCount: Int        // fixed roles only; a fan-out contributes no fixed count
     let phaseCount: Int       // 0 = single-phase [[role]] form
     let fanoutCeiling: Int?   // `max` of the first fan-out phase, if any
+    let roles: [FormationRoleSummary]
+    let phases: [FormationPhaseSummary]
+    let escalationKinds: [String]
+    let escalationStates: [String]
+    let completionPolicy: String
     let directoryURL: URL
 
     var manifestURL: URL { directoryURL.appendingPathComponent("formation.toml") }
@@ -405,6 +411,19 @@ struct FormationPackage: Identifiable, Equatable {
         var detail = "\(phaseCount) phases · \(roles)"
         if let ceiling = fanoutCeiling { detail += " · fan-out ≤ \(ceiling)" }
         return detail
+    }
+
+    var allRoles: [FormationRoleSummary] {
+        phases.isEmpty ? roles : phases.flatMap(\.roles)
+    }
+
+    var complexitySignals: WorkflowComplexitySignals {
+        WorkflowComplexitySignals(
+            fixedRoleCount: roleCount,
+            phaseCount: phaseCount,
+            fanoutCeiling: fanoutCeiling,
+            confirmationGateCount: phases.filter { $0.gate == .confirm }.count
+        )
     }
 }
 
@@ -490,13 +509,6 @@ final class WorkflowLauncherModel: ObservableObject {
              + "FocalPoint refuses rather than honoring it as prompt text only"
     }
 
-    /// The provider for the ONE agent the app launches: the formation's
-    /// orchestrator. Claude Code, because the focalpoint-orchestrator skill
-    /// currently ships as a Claude skill. Per-role provider choice stays with
-    /// the orchestrator (spec §5.3); making this a Settings choice is deferred
-    /// (see HANDOFF.md).
-    private static let orchestratorProvider = "claude"
-
     // MARK: Scanning
 
     func refresh() {
@@ -557,10 +569,9 @@ final class WorkflowLauncherModel: ObservableObject {
         return (packages, issues)
     }
 
-    /// Schema-v1 checks for the fields the menu renders. Full validation
-    /// (provider resolution, phase dependencies, containment paths) is the
-    /// orchestrator's job; here we only accept what we can honestly display
-    /// and launch, and report the rest as malformed.
+    /// Deterministic schema-v1 checks needed for an honest preflight. Provider
+    /// capability/enforcement checks are repeated by the orchestrator because
+    /// the environment can change between review and materialization.
     nonisolated private static func validateManifest(root: [String: TomlValue], directory: URL)
         -> Result<FormationPackage, ManifestInvalid>
     {
@@ -583,12 +594,14 @@ final class WorkflowLauncherModel: ObservableObject {
             return invalid("[formation] requires a description")
         }
 
-        func checkRole(_ role: [String: TomlValue], context: String) -> String? {
+        func readRole(_ role: [String: TomlValue], context: String,
+                      phaseName: String?, index: Int,
+                      fanoutMaximum: Int? = nil) -> Result<FormationRoleSummary, ManifestInvalid> {
             guard case .string(let roleName)? = role["name"], !roleName.isEmpty else {
-                return "\(context): role requires a nonempty name"
+                return .failure(ManifestInvalid(message: "\(context): role requires a nonempty name"))
             }
             guard case .string(let type)? = role["type"], !type.isEmpty else {
-                return "\(context) '\(roleName)': role requires a type"
+                return .failure(ManifestInvalid(message: "\(context) '\(roleName)': role requires a type"))
             }
             // WORKFLOWS-PROPOSAL.md §4.2: `[enforced]` declares a guarantee
             // that prep must materialize through a provider's project-local
@@ -601,14 +614,44 @@ final class WorkflowLauncherModel: ObservableObject {
             // deterministic per-provider prep AND effective-setting
             // verification.
             if let reason = Self.enforcedTierReason(forType: type) {
-                return "\(context) '\(roleName)': \(reason)"
+                return .failure(ManifestInvalid(message: "\(context) '\(roleName)': \(reason)"))
             }
-            return nil
+            let kind: String
+            if let value = role["kind"] {
+                guard case .string(let raw) = value, ["worker", "orchestrator"].contains(raw) else {
+                    return .failure(ManifestInvalid(message: "\(context) '\(roleName)': kind must be worker or orchestrator"))
+                }
+                kind = raw
+            } else {
+                kind = "worker"
+            }
+            let prep: String?
+            if let value = role["prep"] {
+                guard case .string(let raw) = value, raw == "worktree" else {
+                    return .failure(ManifestInvalid(message: "\(context) '\(roleName)': prep must be worktree"))
+                }
+                prep = raw
+            } else { prep = nil }
+            let task: String?
+            if let value = role["task"] {
+                guard case .string(let raw) = value, !raw.isEmpty else {
+                    return .failure(ManifestInvalid(message: "\(context) '\(roleName)': task must be a nonempty string"))
+                }
+                task = raw
+            } else { task = nil }
+            return .success(FormationRoleSummary(
+                id: "\(phaseName ?? "root"):\(roleName):\(index)", name: roleName,
+                type: type, kind: kind, prep: prep, task: task,
+                phaseName: phaseName, fanoutMaximum: fanoutMaximum
+            ))
         }
 
         var roleCount = 0
         var phaseCount = 0
         var fanoutCeiling: Int?
+        var roleSummaries: [FormationRoleSummary] = []
+        var phaseSummaries: [FormationPhaseSummary] = []
+        var declaredRoleNames: Set<String> = []
 
         let hasRoles = root["role"] != nil
         let hasPhases = root["phase"] != nil
@@ -619,8 +662,15 @@ final class WorkflowLauncherModel: ObservableObject {
             guard case .tableArray(let roles)? = root["role"] else {
                 return invalid("[[role]] must be an array of tables")
             }
-            for role in roles {
-                if let error = checkRole(role, context: "[[role]]") { return invalid(error) }
+            for (index, role) in roles.enumerated() {
+                switch readRole(role, context: "[[role]]", phaseName: nil, index: index) {
+                case .failure(let error): return .failure(error)
+                case .success(let summary):
+                    guard declaredRoleNames.insert(summary.name).inserted else {
+                        return invalid("duplicate role name '\(summary.name)'")
+                    }
+                    roleSummaries.append(summary)
+                }
             }
             roleCount = roles.count
         } else if hasPhases {
@@ -628,17 +678,52 @@ final class WorkflowLauncherModel: ObservableObject {
                 return invalid("[[phase]] must be an array of tables")
             }
             phaseCount = phases.count
-            for phase in phases {
+            var earlierPhaseNames: Set<String> = []
+            for (phaseIndex, phase) in phases.enumerated() {
                 guard case .string(let phaseName)? = phase["name"], !phaseName.isEmpty else {
                     return invalid("[[phase]] requires a nonempty name")
                 }
+                guard !earlierPhaseNames.contains(phaseName) else {
+                    return invalid("duplicate phase name '\(phaseName)'")
+                }
+                let after: String?
+                if let afterValue = phase["after"] {
+                    guard case .string(let raw) = afterValue, earlierPhaseNames.contains(raw) else {
+                        return invalid("phase '\(phaseName)': after must name an earlier phase")
+                    }
+                    after = raw
+                } else { after = nil }
+                let effectiveGateValue: TomlValue? = {
+                    if case .table(let fanout)? = phase["fanout"] { return fanout["gate"] ?? phase["gate"] }
+                    return phase["gate"]
+                }()
+                let gate: FormationGateSummary
+                if let gateValue = effectiveGateValue {
+                    guard case .string(let raw) = gateValue,
+                          let parsed = FormationGateSummary(rawValue: raw) else {
+                        return invalid("phase '\(phaseName)': gate must be authorized, confirm, or auto")
+                    }
+                    gate = parsed
+                } else {
+                    gate = phase["fanout"] == nil ? .authorized : .confirm
+                }
+                var summaries: [FormationRoleSummary] = []
                 if let rolesValue = phase["role"] {
                     guard case .tableArray(let roles) = rolesValue else {
                         return invalid("phase '\(phaseName)': [[phase.role]] must be an array of tables")
                     }
-                    for role in roles {
-                        if let error = checkRole(role, context: "phase '\(phaseName)'") {
-                            return invalid(error)
+                    guard phase["fanout"] == nil else {
+                        return invalid("phase '\(phaseName)' cannot contain both roles and fan-out")
+                    }
+                    for (roleIndex, role) in roles.enumerated() {
+                        switch readRole(role, context: "phase '\(phaseName)'",
+                                        phaseName: phaseName, index: roleIndex) {
+                        case .failure(let error): return .failure(error)
+                        case .success(let summary):
+                            guard declaredRoleNames.insert(summary.name).inserted else {
+                                return invalid("duplicate role name '\(summary.name)'")
+                            }
+                            summaries.append(summary)
                         }
                     }
                     roleCount += roles.count
@@ -649,6 +734,21 @@ final class WorkflowLauncherModel: ObservableObject {
                     }
                     guard case .int(let max)? = fanout["max"], max > 0 else {
                         return invalid("phase '\(phaseName)': fan-out requires a positive integer max")
+                    }
+                    guard case .string(let source)? = fanout["from"], !source.isEmpty,
+                          case .string(let type)? = fanout["type"], !type.isEmpty,
+                          case .string(let cwdRoot)? = fanout["cwd_root"], !cwdRoot.isEmpty else {
+                        return invalid("phase '\(phaseName)': fan-out requires from, type, and cwd_root")
+                    }
+                    guard declaredRoleNames.contains(source) else {
+                        return invalid("phase '\(phaseName)': fan-out source '\(source)' must be a role in an earlier phase")
+                    }
+                    guard !cwdRoot.hasPrefix("/"),
+                          !cwdRoot.split(separator: "/").contains("..") else {
+                        return invalid("phase '\(phaseName)': fan-out cwd_root must be relative without traversal")
+                    }
+                    if let reason = Self.enforcedTierReason(forType: type) {
+                        return invalid("phase '\(phaseName)' fan-out: \(reason)")
                     }
                     // A fan-out phase means an agent-authored plan decides how
                     // many processes launch and what they are told to do, so
@@ -663,12 +763,25 @@ final class WorkflowLauncherModel: ObservableObject {
                     // prompt would leave an instruction to a language model as
                     // the only thing between a crafted manifest and
                     // plan-authored process creation.
-                    let gate = fanout["gate"] ?? phase["gate"]
-                    if case .string(let gateValue)? = gate, gateValue != "confirm" {
-                        return invalid("phase '\(phaseName)': fan-out requires gate = \"confirm\" (got \"\(gateValue)\")")
+                    let gateValue = fanout["gate"] ?? phase["gate"]
+                    if case .string(let rawGate)? = gateValue, rawGate != "confirm" {
+                        return invalid("phase '\(phaseName)': fan-out requires gate = \"confirm\" (got \"\(rawGate)\")")
                     }
                     if fanoutCeiling == nil { fanoutCeiling = max }
+                    summaries.append(FormationRoleSummary(
+                        id: "\(phaseName):fanout:\(phaseIndex)", name: "Slices from \(source)",
+                        type: type, kind: "worker", prep: "\(cwdRoot) worktrees", task: nil,
+                        phaseName: phaseName, fanoutMaximum: max
+                    ))
                 }
+                guard !summaries.isEmpty else {
+                    return invalid("phase '\(phaseName)' requires roles or fan-out")
+                }
+                phaseSummaries.append(FormationPhaseSummary(
+                    id: "\(phaseName):\(phaseIndex)", name: phaseName, after: after,
+                    gate: gate, roles: summaries
+                ))
+                earlierPhaseNames.insert(phaseName)
             }
         } else {
             return invalid("no [[role]] or [[phase]] entries")
@@ -696,11 +809,13 @@ final class WorkflowLauncherModel: ObservableObject {
             return invalid("[escalate] requires a nonempty states list")
         }
         var declaredStates: Set<String> = []
+        var escalationStates: [String] = []
         for state in states {
             guard case .string(let value) = state, allowedStates.contains(value) else {
                 return invalid("[escalate] unknown state; allowed: \(allowedStates.sorted().joined(separator: ", "))")
             }
             declaredStates.insert(value)
+            escalationStates.append(value)
         }
         // `error` and `approval` visibility is not a manifest's decision. A
         // formation that omits them is asking to hide the two states a human
@@ -724,6 +839,11 @@ final class WorkflowLauncherModel: ObservableObject {
             roleCount: roleCount,
             phaseCount: phaseCount,
             fanoutCeiling: fanoutCeiling,
+            roles: roleSummaries,
+            phases: phaseSummaries,
+            escalationKinds: kinds.compactMap { if case .string(let value) = $0 { value } else { nil } },
+            escalationStates: escalationStates,
+            completionPolicy: completion,
             directoryURL: directory
         ))
     }
@@ -732,16 +852,28 @@ final class WorkflowLauncherModel: ObservableObject {
 
     /// Start one formation: launch its orchestrator via the daemon's
     /// `launch-session` primitive (PROTOCOL.md §3/§4). Everything after this —
-    /// validation, per-role providers, worktree prep, channel creation, the
-    /// fan-out gates — happens inside that orchestrator agent. The app never
-    /// sees or re-creates any of it.
+    /// revalidation, worktree prep, channel creation, role launch calls, and
+    /// fan-out gates — happens inside that orchestrator agent. The app passes
+    /// reviewed assignments but never expands them into launch calls itself.
     ///
-    /// `targetCwd` is where the formation runs (spec §8.2's "against the auth
-    /// refactor"): the menu shows it as "Runs in …" before anything launches,
-    /// and the task text tells the orchestrator to confirm it with the human
-    /// if the formation plainly targets something else.
-    func start(_ package: FormationPackage, targetCwd: String) {
+    /// The configuration comes only from the explicit preflight. In
+    /// particular, cwd/provider/model are concrete values; this method never
+    /// consults focused-session or last-used defaults.
+    func start(_ package: FormationPackage, configuration: WorkflowLaunchConfiguration) {
         guard launchInFlightID == nil else { return }
+        let targetCwd = configuration.projectDirectory.path
+        let configurationErrors = WorkflowPreflightValidation.errors(
+            projectDirectory: configuration.projectDirectory,
+            orchestratorModel: configuration.orchestratorModel,
+            assignments: configuration.roleAssignments,
+            fanoutLimit: configuration.fanoutLimit,
+            fanoutCeiling: package.fanoutCeiling,
+            unresolvedTypes: []
+        )
+        guard configurationErrors.isEmpty else {
+            outcome = .failed(package: package.name, detail: configurationErrors.joined(separator: " "))
+            return
+        }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: targetCwd, isDirectory: &isDirectory),
               isDirectory.boolValue else {
@@ -755,14 +887,15 @@ final class WorkflowLauncherModel: ObservableObject {
         let taskID = Self.mintTaskID(for: package)
         let request: [String: Any] = [
             "cmd": "launch-session",
-            "provider": Self.orchestratorProvider,
+            "provider": configuration.orchestratorProvider.rawValue,
+            "model": configuration.orchestratorModel,
             "cwd": targetCwd,
-            "task": Self.orchestratorTask(for: package, targetCwd: targetCwd),
+            "task": Self.orchestratorTask(for: package, configuration: configuration),
             "task_id": taskID,
             "title": "\(package.name) orchestrator",
             "role": "orchestrator",
         ]
-        log("workflow launch requested package=\(boundedLogField(package.name)) task_id=\(boundedLogField(taskID)) provider=\(Self.orchestratorProvider) cwd=\(boundedLogField(targetCwd))")
+        log("workflow launch requested package=\(boundedLogField(package.name)) task_id=\(boundedLogField(taskID)) provider=\(configuration.orchestratorProvider.rawValue) model=\(boundedLogField(configuration.orchestratorModel)) cwd=\(boundedLogField(targetCwd))")
 
         let client = self.client
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -816,17 +949,29 @@ final class WorkflowLauncherModel: ObservableObject {
     /// The typed instruction §8.2 is a shortcut for: "run this formation".
     /// Expansion judgment is delegated wholesale to the orchestrator agent;
     /// the task names the manifest, the target, and the rules, nothing more.
-    private static func orchestratorTask(for package: FormationPackage, targetCwd: String) -> String {
-        """
+    private static func orchestratorTask(for package: FormationPackage,
+                                         configuration: WorkflowLaunchConfiguration) -> String {
+        let assignments = configuration.roleAssignments.map { assignment in
+            let phase = assignment.phaseName.map { " phase=\($0)" } ?? ""
+            return "- \(assignment.roleName) [type=\(assignment.typeName)\(phase)]: provider=\(assignment.provider.rawValue), model=\(assignment.model)"
+        }.joined(separator: "\n")
+        let fanout = configuration.fanoutLimit.map {
+            "The human set a dynamic fan-out limit of \($0), which may only reduce the manifest ceiling."
+        } ?? "This formation has no dynamic fan-out override."
+        return """
         Run the FocalPoint formation "\(package.name)". Manifest: \(package.manifestURL.path). Agent types live in ~/.config/focalpoint/agents/.
 
-        The human started this run from the FocalPoint app; that click is your authorization for the formation itself. Target directory: \(targetCwd) — the workspace in focus when the run was started. If the formation plainly targets something else, confirm with the human before preparing directories.
+        The human explicitly selected and finally confirmed target directory: \(configuration.projectDirectory.path). The preflight classified this formation as \(configuration.complexity.rawValue) complexity. Do not substitute a focused directory or last-used provider/model.
+
+        The human reviewed these explicit role assignments:
+        \(assignments)
+        \(fanout)
 
         You are this formation's orchestrator (launched role=orchestrator; your stable task id is in the launch preamble). Work the focalpoint-orchestrator skill end to end:
-        1. Validate the manifest and resolve every role's agent type to an explicit provider; refuse on ambiguity rather than guessing.
+        1. Revalidate the manifest and agent types, then use the explicit provider/model assignments above; refuse if a provider cannot deliver a declared capability or enforcement constraint.
         2. Prepare each role's working directory, wait for your own attachment to verify, then create the crew channel.
         3. Launch each role with fpctl-agent launch --role worker --manager-task-id <your task id> --channel <id>, and wait for verified attachments.
-        4. Honor every phase gate: never auto-approve, never silently retry, and on partial failure report to the human instead of stopping successful roles.
+        4. Honor every phase gate. The final preflight authorized only the formation and phases marked authorized; it did not pre-approve confirm gates. Never auto-approve, never silently retry, and on partial failure report to the human instead of stopping successful roles.
 
         The daemon validates individual launch/channel/stop calls only; all expansion judgment is yours.
         """
@@ -857,9 +1002,10 @@ final class WorkflowLauncherModel: ObservableObject {
 struct WorkflowLauncherSection: View {
     @ObservedObject var launcher: WorkflowLauncherModel
     let daemonConnected: Bool
-    /// Where a started formation runs — resolved by the parent from the
-    /// focused/most-recent session, shown in the menu before launch.
+    /// A convenience displayed in preflight only. It is never selected unless
+    /// the human explicitly presses "Select This Folder".
     let targetCwd: String
+    @State private var preflightPackage: FormationPackage?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -895,6 +1041,15 @@ struct WorkflowLauncherSection: View {
         .padding(.horizontal, Metrics.hPad)
         .padding(.vertical, 8)
         .onAppear { launcher.refresh() }
+        .sheet(item: $preflightPackage) { package in
+            WorkflowLaunchPreflightView(
+                package: package,
+                suggestedDirectory: URL(fileURLWithPath: targetCwd, isDirectory: true),
+                daemonConnected: daemonConnected
+            ) { configuration in
+                launcher.start(package, configuration: configuration)
+            }
+        }
     }
 
     private var launchingName: String? {
@@ -919,9 +1074,7 @@ struct WorkflowLauncherSection: View {
 
     @ViewBuilder
     private var menuContent: some View {
-        Text("Runs in \(Self.shortPath(URL(fileURLWithPath: targetCwd)))")
-            .lineLimit(1)
-            .truncationMode(.middle)
+        Text("Project folder is chosen in preflight")
         if !launcher.hasScanned {
             Text("Scanning\u{2026}")
         } else if launcher.packages.isEmpty && launcher.issues.isEmpty {
@@ -930,7 +1083,7 @@ struct WorkflowLauncherSection: View {
         } else {
             ForEach(launcher.packages) { package in
                 Button {
-                    launcher.start(package, targetCwd: targetCwd)
+                    preflightPackage = package
                 } label: {
                     Label("\(package.name) · \(package.menuDetail)",
                           systemImage: "person.3.sequence")
