@@ -53,9 +53,9 @@ orchestrator work group: assignments, progress, questions, blockers, and
 handoffs all belong there. Do not use transcripts as a routine mailbox or to
 poll for ordinary completion.
 
-Channel commands work only inside a live FocalPoint-managed Claude/Codex
-session, where `FOCALPOINT_ORCHESTRATOR_TASK_ID` is set. An orchestrator creates
-and owns the channel; add a worker when launching it:
+Channel commands work only inside a live FocalPoint-managed Claude, Codex, or
+registered Cursor session, where `FOCALPOINT_ORCHESTRATOR_TASK_ID` is set. An
+orchestrator creates and owns the channel; add a worker when launching it:
 
 ```sh
 fpctl-agent channel create
@@ -132,10 +132,14 @@ id, task id, title, and current slot; the slot can legitimately differ if its
 old one was reclaimed while it was disconnected.
 
 For Cursor, use `--cursor-mode headless` (the default) when FocalPoint
-telemetry and channels matter. It uses Cursor's stream wrapper. Use
-`--cursor-mode attachable` only when a human needs Cursor's interactive UI in
-the managed tmux pane; Cursor does not provide lifecycle events in that mode,
-so it is not a live FocalPoint session and cannot participate in channels.
+granular telemetry matters. It uses Cursor's stream wrapper and real chat id.
+Use `--cursor-mode attachable` when a human needs Cursor's interactive UI in
+the managed tmux pane. Its launch prompt requires the agent's first terminal
+tool call to be `focalpoint register`, which creates a live launch-scoped row,
+claims the receipt's reserved slot, and enables channels; it calls
+`focalpoint register --state done` before its final response. If registration
+does not appear, ask the human to run `focalpoint register` in that exact pane;
+never run it elsewhere or invent a raw `set-state` command.
 
 ## Guardrails
 

@@ -60,6 +60,7 @@ TARGET_MUX_SESSION="${FOCALPOINT_SESSION_MUX_SESSION:-}"
 TARGET_MUX_PANE="${FOCALPOINT_SESSION_MUX_PANE:-}"
 TARGET_TERMINAL_SESSION_ID="${FOCALPOINT_TERMINAL_SESSION_ID:-}"
 TARGET_TERMINAL_PID="${FOCALPOINT_TERMINAL_APPLICATION_PID:-}"
+ITERM_FOCUS_HELPER="${FOCALPOINT_ITERM_FOCUS_HELPER:-$(dirname "$0")/focalpoint-iterm-focus}"
 # The generic /dev/tty alias is not unique per session — treat as missing so
 # focus falls through rather than matching every colliding session at once.
 if [ "$TARGET_TTY" = "/dev/tty" ]; then
@@ -168,6 +169,18 @@ app_running() {
 raise_terminal_by_tty() {
   local tty="$1" tty_esc script result
   tty_esc="$(osa_escape "$tty")"
+
+  # Bundle-ID AppleScript can address only one process when legacy `open -n`
+  # iTerm instances exist. The native helper enumerates each running iTerm
+  # PID and sends the lookup/select Apple Events to that exact process.
+  if [ -x "$ITERM_FOCUS_HELPER" ]; then
+    local helper_args=(--focus --tty "$tty")
+    if [ -n "$TARGET_TERMINAL_PID" ]; then
+      "$ITERM_FOCUS_HELPER" "${helper_args[@]}" \
+        --application-pid "$TARGET_TERMINAL_PID" >/dev/null 2>&1 && return 0
+    fi
+    "$ITERM_FOCUS_HELPER" "${helper_args[@]}" >/dev/null 2>&1 && return 0
+  fi
 
   if app_running "iTerm2"; then
     script=$(cat <<APPLESCRIPT
@@ -385,6 +398,23 @@ APPLESCRIPT
   fi
 }
 
+try_iterm_exact_helper() {
+  [ -x "$ITERM_FOCUS_HELPER" ] || return 1
+  local helper_args=(--focus)
+  if [ -n "$TARGET_TERMINAL_SESSION_ID" ]; then
+    helper_args+=(--session-id "$TARGET_TERMINAL_SESSION_ID")
+  elif [ -n "$TARGET_TTY" ]; then
+    helper_args+=(--tty "$TARGET_TTY")
+  else
+    return 1
+  fi
+  if [ -n "$TARGET_TERMINAL_PID" ]; then
+    "$ITERM_FOCUS_HELPER" "${helper_args[@]}" \
+      --application-pid "$TARGET_TERMINAL_PID" >/dev/null 2>&1 && return 0
+  fi
+  "$ITERM_FOCUS_HELPER" "${helper_args[@]}" >/dev/null 2>&1
+}
+
 try_terminal_tty() {
   [ -n "$TARGET_TTY" ] || return 1
   app_running "Terminal" || return 1
@@ -423,7 +453,9 @@ APPLESCRIPT
 if try_managed_tmux; then
   focus_log "result=focused strategy=managed"
 elif command -v osascript >/dev/null 2>&1; then
-  if try_iterm_session_id; then
+  if try_iterm_exact_helper; then
+    focus_log "result=focused strategy=iterm-process-endpoint"
+  elif try_iterm_session_id; then
     focus_log "result=focused strategy=iterm-session-id"
   elif try_iterm_tty; then
     focus_log "result=focused strategy=iterm-tty"

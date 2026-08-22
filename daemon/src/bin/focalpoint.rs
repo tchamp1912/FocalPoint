@@ -99,6 +99,14 @@ enum Cmd {
         #[arg(long, default_value = "thinking")]
         state: String,
     },
+    /// Register this launched interactive Cursor agent from its own terminal
+    /// tool. The launch id, title, task, slot, and exact tmux pane are derived
+    /// and verified; this is not a general arbitrary registration command.
+    Register {
+        /// State to publish. Defaults to thinking.
+        #[arg(long, default_value = "thinking")]
+        state: String,
+    },
     /// Record a provider-wide account usage snapshot. Values must be numeric.
     SetUsage {
         /// Provider identifier, e.g. claude or codex.
@@ -294,6 +302,7 @@ fn main() {
             slot,
             &state,
         ),
+        Cmd::Register { state } => client::register_managed_cursor(&state),
         Cmd::SetUsage { provider, meta } => client::set_usage(&provider, &meta),
         Cmd::Usage { json } => client::usage(json),
         Cmd::GetState => client::get_state(),
@@ -327,5 +336,16 @@ fn main() {
     if let Err(e) = result {
         eprintln!("focalpoint: {}", e.message);
         std::process::exit(e.code);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn register_command_defaults_to_thinking() {
+        let cli = Cli::try_parse_from(["focalpoint", "register"]).unwrap();
+        assert!(matches!(cli.cmd, Cmd::Register { state } if state == "thinking"));
     }
 }

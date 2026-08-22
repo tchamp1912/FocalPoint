@@ -59,9 +59,9 @@ wrap.sh --session "openrouter-$$" --kind openrouter --label "summarize-pr" \
   ./bin/openrouter-cli --model deepseek/deepseek-chat --prompt "$(cat prompt.txt)"
 ```
 
-The session is not auto-ended when the wrapped command exits — it lives
-until the daemon's `session_ttl_minutes` reaps it (config §5, default 60), or
-until something calls `focalpoint end-session <id>`. If you want the slot freed
+The session is not auto-ended when the wrapped command exits — it lives until
+something calls `focalpoint end-session <id>`. You may opt an unverified
+integration into `unverified_ttl_minutes`, which defaults to off. If you want the slot freed
 the moment the command finishes, call that yourself right after `wrap.sh`
 returns:
 

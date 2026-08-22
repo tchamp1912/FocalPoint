@@ -89,8 +89,9 @@ key (1–12) at that moment — slots never shift once assigned, so a session
 keeps its key for its whole lifetime, even as other sessions come and go.
 Sessions beyond 12 still work; they just don't get a dedicated key.
 
-A session ends via `focalpoint end-session <ID>`, or automatically after
-`session_ttl_minutes` (config §5, default 60) of no updates. `set-state`
+A session ends via `focalpoint end-session <ID>` or when its authoritative
+process/tmux attachment dies. Unverified integrations may opt into
+`unverified_ttl_minutes`; the inactivity timeout defaults to off. `set-state`
 calls with no `--session` drive the **sessionless default session** instead
 — the original, pre-multi-session behavior — which occupies no key but still
 counts toward the aggregate.
@@ -261,7 +262,7 @@ try {
 2. **Map your tool's lifecycle to states** — if you have reasoning + execution phases, think about which maps to `thinking` vs `running`
 3. **Never hold the state** — set state at event time, not in a loop
 4. **Handle daemon absence gracefully** — the device might not be plugged in; your tool should work anyway
-5. **Only pass `--session` if you have a stable id for the whole session** — a bare `--kind`/`--label` without `--session` has nothing to attach to and is ignored; reuse the *same* `--session` id across all calls for one session, and call `end-session` when it's truly done (or let `session_ttl_minutes` reap it)
+5. **Only pass `--session` if you have a stable id for the whole session** — a bare `--kind`/`--label` without `--session` has nothing to attach to and is ignored; reuse the *same* `--session` id across all calls for one session, and call `end-session` when it's truly done
 
 ## Protocol Reference
 

@@ -84,10 +84,14 @@ Cursor adds a launch-mode choice. The default is `headless`, which invokes the
 installed Cursor stream wrapper and is therefore visible to FocalPoint with
 lifecycle updates. Use `--cursor-mode attachable` to open Cursor's normal
 interactive terminal UI in the managed tmux pane, where prompts and command
-approvals can be handled directly. Cursor does not publish lifecycle events in
-interactive mode, so attachable launches are intentionally not registered as
-live FocalPoint sessions; choose headless when session telemetry or channels
-are required.
+approvals can be handled directly. Cursor does not publish lifecycle events or
+its current chat id in interactive mode, so FocalPoint prepends an instruction
+requiring the agent's first terminal tool call to be `focalpoint register`.
+That command uses a launch-scoped id and verifies the exact private tmux pane
+before consuming the reserved slot. It runs again as
+`focalpoint register --state done` before completion. This provides managed
+health, exact focus, and channel membership; granular intermediate lifecycle
+telemetry remains available only in headless mode.
 
 ```sh
 fpctl-agent launch --provider cursor --cursor-mode headless --cwd /absolute/path \
@@ -96,6 +100,17 @@ fpctl-agent launch --provider cursor --cursor-mode attachable --cwd /absolute/pa
   --task 'Run the authorized task interactively.' --task-id cursor-interactive-1 \
   --title 'Interactive Cursor audit'
 ```
+
+The pane-local bootstrap can also be run manually in a launched attachable
+Cursor terminal:
+
+```sh
+focalpoint register                    # defaults to thinking
+focalpoint register --state done       # same launch-scoped session
+```
+
+It intentionally accepts no task, title, slot, or session-id arguments. Those
+values come from the daemon-owned receipt and managed pane environment.
 
 The native `fpctl-agent` controller communicates with `focalpointd` over the
 same Unix-socket JSON API used by the app and adapters. Its guarded interface

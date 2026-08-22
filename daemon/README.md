@@ -75,9 +75,11 @@ focalpoint set-state done       # turn finished       -> green
 Several agents can drive the pad at once. A `set-state` carrying a `--session`
 id implicitly registers that session (PROTOCOL.md §3):
 
-- Each session claims the **lowest free numbered key** (1–12) and keeps that
-  slot for its lifetime; slots never shift. Sessions past 12 get `slot: null`.
-  The device shows each session's state on its own key via `SET_KEY_STATE`.
+- Each authoritatively attached session claims a numbered key (1–12).
+  Unknown/unverified and disconnected rows remain visible with `slot: null`;
+  exact re-registration reclaims their historical slot when it is still free.
+  Sessions past 12 also get `slot: null`. The device shows each numbered
+  session's state on its own key via `SET_KEY_STATE`.
 - The **aggregate state** — worst across all live sessions,
   `error > approval > waiting > running > thinking > done > compacting > idle` — is what
   `get-state`, the `state` event, and the device's `SET_STATE` (ambient zone)
@@ -94,6 +96,16 @@ focalpoint set-state thinking --session claude-1 --kind claude --cwd ~/proj
 focalpoint set-state running  --session codex-1  --kind codex
 focalpoint sessions            # table of live sessions (slot order)
 focalpoint end-session codex-1
+```
+
+A daemon-launched attachable Cursor agent is instructed to bootstrap its
+managed row with a terminal tool call. The command derives all identity from
+the launch receipt and current private tmux pane; it is not a general-purpose
+registration shortcut:
+
+```sh
+focalpoint register
+focalpoint register --state done
 ```
 
 **Renaming:** `rename-session` gives a session a user-assigned `name` that
@@ -204,8 +216,10 @@ still delivered). Key actions fire on **press**; the dial runs `cw`/`ccw`
 depending on tick direction.
 
 The `[session]` block configures the `focus` action (see Multi-session tracking).
-Update age is only a UI stale indication; the daemon retains a session until
-explicit end or verified PID/TTY death. `[styles.<state>]` blocks override the
+Update age is only a UI stale indication by default; the daemon retains a
+session until explicit end or authoritative process/tmux death. Integrations
+without authoritative ownership can opt into an inactivity disconnect with
+`unverified_ttl_minutes`; it defaults to `0` (off). `[styles.<state>]` blocks override the
 default render styles (see Render styles above); the daemon rewrites them in
 place on `set-style`.
 

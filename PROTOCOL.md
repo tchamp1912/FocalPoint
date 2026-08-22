@@ -157,8 +157,12 @@ a new session (a state-less session has no state to key `SET_KEY_STATE`
 off of). Staleness is presentation-only; neither `set-meta` nor `set-state`
 drives an age-based session removal.
 
-- Each session claims the **lowest free numbered key** (1–12) at
-  registration. After that, slot placement is user-controlled: `swap-slots`
+- Each session with an authoritative process or managed attachment claims the
+  **lowest free numbered key** (1–12) at registration. An unverified/unknown
+  session remains visible with `slot: null` until exact registration proves
+  ownership; it then reclaims its most recent historical slot when free, or
+  takes the lowest free slot. After that, slot placement is user-controlled:
+  `swap-slots`
   exchanges two live sessions' slots outright, and `move-slot` places a
   live, active session on any free slot — deliberately leaving a gap
   (sparse placement is the point; a slotless overflow session can be moved
@@ -167,8 +171,9 @@ drives an age-based session removal.
   or parking a session in the backlog compacts the remaining active slots
   back to contiguous 1..N, so the rendered list and the physical key map
   never keep a hole the user didn't just make. A sweep-reap (below) frees
-  the slot *without* compacting; the disconnected row still reports its
-  last-held slot. Sessions beyond 12 are tracked with `slot: null` and
+  the slot *without* compacting; the disconnected row reports `slot: null`
+  while the daemon privately retains its slot history for exact recovery.
+  Sessions beyond 12 are tracked with `slot: null` and
   can't participate in a swap — there's no slot to give.
 - A session ends via explicit `end-session`, or — for a session carrying a
   `tty` in `meta` (the well-known key, resolved by the daemon — see
@@ -182,7 +187,9 @@ drives an age-based session removal.
   it: `tty` catches "the terminal closed," `pid` catches "the agent itself
   crashed but the terminal is still open" — neither alone covers both failure
   modes. Sessions with no `pid` are unaffected. Time since the last update
-  never ends or disconnects a session; front-ends may show it as stale. Any
+  does not disconnect a session by default; front-ends may show it as stale.
+  An integration with no authoritative process/tmux attachment can opt into
+  `unverified_ttl_minutes` (default `0`, off). Any
   end reason frees the session's slot (`SET_KEY_STATE slot 0xFF` on the
   device).
 - **Two removal paths.** An explicit `end-session` (adapter `SessionEnd`, or
@@ -388,6 +395,9 @@ terminal tty. It never matches provider kind/cwd/title and never generically
 activates a terminal application. Every attempt emits `focus-result` with
 `focused`, `endpoint-missing`, or `attachment-stale`; only a successful attempt
 also broadcasts `{"event":"focus","session":"id"}`.
+On macOS, exact iTerm matching enumerates each running iTerm application PID;
+this keeps a legacy separately-launched iTerm instance addressable without
+allowing bundle-ID activation to raise a different instance.
 
 The daemon owns a complete attention order separately from numbered slots.
 `get-attention-order` returns `{"ok":true,"sessions":[...]}`.
@@ -433,9 +443,15 @@ commands.
 
 For Cursor, optional `cursor_mode` is `headless` (the default) or `attachable`.
 Headless uses the installed stream wrapper and is registered/tracked normally.
-Attachable opens Cursor's interactive terminal UI in managed tmux; Cursor does
-not emit an interactive lifecycle feed, so that mode is not a live FocalPoint
-session and cannot use channels.
+Attachable opens Cursor's interactive terminal UI in managed tmux. Cursor does
+not expose the current interactive chat id or a lifecycle feed to shell tools,
+so the launch prompt requires its first terminal tool call to run
+`focalpoint register`. That pane-local command derives an id from the daemon's
+launch receipt, verifies the exact private tmux server/session/pane and pane
+PID, consumes the reserved slot, and publishes a healthy managed session. It
+is idempotent; `focalpoint register --state done` updates the same row before
+the agent's final response. Running it outside that launched pane fails closed.
+Attachable state changes between those explicit calls remain unavailable.
 
 The optional `role` is `worker` (the default) or `orchestrator`. A worker may
 name a live managed orchestrator's stable task id in `manager_task_id`; an
@@ -594,6 +610,9 @@ focalpoint set-state <idle|thinking|running|waiting|approval|done|error|compacti
         [--meta KEY=VALUE]... [--refresh-identity]
 focalpoint set-meta --session ID [--kind KIND] [--label LABEL]
         [--meta KEY=VALUE]... [--refresh-identity]   # merges meta only; leaves live state untouched
+focalpoint register [--state STATE]  # pane-local attachable Cursor bootstrap; defaults to thinking
+focalpoint re-register --session ID --kind KIND [--title TITLE]
+        [--task-id TASK] [--role ROLE] [--manager-task-id TASK] [--slot N] [--state STATE]
 focalpoint get-state        # aggregate
 focalpoint sessions         # list live sessions in slot order
 focalpoint rename-session <ID> [NAME]   # omit NAME (or pass "") to clear
@@ -677,6 +696,7 @@ ccw  = "echo effort-down"
 # Runs when a numbered key with a live session is pressed (see §3 Focus).
 # The session is exposed via FOCALPOINT_SESSION_* env vars.
 focus = { type = "shell", run = "~/.config/focalpoint/adapters/focus-session.sh" }
+unverified_ttl_minutes = 0 # optional adapter-heartbeat timeout; 0/omitted = off
 tombstone_ttl_minutes = 30   # how long a sweep-reaped session stays recoverable (0 = never)
 
 [channel]

@@ -227,6 +227,7 @@ fn select_resolved_pid(
 }
 
 fn repair_cached_identity(session_id: &str, mut identity: Identity) -> Identity {
+    let mut changed = false;
     let tty_bad = identity
         .tty
         .as_deref()
@@ -236,7 +237,7 @@ fn repair_cached_identity(session_id: &str, mut identity: Identity) -> Identity 
         if let Some(pid) = identity.pid {
             if let Some(tty) = tty_for_pid(pid) {
                 identity.tty = Some(tty);
-                save_identity(session_id, &identity);
+                changed = true;
             }
         }
     }
@@ -249,6 +250,10 @@ fn repair_cached_identity(session_id: &str, mut identity: Identity) -> Identity 
         identity.boot_time = boot_time;
         identity.process_start_time = process_start_time;
         identity.executable = executable;
+        changed = true;
+    }
+    changed |= refresh_terminal_endpoint(&mut identity);
+    if changed {
         save_identity(session_id, &identity);
     }
     identity
@@ -267,6 +272,88 @@ pub struct Identity {
     pub process_start_time: Option<u64>,
     #[serde(default)]
     pub executable: Option<String>,
+    /// Terminal-host identity is cached beside (but never folded into) the
+    /// provider fingerprint. It is used only to address the exact iTerm
+    /// application process that owns this session when multiple instances
+    /// share the same bundle identifier.
+    #[serde(default)]
+    pub terminal_application_pid: Option<i32>,
+    #[serde(default)]
+    pub terminal_session_id: Option<String>,
+}
+
+fn normalized_iterm_session_id(value: &str) -> Option<String> {
+    let normalized = value
+        .rsplit_once(':')
+        .map(|(_, id)| id)
+        .unwrap_or(value)
+        .trim();
+    (!normalized.is_empty()).then(|| normalized.to_string())
+}
+
+fn current_iterm_session_id() -> Option<String> {
+    std::env::var("ITERM_SESSION_ID")
+        .ok()
+        .and_then(|value| normalized_iterm_session_id(&value))
+}
+
+fn iterm_focus_helper_path() -> PathBuf {
+    if let Some(path) = std::env::var_os("FOCALPOINT_ITERM_FOCUS_HELPER")
+        .filter(|value| !value.is_empty())
+    {
+        return PathBuf::from(path);
+    }
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|home| home.join(".config")))
+        .unwrap_or_else(|| PathBuf::from("/tmp"));
+    config
+        .join("focalpoint")
+        .join("adapters")
+        .join("focalpoint-iterm-focus")
+}
+
+fn lookup_iterm_application_pid(session_id: &str) -> Option<i32> {
+    if !matches!(std::env::var("TERM_PROGRAM").ok().as_deref(), Some("iTerm.app" | "iTerm2")) {
+        return None;
+    }
+    let helper = iterm_focus_helper_path();
+    if !helper.is_file() {
+        return None;
+    }
+    let output = Command::new(helper)
+        .args(["--lookup", "--session-id", session_id])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8(output.stdout)
+        .ok()?
+        .split('|')
+        .next()?
+        .trim()
+        .parse::<i32>()
+        .ok()
+        .filter(|pid| *pid > 1)
+}
+
+fn refresh_terminal_endpoint(identity: &mut Identity) -> bool {
+    let Some(session_id) = current_iterm_session_id() else {
+        return false;
+    };
+    if identity.terminal_session_id.as_deref() == Some(session_id.as_str())
+        && identity.terminal_application_pid.is_some()
+    {
+        return false;
+    }
+    let application_pid = lookup_iterm_application_pid(&session_id);
+    let changed = identity.terminal_session_id.as_deref() != Some(session_id.as_str())
+        || identity.terminal_application_pid != application_pid;
+    identity.terminal_session_id = Some(session_id);
+    identity.terminal_application_pid = application_pid;
+    changed
 }
 
 fn process_fingerprint(pid: Option<i32>) -> (Option<u64>, Option<u64>, Option<String>) {
@@ -384,7 +471,11 @@ pub fn resolve_identity(session_id: &str, target_comm: &str, refresh: bool) -> I
         boot_time,
         process_start_time,
         executable,
+        terminal_application_pid: None,
+        terminal_session_id: None,
     };
+    let mut identity = identity;
+    refresh_terminal_endpoint(&mut identity);
     save_identity_or_rearm(session_id, &identity);
     identity
 }
@@ -560,6 +651,19 @@ mod tests {
         assert_eq!(usable_tty("??"), None);
         assert_eq!(usable_tty("ttys003"), Some("/dev/ttys003".to_string()));
         assert_eq!(usable_tty("/dev/ttys024"), Some("/dev/ttys024".to_string()));
+    }
+
+    #[test]
+    fn iterm_session_id_normalization_strips_only_the_instance_prefix() {
+        assert_eq!(
+            normalized_iterm_session_id("w0t0p0:ABC-123"),
+            Some("ABC-123".into())
+        );
+        assert_eq!(
+            normalized_iterm_session_id("ABC-123"),
+            Some("ABC-123".into())
+        );
+        assert_eq!(normalized_iterm_session_id(""), None);
     }
 
     #[test]
