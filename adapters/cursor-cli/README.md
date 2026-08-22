@@ -106,8 +106,11 @@ fpctl-agent launch --provider cursor --cursor-mode attachable --cwd /absolute/pa
 uses `--print --output-format stream-json`, registers the real Cursor chat id,
 and propagates managed-launch/channel metadata. `attachable` invokes Cursor's
 normal chat mode in the terminal so a person can type follow-ups and approve
-commands; Cursor does not expose lifecycle events in that mode, therefore it
-cannot be tracked or joined to a FocalPoint channel.
+commands. Its launch prompt requires the agent to run `focalpoint register` as
+its first terminal tool call. The command publishes a launch-scoped managed
+session after proving the exact private tmux pane; run
+`focalpoint register --state done` before completion. Interactive Cursor still
+does not expose granular lifecycle events between those explicit calls.
 
 ## Verification
 

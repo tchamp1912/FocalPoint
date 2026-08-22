@@ -285,7 +285,7 @@ fn pane_local_reregister_reconstructs_managed_identity() {
     let fake_tmux = d.dir.join("fake-tmux");
     std::fs::write(
         &fake_tmux,
-        "#!/bin/bash\nprintf 'fp-codex-42|%%4|/dev/ttys042\\n'\n",
+        "#!/bin/bash\nprintf 'fp-codex-42|%%4|/dev/ttys042|4242\\n'\n",
     )
     .unwrap();
     std::fs::set_permissions(&fake_tmux, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -318,8 +318,50 @@ fn pane_local_reregister_reconstructs_managed_identity() {
     assert_eq!(session["meta"]["mux_server"], "fp-worker-42");
     assert_eq!(session["meta"]["mux_session"], "fp-codex-42");
     assert_eq!(session["meta"]["mux_pane"], "%4");
+    assert_eq!(session["meta"]["pid"], 4242);
     assert_eq!(session["meta"]["orchestrator_task_id"], "worker-1");
     assert_eq!(session["meta"]["reregistered"], "true");
+}
+
+#[test]
+fn launched_cursor_can_self_register_with_one_command() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let d = TestDaemon::start();
+    let fake_tmux = d.dir.join("fake-cursor-tmux");
+    std::fs::write(
+        &fake_tmux,
+        "#!/bin/bash\nprintf 'fp-cursor-77|%%7|/dev/ttys077|7777\\n'\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake_tmux, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let fake_tmux_text = fake_tmux.to_string_lossy().to_string();
+    let output = d.cli_with_env(
+        &["register"],
+        &[
+            ("TMUX", "/tmp/tmux-501/fp-cursor-self-42,123,0"),
+            ("TMUX_PANE", "%7"),
+            ("FOCALPOINT_TMUX_SERVER", "fp-cursor-self-42"),
+            ("FOCALPOINT_TMUX_BIN", &fake_tmux_text),
+            ("FOCALPOINT_LAUNCH_ID", "18abc-2"),
+            ("FOCALPOINT_ORCHESTRATOR_TASK_ID", "cursor-self"),
+            ("FOCALPOINT_ORCHESTRATION_ROLE", "worker"),
+            ("FOCALPOINT_SESSION_TITLE", "Self-registering Cursor"),
+            ("FOCALPOINT_SESSION_SLOT", "7"),
+        ],
+    );
+    assert!(output.status_ok, "register failed: {}", output.stdout);
+
+    let sessions = d.cli_json(&["sessions", "--json"]);
+    let session = &sessions.as_array().unwrap()[0];
+    assert_eq!(session["session"], "cursor-launch-18abc-2");
+    assert_eq!(session["kind"], "cursor");
+    assert_eq!(session["label"], "Self-registering Cursor");
+    assert_eq!(session["health"], "healthy");
+    assert_eq!(session["attachment_type"], "managed");
+    assert_eq!(session["meta"]["launch_id"], "18abc-2");
+    assert_eq!(session["meta"]["pid"], 7777);
+    assert_eq!(session["meta"]["orchestrator_task_id"], "cursor-self");
 }
 
 #[test]

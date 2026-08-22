@@ -650,11 +650,22 @@ fn valid_focalpoint_tmux_server(server: &str) -> bool {
 /// comes only from the daemon's persisted receipt, never from a fuzzy title,
 /// cwd, provider kind, PID alone, or tty alone.
 #[cfg(unix)]
+fn managed_launch_provider_kind(kind: Option<&str>) -> Option<&str> {
+    match kind {
+        Some("cursor-cli") => Some("cursor"),
+        value => value,
+    }
+}
+
+#[cfg(unix)]
 fn correlate_pending_managed_launch(
     registry: &Registry,
     kind: Option<&str>,
     meta: &mut Map<String, Value>,
 ) -> Option<String> {
+    // The headless wrapper reports a more descriptive public kind, while its
+    // daemon launch receipt is owned by the Cursor provider.
+    let receipt_provider = managed_launch_provider_kind(kind);
     let reported_task = meta
         .get("orchestrator_task_id")
         .and_then(Value::as_str)
@@ -717,7 +728,7 @@ fn correlate_pending_managed_launch(
                 });
             if active_status
                 && receipt.get("task_id").and_then(Value::as_str) == Some(task_id)
-                && receipt.get("provider").and_then(Value::as_str) == kind
+                && receipt.get("provider").and_then(Value::as_str) == receipt_provider
             {
                 candidate_tasks.push(task_id.to_string());
             }
@@ -788,7 +799,7 @@ fn correlate_pending_managed_launch(
     let receipt_path = receipt_dir.join(format!("{task_id}.json"));
     let mut receipt: Value = serde_json::from_slice(&std::fs::read(&receipt_path).ok()?).ok()?;
     if receipt.get("task_id").and_then(Value::as_str) != Some(task_id.as_str())
-        || receipt.get("provider").and_then(Value::as_str) != kind
+        || receipt.get("provider").and_then(Value::as_str) != receipt_provider
     {
         return None;
     }
@@ -1086,6 +1097,27 @@ fn orchestrated_provider_command(provider_bin: &Path, model: Option<&str>, promp
         .join(" ")
 }
 
+#[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
+fn orchestrated_prompt(
+    provider: &str,
+    cursor_mode: &str,
+    numbered_identity: &str,
+    title: &str,
+    task_id: &str,
+    role: &str,
+    task: &str,
+) -> String {
+    let registration = if provider == "cursor" && cursor_mode == "attachable" {
+        "\nFocalPoint registration (required):\n- Before any other work, use your terminal tool to run exactly: focalpoint register\n- Immediately before your final response, run exactly: focalpoint register --state done\n- Do not alter either command or run them outside this managed pane.\n"
+    } else {
+        ""
+    };
+    format!(
+        "FocalPoint identity:\n- You are {numbered_identity}.\n- Your title is {title:?}.\n- Your stable task id is {task_id:?}.\n- Your orchestration role is {role:?}.\nUse this number and title when identifying yourself in progress, blocker, and completion messages.\n{registration}\nTask:\n{task}"
+    )
+}
+
 /// Cursor has two materially different CLI modes.  Interactive mode is kept
 /// attachable in the managed tmux pane; headless mode goes through the
 /// installed stream wrapper so FocalPoint receives lifecycle events.
@@ -1361,8 +1393,14 @@ fn launch_orchestrated_session(
     let numbered_identity = slot
         .map(|slot| format!("session #{slot}"))
         .unwrap_or_else(|| "an overflow session without a numbered key".to_string());
-    let prompt = format!(
-        "FocalPoint identity:\n- You are {numbered_identity}.\n- Your title is {title:?}.\n- Your stable task id is {task_id:?}.\n- Your orchestration role is {role:?}.\nUse this number and title when identifying yourself in progress, blocker, and completion messages.\n\nTask:\n{task}"
+    let prompt = orchestrated_prompt(
+        provider,
+        cursor_mode,
+        &numbered_identity,
+        title,
+        task_id,
+        role,
+        task,
     );
     let cursor_wrapper = home.join(".config/focalpoint/adapters/cursor-cli-focalpoint.sh");
     let provider_command = if provider == "cursor" {
@@ -1880,7 +1918,10 @@ fn channel_actor(registry: &Registry, task_id: &str) -> Result<Session, String> 
         .into_iter()
         .filter(|session| {
             meta_truthy(session.meta.get("managed"))
-                && matches!(session.kind.as_deref(), Some("claude" | "codex"))
+                && matches!(
+                    session.kind.as_deref(),
+                    Some("claude" | "codex" | "cursor" | "cursor-cli")
+                )
                 && session
                     .meta
                     .get("orchestrator_task_id")
@@ -3712,7 +3753,12 @@ fn dispatch(
             mut meta,
         } => {
             let _transition = ctx.transition.lock().unwrap();
-            if session.is_some() && matches!(kind.as_deref(), Some("claude" | "codex" | "cursor")) {
+            if session.is_some()
+                && matches!(
+                    kind.as_deref(),
+                    Some("claude" | "codex" | "cursor" | "cursor-cli")
+                )
+            {
                 let fields = meta.get_or_insert_with(Map::new);
                 correlate_pending_managed_launch(
                     &shared.lock().unwrap().registry,
@@ -5045,6 +5091,40 @@ mod tests {
         )
         .unwrap_err()
         .contains("headless adapter is not installed"));
+    }
+
+    #[test]
+    fn attachable_cursor_prompt_requires_pane_local_registration() {
+        let attachable = orchestrated_prompt(
+            "cursor",
+            "attachable",
+            "session #4",
+            "Cursor audit",
+            "cursor-audit-1",
+            "worker",
+            "Inspect it.",
+        );
+        assert!(attachable.contains("Before any other work"));
+        assert!(attachable.contains("run exactly: focalpoint register"));
+        assert!(attachable.contains("focalpoint register --state done"));
+
+        let headless = orchestrated_prompt(
+            "cursor",
+            "headless",
+            "session #4",
+            "Cursor audit",
+            "cursor-audit-1",
+            "worker",
+            "Inspect it.",
+        );
+        assert!(!headless.contains("focalpoint register"));
+    }
+
+    #[test]
+    fn cursor_headless_kind_correlates_to_cursor_launch_receipt() {
+        assert_eq!(managed_launch_provider_kind(Some("cursor-cli")), Some("cursor"));
+        assert_eq!(managed_launch_provider_kind(Some("cursor")), Some("cursor"));
+        assert_eq!(managed_launch_provider_kind(Some("codex")), Some("codex"));
     }
 
     #[test]

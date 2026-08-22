@@ -443,9 +443,15 @@ commands.
 
 For Cursor, optional `cursor_mode` is `headless` (the default) or `attachable`.
 Headless uses the installed stream wrapper and is registered/tracked normally.
-Attachable opens Cursor's interactive terminal UI in managed tmux; Cursor does
-not emit an interactive lifecycle feed, so that mode is not a live FocalPoint
-session and cannot use channels.
+Attachable opens Cursor's interactive terminal UI in managed tmux. Cursor does
+not expose the current interactive chat id or a lifecycle feed to shell tools,
+so the launch prompt requires its first terminal tool call to run
+`focalpoint register`. That pane-local command derives an id from the daemon's
+launch receipt, verifies the exact private tmux server/session/pane and pane
+PID, consumes the reserved slot, and publishes a healthy managed session. It
+is idempotent; `focalpoint register --state done` updates the same row before
+the agent's final response. Running it outside that launched pane fails closed.
+Attachable state changes between those explicit calls remain unavailable.
 
 The optional `role` is `worker` (the default) or `orchestrator`. A worker may
 name a live managed orchestrator's stable task id in `manager_task_id`; an
@@ -604,6 +610,9 @@ focalpoint set-state <idle|thinking|running|waiting|approval|done|error|compacti
         [--meta KEY=VALUE]... [--refresh-identity]
 focalpoint set-meta --session ID [--kind KIND] [--label LABEL]
         [--meta KEY=VALUE]... [--refresh-identity]   # merges meta only; leaves live state untouched
+focalpoint register [--state STATE]  # pane-local attachable Cursor bootstrap; defaults to thinking
+focalpoint re-register --session ID --kind KIND [--title TITLE]
+        [--task-id TASK] [--role ROLE] [--manager-task-id TASK] [--slot N] [--state STATE]
 focalpoint get-state        # aggregate
 focalpoint sessions         # list live sessions in slot order
 focalpoint rename-session <ID> [NAME]   # omit NAME (or pass "") to clear

@@ -308,6 +308,27 @@ fn valid_managed_id(value: &str, max: usize) -> bool {
             .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
 }
 
+#[cfg(unix)]
+fn launch_scoped_cursor_session_id(launch_id: &str) -> Result<String, CliError> {
+    if !valid_managed_id(launch_id, 128) {
+        return Err(CliError::new(
+            "FOCALPOINT_LAUNCH_ID is missing or invalid; run this only inside a launched FocalPoint Cursor pane",
+            1,
+        ));
+    }
+    Ok(format!("cursor-launch-{launch_id}"))
+}
+
+/// Bootstrap an attachable Cursor launch which has no interactive lifecycle
+/// feed. The synthetic logical id is explicitly launch-scoped (never title or
+/// cwd-derived), while `re_register` proves the exact daemon-owned tmux pane.
+#[cfg(unix)]
+pub fn register_managed_cursor(state: &str) -> Result<(), CliError> {
+    let launch_id = std::env::var("FOCALPOINT_LAUNCH_ID").unwrap_or_default();
+    let session = launch_scoped_cursor_session_id(&launch_id)?;
+    re_register(&session, "cursor", None, None, None, None, None, state)
+}
+
 /// `focalpoint re-register ...` is deliberately pane-local recovery, not an
 /// arbitrary session-registration shortcut. It proves that the caller is in
 /// a FocalPoint-owned private tmux server, reads the exact pane identity from
@@ -420,7 +441,7 @@ pub fn re_register(
             "-p",
             "-t",
             &pane,
-            "#{session_name}|#{pane_id}|#{pane_tty}",
+            "#{session_name}|#{pane_id}|#{pane_tty}|#{pane_pid}",
         ])
         .output()
         .map_err(|error| CliError::new(format!("cannot inspect managed pane: {error}"), 1))?;
@@ -439,11 +460,13 @@ pub fn re_register(
     let mux_session = fields.next().unwrap_or("");
     let mux_pane = fields.next().unwrap_or("");
     let tty = fields.next().unwrap_or("");
+    let pane_pid = fields.next().and_then(|value| value.parse::<i32>().ok());
     if fields.next().is_some()
         || !valid_managed_id(mux_session, 128)
         || mux_pane != pane
         || !tty.starts_with("/dev/")
         || !valid_managed_tmux_field(tty, 256)
+        || pane_pid.is_none_or(|pid| pid <= 0)
     {
         return Err(CliError::new("tmux pane ownership check failed", 1));
     }
@@ -454,8 +477,14 @@ pub fn re_register(
         format!("mux_session={mux_session}"),
         format!("mux_pane={mux_pane}"),
         format!("tty={tty}"),
+        format!("pid={}", pane_pid.expect("validated pane pid")),
         "reregistered=true".to_string(),
     ];
+    if let Ok(value) = std::env::var("FOCALPOINT_LAUNCH_ID") {
+        if valid_managed_id(&value, 128) {
+            meta.push(format!("launch_id={value}"));
+        }
+    }
     if let Some(value) = task_id {
         meta.push(format!("orchestrator_task_id={value}"));
     }
@@ -490,6 +519,21 @@ pub fn re_register(
             .unwrap_or_else(|| "an unnumbered session".into())
     );
     Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cursor_bootstrap_id_is_bounded_and_launch_scoped() {
+        assert_eq!(
+            launch_scoped_cursor_session_id("18abc-2").unwrap(),
+            "cursor-launch-18abc-2"
+        );
+        assert!(launch_scoped_cursor_session_id("").is_err());
+        assert!(launch_scoped_cursor_session_id("not/a/launch").is_err());
+    }
 }
 
 /// `focalpoint set-usage <provider> --meta key=value...`
