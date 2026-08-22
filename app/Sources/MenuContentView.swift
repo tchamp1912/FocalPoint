@@ -1,11 +1,12 @@
 // FocalPoint menu-bar app — dropdown content (MenuBarExtra .window style).
 // Translucent (Liquid Glass on macOS 26+, NSVisualEffectView below it — see
-// Glass.swift), grouped into header / session list / footer with clear
-// typographic hierarchy. See Materials.swift for the shared StateSwatch,
-// VisualEffectView bridge, and hover helper.
+// Glass.swift), grouped into header / session list / workflow launcher /
+// footer with clear typographic hierarchy. See Materials.swift for the
+// shared StateSwatch, VisualEffectView bridge, and hover helper.
 // MIT License.
 
 import SwiftUI
+import AppKit
 
 struct MenuContentView: View {
     @ObservedObject var model: AppModel
@@ -14,9 +15,21 @@ struct MenuContentView: View {
     /// Session currently being renamed inline, if any.
     @State private var renamingID: String?
 
+    /// Formation-package scanner + orchestrator launcher for the "Start
+    /// Workflow" row (WorkflowLauncher.swift). Owned here rather than on
+    /// AppModel so the feature stays inside its own file.
+    @StateObject private var workflowLauncher = WorkflowLauncherModel()
+
     /// Radius of the window MenuBarExtra hosts the panel in — matched so the
     /// glass shape tracks the real window edge.
     private let panelRadius: CGFloat = 11
+
+    /// Disclosure state for the two unbounded sections, persisted so the
+    /// chosen layout survives relaunch.
+    @AppStorage("menuSessionsExpanded") private var sessionsExpanded = true
+    @AppStorage("menuUsageExpanded") private var usageExpanded = true
+    /// Measured height of the session list content — see the ScrollView note.
+    @State private var sessionListContentHeight: CGFloat = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -33,17 +46,121 @@ struct MenuContentView: View {
             if model.sessions.isEmpty {
                 emptyState
             } else {
-                sessionList
+                sectionHeader(title: "Sessions",
+                              count: model.sessions.count,
+                              symbol: "square.grid.2x2",
+                              expanded: $sessionsExpanded)
+                if sessionsExpanded {
+                    // The session list is the only unbounded part of this
+                    // panel — it grows with however many agents are live.
+                    // Everything below it (usage, the workflow launcher, the
+                    // footer's Settings and Quit) is fixed chrome that must
+                    // stay reachable, so the list is what scrolls once the
+                    // panel would otherwise run off the bottom of the screen.
+                    //
+                    // The height is measured rather than left to the
+                    // ScrollView: a ScrollView reports essentially no ideal
+                    // height inside this self-sizing MenuBarExtra window, so
+                    // `.frame(maxHeight:)` alone collapses the list to
+                    // nothing. Measuring the content and pinning the frame to
+                    // min(content, cap) keeps it exactly content-sized until
+                    // it genuinely overflows.
+                    ScrollView(.vertical) {
+                        sessionList
+                            .background(
+                                GeometryReader { proxy in
+                                    Color.clear.preference(key: SessionListHeightKey.self,
+                                                           value: proxy.size.height)
+                                }
+                            )
+                    }
+                    .frame(height: min(max(sessionListContentHeight, 1), sessionListMaxHeight))
+                    .scrollBounceBehavior(.basedOnSize)
+                    .onPreferenceChange(SessionListHeightKey.self) { height in
+                        sessionListContentHeight = height
+                    }
+                }
             }
             if model.showUsage {
                 Divider()
-                usageSection
+                sectionHeader(title: "Usage",
+                              count: model.usage.count,
+                              symbol: "gauge.with.dots.needle.33percent",
+                              expanded: $usageExpanded)
+                if usageExpanded { usageSection }
             }
+            Divider()
+            WorkflowLauncherSection(launcher: workflowLauncher,
+                                    daemonConnected: model.connected,
+                                    targetCwd: workflowTargetCwd)
             Divider()
             footer
         }
         .frame(width: 340)
         .liquidGlass(.menuPanel, radius: panelRadius)
+    }
+
+    /// Collapsible section header. Sessions and Usage both grow without
+    /// bound, so each gets an explicit disclosure the human controls rather
+    /// than the panel silently getting taller. Collapsed state persists, so a
+    /// human who only wants the workflow launcher keeps that layout.
+    private func sectionHeader(title: String, count: Int, symbol: String,
+                               expanded: Binding<Bool>) -> some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.12)) { expanded.wrappedValue.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .rotationEffect(.degrees(expanded.wrappedValue ? 90 : 0))
+                Image(systemName: symbol)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                Text("\(title) · \(count)")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .contentShape(Rectangle())
+            .padding(.horizontal, Metrics.hPad)
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+        .help(expanded.wrappedValue ? "Hide \(title.lowercased())" : "Show \(title.lowercased())")
+    }
+
+    /// Ceiling for the scrolling session list, derived from the screen the
+    /// menu bar is on rather than hard-coded: the panel hangs from the menu
+    /// bar, so the room available is the visible frame minus this panel's own
+    /// fixed chrome (header, dividers, usage, workflow launcher, footer) plus
+    /// a little breathing room at the bottom of the screen. The floor keeps a
+    /// couple of rows visible even on a very short display.
+    private var sessionListMaxHeight: CGFloat {
+        let chrome: CGFloat = 300
+        guard let screen = NSScreen.main else { return 420 }
+        return max(180, screen.visibleFrame.height - chrome)
+    }
+
+    /// Where a started formation runs (WORKFLOWS-PROPOSAL.md §8.2's
+    /// "against the auth refactor"): the session in front of the human, else
+    /// the most recently active connected session, else home. The launcher
+    /// menu shows it as "Runs in …" so the target is visible before anything
+    /// launches, and the orchestrator is told to confirm it when the
+    /// formation plainly targets something else.
+    private var workflowTargetCwd: String {
+        if let id = model.focusedSessionID,
+           let focused = model.sessions.first(where: { $0.id == id }),
+           let cwd = focused.cwd, !cwd.isEmpty {
+            return cwd
+        }
+        if let latest = model.sessions
+            .filter({ $0.connected && !($0.cwd ?? "").isEmpty })
+            .max(by: { $0.lastChange < $1.lastChange }),
+           let cwd = latest.cwd {
+            return cwd
+        }
+        return NSHomeDirectory()
     }
 
     // MARK: Header — aggregate + connection status
@@ -489,5 +606,16 @@ struct MenuContentView: View {
         .font(.callout)
         .padding(.horizontal, Metrics.hPad)
         .padding(.vertical, 10)
+    }
+}
+
+/// Carries the measured height of the session list out of the ScrollView so
+/// the frame can be pinned to min(content, cap). Without a measurement the
+/// ScrollView reports no ideal height in this self-sizing window and the list
+/// collapses to nothing.
+private struct SessionListHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

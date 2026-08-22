@@ -117,6 +117,22 @@ struct DesktopWidgetView: View {
                 Text("Compact Rows")
             }
         }
+        // Vertical only: the horizontal strip renders the pad in slot order
+        // and must keep doing so (see DesktopWidgetGrouping).
+        if orientation == .vertical {
+            Divider()
+            ForEach(DesktopWidgetGrouping.allCases) { option in
+                Button {
+                    model.desktopWidgetGrouping = option
+                } label: {
+                    if option == model.desktopWidgetGrouping {
+                        Label(option.display, systemImage: "checkmark")
+                    } else {
+                        Text(option.display)
+                    }
+                }
+            }
+        }
         if widthOverride != nil {
             Divider()
             Button("Reset Widget Width") { model.resetWidgetWidth(for: orientation) }
@@ -196,14 +212,76 @@ struct DesktopWidgetView: View {
         .padding(.vertical, 12)
     }
 
+    @ViewBuilder
     private var sessionList: some View {
-        VStack(spacing: 1) {
-            ForEach(model.activeSessions) { s in
-                sessionRowButton(s)
+        // Grouping is a reordering of these same rows. When nothing is
+        // grouped (no live orchestrator, or a launcher that reports no
+        // orchestration meta) fall back to the flat list rather than drawing
+        // a single pointless "Ungrouped" header over everything.
+        if model.desktopWidgetGrouping == .byOrchestrator && model.hasOrchestratorGroups {
+            groupedSessionList
+        } else {
+            VStack(spacing: 1) {
+                ForEach(model.activeSessions) { s in
+                    sessionRowButton(s)
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.top, 4)
+        }
+    }
+
+    /// Orchestrator-led blocks: each lead row, then its workers indented
+    /// beneath it, then a trailing block for everything unrelated.
+    ///
+    /// Slots are untouched — a row's numbered badge still reads whatever the
+    /// daemon assigned it, so badges are intentionally non-monotonic down this
+    /// list. That is correct: key N stays key N regardless of draw order.
+    ///
+    /// Lead health needs no special-casing here: `sessionRowButton` already
+    /// renders the health glyph and reason the attachment refactor added, so a
+    /// `detached` orchestrator reads as "supervision lost" while its members
+    /// stay grouped beneath it (see `AppModel.orchestratorGroups`).
+    private var groupedSessionList: some View {
+        VStack(spacing: 0) {
+            ForEach(model.orchestratorGroups) { group in
+                VStack(spacing: 1) {
+                    if let lead = group.lead {
+                        sessionRowButton(lead)
+                        ForEach(group.members) { member in
+                            sessionRowButton(member)
+                                // Indent alone reads as hierarchy at this row
+                                // height; a connector rule fought the row's
+                                // own selection/hover background.
+                                .padding(.leading, 12)
+                        }
+                    } else {
+                        groupHeader(title: "Ungrouped", count: group.members.count,
+                                    symbol: "circle.dashed")
+                        ForEach(group.members) { member in
+                            sessionRowButton(member)
+                        }
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.top, 4)
             }
         }
-        .padding(.horizontal, 6)
-        .padding(.top, 4)
+    }
+
+    /// Section label styled to match `backlogSection`'s header.
+    private func groupHeader(title: String, count: Int, symbol: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: symbol)
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(.tertiary)
+            Text("\(title) · \(count)")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 5)
     }
 
     /// Parked-but-still-live sessions (PROTOCOL.md §3 backlog), kept in

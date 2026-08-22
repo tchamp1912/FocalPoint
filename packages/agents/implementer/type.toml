@@ -1,0 +1,17 @@
+[type]
+name = "implementer"
+version = 1
+description = "Implements one bounded slice and verifies it"
+
+[provider]
+prefer = ["codex", "claude", "cursor"]
+requires = ["channels"]
+
+[persona]
+prompt = "persona.md"
+title = "Implementation"
+
+[advisory]
+scope = "Implement only the assigned slice inside its prepared working directory."
+output = "Completed changes, verification run, and explicit remaining risks."
+escalate_as = "blocker"

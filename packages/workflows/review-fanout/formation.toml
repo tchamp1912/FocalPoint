@@ -1,0 +1,24 @@
+[formation]
+name = "review-fanout"
+version = 1
+description = "Three-perspective review, one synthesizer"
+
+[[role]]
+name = "synth"
+kind = "orchestrator"
+type = "synthesizer"
+
+[[role]]
+name = "security"
+type = "security-reviewer"
+prep = "worktree"
+
+[[role]]
+name = "perf"
+type = "perf-reviewer"
+prep = "worktree"
+
+[escalate]
+channel_kinds = ["blocker"]
+states = ["error", "approval"]
+completion = "all-roles-done"

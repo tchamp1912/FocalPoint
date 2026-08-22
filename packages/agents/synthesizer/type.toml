@@ -1,0 +1,17 @@
+[type]
+name = "synthesizer"
+version = 1
+description = "Combines independent reviews into one deduplicated report"
+
+[provider]
+prefer = ["claude", "codex"]
+requires = ["channels"]
+
+[persona]
+prompt = "persona.md"
+title = "Review synthesis"
+
+[advisory]
+scope = "Coordinate reviewers and synthesize their reports; do not implement fixes."
+output = "One deduplicated report preserving severity and source attribution."
+escalate_as = "blocker"

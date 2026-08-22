@@ -1,0 +1,22 @@
+[type]
+name = "security-reviewer"
+version = 1
+description = "Adversarial reviewer; findings only, no fixes"
+
+[provider]
+prefer = ["codex", "claude"]
+model = "gpt-5.6-sol"
+requires = ["channels"]
+
+[persona]
+prompt = "persona.md"
+title = "Security review"
+
+[advisory]
+scope = "Report findings; never modify source."
+output = "Ranked list, most severe first, with file:line."
+escalate_as = "blocker"
+
+[enforced]
+read_only = true
+allow_paths = ["."]

@@ -1393,8 +1393,17 @@ fn launch_orchestrated_session(
             )
         })
         .unwrap_or_default();
+    // A *login* shell is load-bearing, not cosmetic: the adapter hooks resolve
+    // the CLI as `${FOCALPOINT_PATH:-focalpoint}` off PATH, and adapters are
+    // required to no-op silently when it is missing. Under a non-login
+    // `#!/bin/bash` the launched agent never sources the user's profile, so a
+    // Homebrew/`/usr/local` install falls off PATH, the SessionStart hook
+    // exits 0 without registering, and the session runs invisibly — no key, no
+    // state, no channel eligibility, and no row to re-register from. The
+    // sibling tmux-attach and resume-session launchers already use
+    // `#!/bin/zsh -l` for exactly this reason; this one was the outlier.
     let script = format!(
-        "#!/bin/bash\nset -e\nrm -f -- {}\ncd -- {}\nexport FOCALPOINT_LAUNCH_ID={}\nexport FOCALPOINT_ORCHESTRATOR_TASK_ID={}\nexport FOCALPOINT_ORCHESTRATION_ROLE={}\nexport FOCALPOINT_SESSION_TITLE={}\n{}{}{}exec {} {}\n",
+        "#!/bin/zsh -l\nset -e\nrm -f -- {}\ncd -- {}\nexport FOCALPOINT_LAUNCH_ID={}\nexport FOCALPOINT_ORCHESTRATOR_TASK_ID={}\nexport FOCALPOINT_ORCHESTRATION_ROLE={}\nexport FOCALPOINT_SESSION_TITLE={}\n{}{}{}exec {} {}\n",
         shell_quote(&launcher.display().to_string()),
         shell_quote(&cwd.display().to_string()),
         shell_quote(&launch_id),

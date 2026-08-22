@@ -1,0 +1,876 @@
+// FocalPoint menu-bar app — workflow editor (view layer).
+//
+// One window, two package kinds: formations (phases, gates, roles, fan-out,
+// escalation) and agent types (provider preferences, advisory/enforced
+// tables, and the persona prompt itself). Visual language follows the
+// settings window: settingsCard glass groups, caption/callout type, pane
+// materials behind a transparent titlebar. All load/save/validation logic
+// lives in WorkflowEditor.swift; this file is layout and binding only.
+// MIT License.
+
+import SwiftUI
+import AppKit
+
+struct WorkflowEditorView: View {
+    @ObservedObject var store: WorkflowEditorModel
+    @State private var confirmingDelete = false
+
+    var body: some View {
+        NavigationSplitView {
+            sidebar
+                .navigationSplitViewColumnWidth(min: 200, ideal: 224, max: 280)
+        } detail: {
+            detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .liquidGlass(.detailPane(opacity: Metrics.settingsPaneOpacity), radius: 0)
+        }
+        .frame(minWidth: 720, idealWidth: 780, minHeight: 460, idealHeight: 540)
+        .onAppear { store.reload() }
+        .alert("Move to Trash?", isPresented: $confirmingDelete) {
+            Button("Move to Trash", role: .destructive) {
+                if let selection = store.selection { store.delete(selection) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The package directory is moved to the Trash and can be restored from there.")
+        }
+    }
+
+    // MARK: Sidebar
+
+    private var sidebar: some View {
+        List(selection: $store.selection) {
+            Section("Workflows") {
+                ForEach(store.formations) { formation in
+                    sidebarRow(title: formation.name,
+                               detail: formationDetail(formation),
+                               symbol: "person.3.sequence",
+                               dirty: store.isDirty(formation))
+                        .tag(EditorSelection.formation(formation.id))
+                }
+                ForEach(store.broken.filter { $0.kind == .formation }) { package in
+                    sidebarRow(title: package.id, detail: "Malformed", symbol: "exclamationmark.triangle",
+                               dirty: false, tint: .orange)
+                        .tag(EditorSelection.broken(.formation, package.id))
+                }
+            }
+            Section("Agent Types") {
+                ForEach(store.agentTypes) { type in
+                    sidebarRow(title: type.name,
+                               detail: type.prefer.joined(separator: " › "),
+                               symbol: "person.crop.square",
+                               dirty: store.isDirty(type))
+                        .tag(EditorSelection.agentType(type.id))
+                }
+                ForEach(store.broken.filter { $0.kind == .agentType }) { package in
+                    sidebarRow(title: package.id, detail: "Malformed", symbol: "exclamationmark.triangle",
+                               dirty: false, tint: .orange)
+                        .tag(EditorSelection.broken(.agentType, package.id))
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .safeAreaInset(edge: .bottom) {
+            HStack(spacing: 10) {
+                Menu {
+                    Button("New Workflow") { store.createFormation() }
+                    Button("New Agent Type") { store.createAgentType() }
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .frame(width: 22)
+                .help("Create a new package")
+                Button { confirmingDelete = true } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .disabled(store.selection == nil)
+                .help("Move the selected package to the Trash")
+                Spacer()
+                Button { store.reload() } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Reload from disk (unsaved edits are kept)")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+        }
+    }
+
+    private func sidebarRow(title: String, detail: String, symbol: String,
+                            dirty: Bool, tint: Color? = nil) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: symbol)
+                .font(.system(size: 11))
+                .foregroundStyle(tint ?? Color.secondary)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.callout).lineLimit(1)
+                if !detail.isEmpty {
+                    Text(detail).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 4)
+            if dirty {
+                Circle()
+                    .fill(Color.orange)
+                    .frame(width: 6, height: 6)
+                    .help("Unsaved changes")
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func formationDetail(_ formation: EditableFormation) -> String {
+        if formation.phased {
+            return "\(formation.phases.count) phase\(formation.phases.count == 1 ? "" : "s")"
+        }
+        return "\(formation.roles.count) role\(formation.roles.count == 1 ? "" : "s")"
+    }
+
+    // MARK: Detail routing
+
+    @ViewBuilder
+    private var detail: some View {
+        switch store.selection {
+        case .formation(let id):
+            if let index = store.formations.firstIndex(where: { $0.id == id }) {
+                FormationEditorView(formation: $store.formations[index], store: store)
+            } else {
+                placeholder("Select a workflow or agent type")
+            }
+        case .agentType(let id):
+            if let index = store.agentTypes.firstIndex(where: { $0.id == id }) {
+                AgentTypeEditorView(type: $store.agentTypes[index], store: store)
+            } else {
+                placeholder("Select a workflow or agent type")
+            }
+        case .broken(_, let id):
+            if let package = store.broken.first(where: { $0.id == id }) {
+                BrokenPackageView(package: package, store: store)
+            } else {
+                placeholder("Select a workflow or agent type")
+            }
+        case nil:
+            placeholder("Select a workflow or agent type")
+        }
+    }
+
+    private func placeholder(_ text: String) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: "person.3.sequence")
+                .font(.system(size: 28))
+                .foregroundStyle(.tertiary)
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Text("Packages live under \(WorkflowEditorModel.configRoot.path)")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Shared editor chrome
+
+/// Header above every editor: what is being edited, where it lives, and the
+/// Save/Revert pair. Save is disabled while validation has errors or there
+/// is nothing to save — the errors themselves are listed just below.
+private struct EditorHeader: View {
+    let title: String
+    let subtitle: String
+    let dirty: Bool
+    let canSave: Bool
+    let saveError: String?
+    var onSave: () -> Void
+    var onRevert: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(title).font(.headline)
+                if dirty {
+                    Text("Edited")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(Capsule().fill(Color.orange.opacity(0.14)))
+                }
+                Spacer()
+                if dirty {
+                    Button("Revert", action: onRevert)
+                        .help("Discard unsaved changes")
+                }
+                Button("Save", action: onSave)
+                    .keyboardShortcut("s", modifiers: .command)
+                    .disabled(!dirty || !canSave)
+                    .help(canSave
+                          ? "Write the package back to disk (canonical TOML)"
+                          : "Fix the errors listed below before saving")
+            }
+            Text(subtitle)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if let saveError {
+                Label(saveError, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+}
+
+private struct DiagnosticsCard: View {
+    let errors: [String]
+    let warnings: [String]
+
+    var body: some View {
+        if !errors.isEmpty || !warnings.isEmpty {
+            VStack(alignment: .leading, spacing: 5) {
+                ForEach(errors, id: \.self) { message in
+                    Label(message, systemImage: "xmark.octagon.fill")
+                        .foregroundStyle(.red)
+                }
+                ForEach(warnings, id: \.self) { message in
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
+            }
+            .font(.caption)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .liquidGlass(.settingsCard, radius: Metrics.rowRadius)
+        }
+    }
+}
+
+private struct EditorCard<Content: View>: View {
+    let title: String
+    let caption: String?
+    @ViewBuilder var content: () -> Content
+
+    init(title: String, caption: String? = nil, @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.caption = caption
+        self.content = content
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                if let caption {
+                    Text(caption).font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .liquidGlass(.settingsCard, radius: Metrics.cardRadius)
+    }
+}
+
+/// Editable list of short strings (escalation kinds, allow_paths, …).
+private struct StringListEditor: View {
+    let addLabel: String
+    let placeholder: String
+    @Binding var values: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(values.indices, id: \.self) { index in
+                HStack(spacing: 6) {
+                    TextField(placeholder, text: $values[index])
+                        .textFieldStyle(.roundedBorder)
+                        .font(.callout)
+                    Button { values.remove(at: index) } label: {
+                        Image(systemName: "minus.circle")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Remove")
+                }
+            }
+            Button { values.append("") } label: {
+                Label(addLabel, systemImage: "plus")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.accentColor)
+        }
+    }
+}
+
+// MARK: - Formation editor
+
+private struct FormationEditorView: View {
+    @Binding var formation: EditableFormation
+    @ObservedObject var store: WorkflowEditorModel
+    @State private var saveError: String?
+
+    private var diagnostics: (errors: [String], warnings: [String]) {
+        EditorValidation.formation(formation, installedTypes: store.installedTypeNames)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            EditorHeader(
+                title: formation.name,
+                subtitle: formation.directoryURL.path
+                    .replacingOccurrences(of: NSHomeDirectory(), with: "~"),
+                dirty: store.isDirty(formation),
+                canSave: diagnostics.errors.isEmpty,
+                saveError: saveError,
+                onSave: { saveError = store.saveFormation(formation) },
+                onRevert: { store.revertFormation(formation); saveError = nil }
+            )
+            Divider()
+            ScrollView(.vertical) {
+                VStack(spacing: 12) {
+                    DiagnosticsCard(errors: diagnostics.errors,
+                                    warnings: diagnostics.warnings + formation.warnings)
+                    packageCard
+                    structureCard
+                    if formation.phased {
+                        phasesEditor
+                    } else {
+                        EditorCard(title: "Roles",
+                                   caption: "One fixed crew, launched together under the formation's orchestrator.") {
+                            RoleListEditor(roles: $formation.roles,
+                                           knownTypes: store.installedTypeNames)
+                        }
+                    }
+                    escalateCard
+                }
+                .padding(16)
+            }
+        }
+    }
+
+    private var packageCard: some View {
+        EditorCard(title: "Package") {
+            LabeledField("Name") {
+                TextField("review-fanout", text: $formation.name)
+                    .textFieldStyle(.roundedBorder)
+            }
+            LabeledField("Description") {
+                TextField("What this formation delivers", text: $formation.description)
+                    .textFieldStyle(.roundedBorder)
+            }
+            Text("Schema v1 · saving rewrites formation.toml in canonical form — hand-written comments are not preserved")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    private var structureCard: some View {
+        EditorCard(title: "Structure",
+                   caption: "Phases run in order under one orchestrator, each transition passing its gate. Single-phase launches one fixed crew. Switching keeps both drafts — nothing is discarded.") {
+            Picker("Structure", selection: $formation.phased) {
+                Text("Single-phase roles").tag(false)
+                Text("Phases with gates").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+    }
+
+    private var phasesEditor: some View {
+        VStack(spacing: 12) {
+            ForEach(formation.phases.indices, id: \.self) { index in
+                PhaseCardView(
+                    phase: $formation.phases[index],
+                    isFirst: index == 0,
+                    isLast: index == formation.phases.count - 1,
+                    earlierPhases: Array(formation.phases[..<index].map(\.name)),
+                    earlierRoles: formation.phases[..<index].flatMap { $0.roles.map(\.name) },
+                    knownTypes: store.installedTypeNames,
+                    onMove: { delta in movePhase(index, by: delta) },
+                    onDelete: { formation.phases.remove(at: index) }
+                )
+            }
+            Button { addPhase() } label: {
+                Label("Add Phase", systemImage: "plus")
+                    .font(.callout)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.accentColor)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func addPhase() {
+        let previous = formation.phases.last
+        var phase = EditablePhase(id: UUID())
+        phase.name = "phase-\(formation.phases.count + 1)"
+        phase.after = previous?.name
+        phase.gate = .confirm
+        phase.roles = [EditableRole(id: UUID())]
+        formation.phases.append(phase)
+    }
+
+    private func movePhase(_ index: Int, by delta: Int) {
+        let target = index + delta
+        guard formation.phases.indices.contains(index),
+              formation.phases.indices.contains(target) else { return }
+        formation.phases.swapAt(index, target)
+    }
+
+    private var escalateCard: some View {
+        EditorCard(title: "Escalation & Completion",
+                   caption: "Which channel messages and session states surface to the human, and when the formation counts as done. Completion is lifecycle policy — approval and error stay visible regardless.") {
+            LabeledField("Channel kinds") {
+                StringListEditor(addLabel: "Kind", placeholder: "blocker",
+                                 values: $formation.escalate.channelKinds)
+            }
+            LabeledField("States") {
+                StringListEditor(addLabel: "State", placeholder: "error",
+                                 values: $formation.escalate.states)
+            }
+            LabeledField("Completion") {
+                TextField("all-roles-done", text: $formation.escalate.completion)
+                    .textFieldStyle(.roundedBorder)
+            }
+        }
+    }
+}
+
+/// Labeled vertical field pair used across the editor cards.
+private struct LabeledField<Content: View>: View {
+    let label: String
+    @ViewBuilder var content: () -> Content
+
+    init(_ label: String, @ViewBuilder content: @escaping () -> Content) {
+        self.label = label
+        self.content = content
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label).font(.caption).foregroundStyle(.secondary)
+            content()
+        }
+    }
+}
+
+// MARK: - Phase card (the gate editor)
+
+private struct PhaseCardView: View {
+    @Binding var phase: EditablePhase
+    let isFirst: Bool
+    let isLast: Bool
+    let earlierPhases: [String]
+    let earlierRoles: [String]
+    let knownTypes: [String]
+    var onMove: (Int) -> Void
+    var onDelete: () -> Void
+
+    var body: some View {
+        EditorCard(title: "Phase") {
+            HStack(spacing: 8) {
+                TextField("phase-name", text: $phase.name)
+                    .textFieldStyle(.roundedBorder)
+                Button { onMove(-1) } label: { Image(systemName: "chevron.up") }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .disabled(isFirst).help("Move earlier")
+                Button { onMove(1) } label: { Image(systemName: "chevron.down") }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .disabled(isLast).help("Move later")
+                Button(action: onDelete) { Image(systemName: "trash") }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .help("Remove this phase")
+            }
+
+            LabeledField("Runs after") {
+                Picker("Runs after", selection: $phase.after) {
+                    Text("No dependency — starts immediately").tag(String?.none)
+                    ForEach(earlierPhases, id: \.self) { name in
+                        Text(name).tag(String?.some(name))
+                    }
+                    if let after = phase.after, !earlierPhases.contains(after) {
+                        Text("\(after) (missing — fix or reselect)").tag(String?.some(after))
+                    }
+                }
+                .labelsHidden()
+            }
+
+            // The gate is the phase transition's human checkpoint — the
+            // summary under the picker states plainly what each choice does.
+            LabeledField("Gate — what happens before this phase starts") {
+                VStack(alignment: .leading, spacing: 5) {
+                    Picker("Gate", selection: $phase.gate) {
+                        ForEach(PhaseGate.allCases) { gate in
+                            Text(gate.title).tag(gate)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    Text(phase.gate.summary)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            LabeledField("Contents") {
+                Picker("Contents", selection: $phase.useFanout) {
+                    Text("Fixed roles").tag(false)
+                    Text("Bounded fan-out").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+
+            if phase.useFanout {
+                fanoutEditor
+            } else {
+                RoleListEditor(roles: $phase.roles, knownTypes: knownTypes)
+            }
+        }
+    }
+
+    private var fanoutEditor: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("The named role's untrusted output chooses only the slice count (up to max), slice names, and slice tasks. Type, ceiling, cwd root, and gate stay fixed here.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            LabeledField("From role (its output names the slices)") {
+                Picker("From", selection: $phase.fanout.from) {
+                    if phase.fanout.from.isEmpty {
+                        Text("Choose a role…").tag("")
+                    }
+                    ForEach(earlierRoles, id: \.self) { name in
+                        Text(name).tag(name)
+                    }
+                    if !phase.fanout.from.isEmpty && !earlierRoles.contains(phase.fanout.from) {
+                        Text("\(phase.fanout.from) (not a role in an earlier phase)").tag(phase.fanout.from)
+                    }
+                }
+                .labelsHidden()
+            }
+
+            LabeledField("Max slices") {
+                Stepper(value: $phase.fanout.max, in: 1...12) {
+                    Text("\(phase.fanout.max)")
+                        .monospacedDigit()
+                }
+            }
+
+            LabeledField("Agent type for every slice") {
+                TypePicker(selection: $phase.fanout.type, knownTypes: knownTypes)
+            }
+
+            LabeledField("cwd root (every slice is prepared beneath it)") {
+                TextField("worktrees/", text: $phase.fanout.cwdRoot)
+                    .textFieldStyle(.roundedBorder)
+            }
+        }
+    }
+}
+
+// MARK: - Role editing (shared by single-phase and per-phase roles)
+
+private struct RoleListEditor: View {
+    @Binding var roles: [EditableRole]
+    let knownTypes: [String]
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ForEach(roles.indices, id: \.self) { index in
+                RoleCardView(role: $roles[index], knownTypes: knownTypes) {
+                    roles.remove(at: index)
+                }
+            }
+            Button { roles.append(EditableRole(id: UUID())) } label: {
+                Label("Add Role", systemImage: "plus")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.accentColor)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct RoleCardView: View {
+    @Binding var role: EditableRole
+    let knownTypes: [String]
+    var onDelete: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                TextField("role-name", text: $role.name)
+                    .textFieldStyle(.roundedBorder)
+                TypePicker(selection: $role.type, knownTypes: knownTypes)
+                    .frame(maxWidth: 200)
+                Button(action: onDelete) { Image(systemName: "minus.circle") }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Remove this role")
+            }
+            HStack(spacing: 14) {
+                Picker("Kind", selection: $role.kind) {
+                    Text("Worker").tag(RoleKind.worker)
+                    Text("Orchestrator").tag(RoleKind.orchestrator)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 220)
+                .help("An orchestrator launches first and owns the crew channel")
+                Toggle("Prepare worktree", isOn: Binding(
+                    get: { role.prep == "worktree" },
+                    set: { role.prep = $0 ? "worktree" : "" }
+                ))
+                .toggleStyle(.checkbox)
+                .help("prep = \"worktree\" — a request the orchestrator satisfies before launch, never a daemon command")
+            }
+            .font(.caption)
+            LabeledField("Fixed task text (optional)") {
+                TextEditor(text: $role.task)
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(minHeight: 34, maxHeight: 90)
+                    .padding(4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.primary.opacity(0.05))
+                    )
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+    }
+}
+
+/// Agent-type picker that stays honest about values not installed locally:
+/// they remain selectable (marked) rather than being silently rewritten.
+private struct TypePicker: View {
+    @Binding var selection: String
+    let knownTypes: [String]
+
+    var body: some View {
+        Picker("Agent type", selection: $selection) {
+            if selection.isEmpty {
+                Text("Choose…").tag("")
+            }
+            ForEach(knownTypes, id: \.self) { name in
+                Text(name).tag(name)
+            }
+            if !selection.isEmpty && !knownTypes.contains(selection) {
+                Text("\(selection) (not installed)").tag(selection)
+            }
+        }
+        .labelsHidden()
+    }
+}
+
+// MARK: - Agent-type editor
+
+private struct AgentTypeEditorView: View {
+    @Binding var type: EditableAgentType
+    @ObservedObject var store: WorkflowEditorModel
+    @State private var saveError: String?
+
+    private var diagnostics: (errors: [String], warnings: [String]) {
+        EditorValidation.agentType(type)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            EditorHeader(
+                title: type.name,
+                subtitle: type.directoryURL.path
+                    .replacingOccurrences(of: NSHomeDirectory(), with: "~"),
+                dirty: store.isDirty(type),
+                canSave: diagnostics.errors.isEmpty,
+                saveError: saveError,
+                onSave: { saveError = store.saveAgentType(type) },
+                onRevert: { store.revertAgentType(type); saveError = nil }
+            )
+            Divider()
+            ScrollView(.vertical) {
+                VStack(spacing: 12) {
+                    DiagnosticsCard(errors: diagnostics.errors,
+                                    warnings: diagnostics.warnings + type.warnings)
+                    identityCard
+                    providerCard
+                    advisoryCard
+                    enforcedCard
+                    personaCard
+                }
+                .padding(16)
+            }
+        }
+    }
+
+    private var identityCard: some View {
+        EditorCard(title: "Agent Type") {
+            LabeledField("Name") {
+                TextField("security-reviewer", text: $type.name)
+                    .textFieldStyle(.roundedBorder)
+            }
+            LabeledField("Description") {
+                TextField("What this agent is for", text: $type.description)
+                    .textFieldStyle(.roundedBorder)
+            }
+        }
+    }
+
+    private var providerCard: some View {
+        EditorCard(title: "Provider",
+                   caption: "Ordered preference — the launcher picks the first provider that can satisfy every requirement and enforced constraint.") {
+            VStack(alignment: .leading, spacing: 5) {
+                ForEach(type.prefer.indices, id: \.self) { index in
+                    HStack(spacing: 6) {
+                        Picker("Provider", selection: $type.prefer[index]) {
+                            ForEach(WorkflowEditorModel.knownProviders, id: \.self) { provider in
+                                Text(provider).tag(provider)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 110)
+                        Button { moveProvider(index, by: -1) } label: {
+                            Image(systemName: "chevron.up")
+                        }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                        .disabled(index == 0)
+                        Button { moveProvider(index, by: 1) } label: {
+                            Image(systemName: "chevron.down")
+                        }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                        .disabled(index == type.prefer.count - 1)
+                        Button { type.prefer.remove(at: index) } label: {
+                            Image(systemName: "minus.circle")
+                        }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                    }
+                }
+                Button {
+                    let unused = WorkflowEditorModel.knownProviders.first { !type.prefer.contains($0) }
+                    type.prefer.append(unused ?? "claude")
+                } label: {
+                    Label("Add provider", systemImage: "plus").font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.accentColor)
+                .disabled(type.prefer.count >= WorkflowEditorModel.knownProviders.count)
+            }
+            LabeledField("Model (optional — provider default when empty)") {
+                TextField("gpt-5.6-sol", text: $type.model)
+                    .textFieldStyle(.roundedBorder)
+            }
+            LabeledField("Requires (checkable capabilities; 'channels' excludes Cursor attachable mode)") {
+                StringListEditor(addLabel: "Capability", placeholder: "channels",
+                                 values: $type.requires)
+            }
+        }
+    }
+
+    private var advisoryCard: some View {
+        EditorCard(title: "Advisory",
+                   caption: "Prompt text prepended to the task. It is not a permission, sandbox, or guarantee — the model can ignore it. Never treat these values as enforced.") {
+            LabeledField("Scope") {
+                TextField("Report findings; never modify source.", text: $type.advisoryScope)
+                    .textFieldStyle(.roundedBorder)
+            }
+            LabeledField("Output shape") {
+                TextField("Ranked list, most severe first, with file:line.", text: $type.advisoryOutput)
+                    .textFieldStyle(.roundedBorder)
+            }
+            LabeledField("Escalate as (channel message kind)") {
+                TextField("blocker", text: $type.advisoryEscalateAs)
+                    .textFieldStyle(.roundedBorder)
+            }
+        }
+    }
+
+    private var enforcedCard: some View {
+        EditorCard(title: "Enforced",
+                   caption: "Guarantees the launcher must materialize through the provider's project-local enforcement surface before launch — and refuse the launch when it cannot. Unknown enforced fields are rejected by the schema.") {
+            Toggle("Read-only — prevent source modification", isOn: $type.enforcedReadOnly)
+                .toggleStyle(.checkbox)
+            LabeledField("Allowed paths (relative to the prepared working directory)") {
+                StringListEditor(addLabel: "Path", placeholder: ".",
+                                 values: $type.allowPaths)
+            }
+        }
+    }
+
+    private var personaCard: some View {
+        EditorCard(title: "Persona prompt",
+                   caption: "The markdown file the persona is built from. Saved as \(type.personaPromptFile) next to type.toml.") {
+            LabeledField("Title (the launch's display title)") {
+                TextField("Security review", text: $type.personaTitle)
+                    .textFieldStyle(.roundedBorder)
+            }
+            TextEditor(text: $type.personaMarkdown)
+                .font(.system(.body, design: .monospaced))
+                .frame(minHeight: 200)
+                .padding(4)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.primary.opacity(0.05))
+                )
+        }
+    }
+
+    private func moveProvider(_ index: Int, by delta: Int) {
+        let target = index + delta
+        guard type.prefer.indices.contains(index),
+              type.prefer.indices.contains(target) else { return }
+        type.prefer.swapAt(index, target)
+    }
+}
+
+// MARK: - Broken package detail
+
+private struct BrokenPackageView: View {
+    let package: BrokenPackage
+    @ObservedObject var store: WorkflowEditorModel
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 30))
+                .foregroundStyle(.orange)
+            Text(package.id).font(.headline)
+            Text(package.message)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(package.directoryURL.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            HStack(spacing: 12) {
+                Button("Reveal in Finder") {
+                    store.reveal(.broken(package.kind, package.id))
+                }
+                Button("Move to Trash", role: .destructive) {
+                    store.delete(.broken(package.kind, package.id))
+                }
+            }
+            .controlSize(.small)
+            Text("Fix the manifest in your editor, then reload — or trash the package.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}

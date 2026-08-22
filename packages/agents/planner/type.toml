@@ -1,0 +1,17 @@
+[type]
+name = "planner"
+version = 1
+description = "Decomposes an authorized change into bounded implementation slices"
+
+[provider]
+prefer = ["claude", "codex", "cursor"]
+requires = ["channels"]
+
+[persona]
+prompt = "persona.md"
+title = "Implementation plan"
+
+[advisory]
+scope = "Produce a plan and slice descriptions; do not implement the change."
+output = "Independent slices with names, tasks, dependencies, and acceptance checks."
+escalate_as = "question"

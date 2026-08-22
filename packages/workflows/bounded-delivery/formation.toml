@@ -1,0 +1,37 @@
+[formation]
+name = "bounded-delivery"
+version = 1
+description = "Plan, confirm bounded implementation fan-out, then review"
+
+[[phase]]
+name = "plan"
+gate = "authorized"
+
+[[phase.role]]
+name = "planner"
+type = "planner"
+
+[[phase]]
+name = "implement"
+after = "plan"
+gate = "confirm"
+
+[phase.fanout]
+from = "planner"
+max = 4
+type = "implementer"
+cwd_root = "worktrees/"
+
+[[phase]]
+name = "review"
+after = "implement"
+gate = "auto"
+
+[[phase.role]]
+name = "reviewer"
+type = "security-reviewer"
+
+[escalate]
+channel_kinds = ["blocker"]
+states = ["error", "approval"]
+completion = "all-roles-done"

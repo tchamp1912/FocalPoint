@@ -25,6 +25,45 @@ enum DesktopWidgetMode: String, CaseIterable, Identifiable {
     }
 }
 
+/// How the vertical desktop widget orders its session rows.
+///
+/// Presentation only. Numbered key slots stay stable while a session is live
+/// (PROTOCOL.md §3) and grouping never touches them: a row's slot badge, its
+/// key on the pad, and the daemon's attention order are all unchanged — only
+/// the order rows are drawn in differs. Same separation `ORCHESTRATOR-PLAN.md`
+/// draws between attention ranking and slot identity.
+///
+/// Deliberately not applied to the horizontal strip: that layout *is* the pad,
+/// one keycap per slot in slot order, so reordering it would break the
+/// muscle-memory mapping it exists to reinforce.
+enum DesktopWidgetGrouping: String, CaseIterable, Identifiable {
+    /// Slot order, exactly as the daemon lists sessions.
+    case flat
+    /// Each orchestrator followed by the workers that named it as manager.
+    case byOrchestrator
+
+    var id: String { rawValue }
+
+    var display: String {
+        switch self {
+        case .flat:           return "Flat (Slot Order)"
+        case .byOrchestrator: return "Group by Orchestrator"
+        }
+    }
+}
+
+/// One rendered block in `.byOrchestrator`: an optional orchestrator row plus
+/// the workers reporting to it. `lead == nil` is the trailing catch-all for
+/// sessions with no orchestration relationship.
+struct SessionGroup: Identifiable {
+    var id: String
+    var lead: SessionInfo?
+    var members: [SessionInfo]
+
+    /// Every session in the group, orchestrator first — what the widget draws.
+    var all: [SessionInfo] { (lead.map { [$0] } ?? []) + members }
+}
+
 /// Layout direction for the desktop widget. Vertical is the original tall
 /// card (header on top, sessions stacked); horizontal is a minimal strip
 /// rendering the pad itself — one state-lit keycap per session, details on
@@ -185,6 +224,14 @@ final class AppModel: ObservableObject {
     /// full rows, since it has the room.
     @Published var compactWidgetRows: Bool {
         didSet { UserDefaults.standard.set(compactWidgetRows, forKey: "compactWidgetRows") }
+    }
+    /// Row ordering for the vertical desktop widget. Presentation only —
+    /// see `DesktopWidgetGrouping`.
+    @Published var desktopWidgetGrouping: DesktopWidgetGrouping {
+        didSet {
+            UserDefaults.standard.set(desktopWidgetGrouping.rawValue,
+                                      forKey: "desktopWidgetGrouping")
+        }
     }
     /// Runtime-only override toggled by the "Toggle Widget" hotkey — hides
     /// the widget on demand without touching the persisted `desktopWidgetMode`
@@ -377,6 +424,8 @@ final class AppModel: ObservableObject {
         widgetWidthVertical = Self.loadWidgetWidth(for: .vertical)
         widgetWidthHorizontal = Self.loadWidgetWidth(for: .horizontal)
         compactWidgetRows = d.object(forKey: "compactWidgetRows") as? Bool ?? false
+        desktopWidgetGrouping = DesktopWidgetGrouping(
+            rawValue: d.string(forKey: "desktopWidgetGrouping") ?? "") ?? .flat
         interfaceTranslucency = d.object(forKey: "interfaceTranslucency") as? Double ?? 0.35
         if let raw = d.array(forKey: "visibleStats") as? [String] {
             visibleStats = Set(raw.compactMap(SessionStat.init(rawValue:)))
@@ -823,6 +872,64 @@ final class AppModel: ObservableObject {
     /// order by `sortSessions()`, so both filters inherit that order.
     var activeSessions: [SessionInfo] { sessions.filter { !$0.backlogged } }
     var backlogSessions: [SessionInfo] { sessions.filter(\.backlogged) }
+
+    /// `activeSessions` arranged into orchestrator-led blocks for the widget's
+    /// grouping view. Pure presentation: it partitions and reorders the same
+    /// rows and never consults or mutates slots.
+    ///
+    /// Keyed on the **stable task id** (`orchestrator_task_id` /
+    /// `manager_task_id` from `fpctl-agent launch`), never on session id and
+    /// never on attachment id. That is load-bearing after the attachment/
+    /// health refactor: a session's `Attachment` legitimately changes under it
+    /// (`Unverified` → verified, `Process` → `Managed` on promote-to-managed),
+    /// and its session id changes on a compaction rekey. The task id is the
+    /// only identifier stable across all of that, so a relaunched or compacted
+    /// agent stays in its group.
+    ///
+    /// A lead that has gone `detached`/`suspect` **keeps its members**:
+    /// membership is a task-id fact and does not depend on the lead's
+    /// attachment being alive. Re-parenting workers the moment supervision
+    /// dies would rearrange the tree exactly when something is wrong.
+    ///
+    /// Degradation: sessions from a launcher that reports no orchestration
+    /// meta all land in the trailing ungrouped block, which renders as today's
+    /// flat list. A worker whose manager task id was never a live lead is
+    /// treated as ungrouped rather than hidden — never drop a row to make a
+    /// grouping look tidy.
+    var orchestratorGroups: [SessionGroup] {
+        let rows = activeSessions
+        // Source order is already the daemon's (connected first, then slot),
+        // so leads and members both stay in slot order for free.
+        let leads = rows.filter { $0.isOrchestrator && !($0.orchestratorTaskID ?? "").isEmpty }
+        let leadTaskIDs = Set(leads.compactMap(\.orchestratorTaskID))
+        var membersByManager: [String: [SessionInfo]] = [:]
+        for row in rows where !row.isOrchestrator {
+            guard let manager = row.managerTaskID, leadTaskIDs.contains(manager) else { continue }
+            membersByManager[manager, default: []].append(row)
+        }
+
+        var groups: [SessionGroup] = leads.map { lead in
+            let taskID = lead.orchestratorTaskID ?? lead.id
+            return SessionGroup(id: "orch:\(taskID)",
+                                lead: lead,
+                                members: membersByManager[taskID] ?? [])
+        }
+
+        let claimed = Set(groups.flatMap { $0.all.map(\.id) })
+        let ungrouped = rows.filter { !claimed.contains($0.id) }
+        if !ungrouped.isEmpty {
+            groups.append(SessionGroup(id: "ungrouped", lead: nil, members: ungrouped))
+        }
+        return groups
+    }
+
+    /// True when grouping would actually change anything — i.e. at least one
+    /// live orchestrator relationship exists. The widget falls back to the
+    /// flat list otherwise, so it never shows a lone "Ungrouped" header over
+    /// what is simply every session.
+    var hasOrchestratorGroups: Bool {
+        activeSessions.contains { $0.isOrchestrator && !($0.orchestratorTaskID ?? "").isEmpty }
+    }
 
     /// Park a live session in the backlog (or bring it back to active). The
     /// daemon keeps it registered and focusable by id, but it releases its

@@ -1,0 +1,17 @@
+[type]
+name = "perf-reviewer"
+version = 1
+description = "Performance reviewer focused on measurable regressions"
+
+[provider]
+prefer = ["codex", "claude", "cursor"]
+requires = ["channels"]
+
+[persona]
+prompt = "persona.md"
+title = "Performance review"
+
+[advisory]
+scope = "Review performance risks and report findings without modifying source."
+output = "Ranked findings with evidence and a proposed measurement."
+escalate_as = "blocker"
