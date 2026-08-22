@@ -455,6 +455,41 @@ final class WorkflowLauncherModel: ObservableObject {
             .appendingPathComponent(".config/focalpoint/workflows", isDirectory: true)
     }
 
+    /// Installed agent types, sibling of `workflowsDirectory`.
+    nonisolated static var agentsDirectory: URL {
+        if let xdg = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"], !xdg.isEmpty {
+            return URL(fileURLWithPath: xdg, isDirectory: true)
+                .appendingPathComponent("focalpoint/agents", isDirectory: true)
+        }
+        return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            .appendingPathComponent(".config/focalpoint/agents", isDirectory: true)
+    }
+
+    /// Non-nil when an agent type declares an `[enforced]` table, which the
+    /// launch path cannot deliver — see the call site in `checkRole`.
+    ///
+    /// A missing or unreadable type file is *not* treated as a refusal here:
+    /// the role's own `type` resolution is the orchestrator's job, and failing
+    /// a formation because a type is not installed locally would be a
+    /// different (and wrong) error. Only a type that is present and demands
+    /// enforcement blocks the launch.
+    nonisolated static func enforcedTierReason(forType type: String) -> String? {
+        // Reject path separators before touching the filesystem: a type name
+        // is a directory name under agentsDirectory, never a traversal.
+        guard !type.contains("/"), type != "..", type != "." else {
+            return "invalid agent type name '\(type)'"
+        }
+        let typeFile = agentsDirectory
+            .appendingPathComponent(type, isDirectory: true)
+            .appendingPathComponent("type.toml")
+        guard let text = try? String(contentsOf: typeFile, encoding: .utf8) else { return nil }
+        guard case .success(let root) = TomlParser.parse(text) else { return nil }
+        guard case .table(let enforced)? = root["enforced"], !enforced.isEmpty else { return nil }
+        let fields = enforced.keys.sorted().joined(separator: ", ")
+        return "agent type '\(type)' declares [enforced] (\(fields)), which nothing delivers; "
+             + "FocalPoint refuses rather than honoring it as prompt text only"
+    }
+
     /// The provider for the ONE agent the app launches: the formation's
     /// orchestrator. Claude Code, because the focalpoint-orchestrator skill
     /// currently ships as a Claude skill. Per-role provider choice stays with
@@ -555,6 +590,19 @@ final class WorkflowLauncherModel: ObservableObject {
             guard case .string(let type)? = role["type"], !type.isEmpty else {
                 return "\(context) '\(roleName)': role requires a type"
             }
+            // WORKFLOWS-PROPOSAL.md §4.2: `[enforced]` declares a guarantee
+            // that prep must materialize through a provider's project-local
+            // enforcement surface. Nothing does that yet — `launch-session`
+            // carries only provider/model/cwd/task/identity/channel — so a
+            // type declaring it would launch with the constraint honored as
+            // prompt text alone. That is precisely the "looks sandboxed and
+            // is not" failure the spec forbids, so refuse rather than
+            // silently downgrade. Remove this check only together with
+            // deterministic per-provider prep AND effective-setting
+            // verification.
+            if let reason = Self.enforcedTierReason(forType: type) {
+                return "\(context) '\(roleName)': \(reason)"
+            }
             return nil
         }
 
@@ -602,6 +650,23 @@ final class WorkflowLauncherModel: ObservableObject {
                     guard case .int(let max)? = fanout["max"], max > 0 else {
                         return invalid("phase '\(phaseName)': fan-out requires a positive integer max")
                     }
+                    // A fan-out phase means an agent-authored plan decides how
+                    // many processes launch and what they are told to do, so
+                    // the human must confirm the resolved list first
+                    // (WORKFLOWS-PROPOSAL.md §6.1). `gate = "auto"` is only
+                    // defensible where no new authority appears — never here.
+                    //
+                    // This check is deterministic and lives in the launch path
+                    // on purpose. packages/validate.sh already enforces it,
+                    // but that script is not installed anywhere the app can
+                    // rely on, and delegating the rule to the orchestrator's
+                    // prompt would leave an instruction to a language model as
+                    // the only thing between a crafted manifest and
+                    // plan-authored process creation.
+                    let gate = fanout["gate"] ?? phase["gate"]
+                    if case .string(let gateValue)? = gate, gateValue != "confirm" {
+                        return invalid("phase '\(phaseName)': fan-out requires gate = \"confirm\" (got \"\(gateValue)\")")
+                    }
                     if fanoutCeiling == nil { fanoutCeiling = max }
                 }
             }
@@ -612,14 +677,43 @@ final class WorkflowLauncherModel: ObservableObject {
         guard case .table(let escalate)? = root["escalate"] else {
             return invalid("missing [escalate] table")
         }
+        // Vocabulary is pinned, not merely nonempty. An unrecognized value
+        // used to validate clean, which meant a manifest could quietly opt out
+        // of surfacing the states the device exists to show.
+        let allowedKinds: Set<String> = ["note", "question", "progress", "blocker", "directive"]
         guard case .array(let kinds)? = escalate["channel_kinds"], !kinds.isEmpty else {
             return invalid("[escalate] requires a nonempty channel_kinds list")
         }
+        for kind in kinds {
+            guard case .string(let value) = kind, allowedKinds.contains(value) else {
+                return invalid("[escalate] unknown channel kind; allowed: \(allowedKinds.sorted().joined(separator: ", "))")
+            }
+        }
+
+        let allowedStates: Set<String> = ["error", "approval", "waiting", "running",
+                                          "thinking", "done", "compacting", "idle"]
         guard case .array(let states)? = escalate["states"], !states.isEmpty else {
             return invalid("[escalate] requires a nonempty states list")
         }
-        guard case .string(let completion)? = escalate["completion"], !completion.isEmpty else {
-            return invalid("[escalate] requires a completion policy")
+        var declaredStates: Set<String> = []
+        for state in states {
+            guard case .string(let value) = state, allowedStates.contains(value) else {
+                return invalid("[escalate] unknown state; allowed: \(allowedStates.sorted().joined(separator: ", "))")
+            }
+            declaredStates.insert(value)
+        }
+        // `error` and `approval` visibility is not a manifest's decision. A
+        // formation that omits them is asking to hide the two states a human
+        // must act on — the whole reason the device exists.
+        let mandatory = ["error", "approval"].filter { !declaredStates.contains($0) }
+        if !mandatory.isEmpty {
+            return invalid("[escalate] states must include \(mandatory.joined(separator: " and "))")
+        }
+
+        let allowedCompletion: Set<String> = ["all-roles-done", "all-phases-done", "manual"]
+        guard case .string(let completion)? = escalate["completion"],
+              allowedCompletion.contains(completion) else {
+            return invalid("[escalate] completion must be one of \(allowedCompletion.sorted().joined(separator: ", "))")
         }
 
         return .success(FormationPackage(

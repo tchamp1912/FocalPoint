@@ -17,6 +17,10 @@ scope = "Report findings; never modify source."
 output = "Ranked list, most severe first, with file:line."
 escalate_as = "blocker"
 
-[enforced]
-read_only = true
-allow_paths = ["."]
+# No [enforced] block, deliberately. WORKFLOWS-PROPOSAL.md §4.2: an
+# enforced constraint must be materialized during prep through the provider's
+# project-local enforcement surface, and nothing does that yet — launch-session
+# carries only provider/model/cwd/task/identity/channel. Declaring it here
+# would make FocalPoint refuse to launch this type (by design), and honoring it
+# as prompt text would be the "looks sandboxed and is not" failure the spec
+# forbids. The scope line in [advisory] is an instruction, not a guarantee.

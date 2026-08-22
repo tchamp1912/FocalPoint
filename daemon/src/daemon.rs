@@ -1299,8 +1299,27 @@ fn launch_orchestrated_session(
     if provider == "cursor" && !matches!(cursor_mode, "headless" | "attachable") {
         return Err("cursor_mode must be 'headless' or 'attachable'".into());
     }
+    // `cursor-agent` is the CLI that can actually run `--print
+    // --output-format stream-json`. Falling back to a bare `cursor` is only
+    // valid when that binary is Cursor's agent entrypoint; on a normal install
+    // `cursor` is the VS Code-derived editor launcher, which cannot run a
+    // headless agent and exits immediately — leaving a stale tmux server, no
+    // daemon row, and no error anywhere. Silent degradation to a binary that
+    // cannot do the job is worse than refusing, so headless launches require
+    // the real agent CLI and say so.
     let provider_bin = if provider == "cursor" {
-        executable_named("cursor-agent").or_else(|| executable_named("cursor"))
+        match executable_named("cursor-agent") {
+            Some(path) => Some(path),
+            None if cursor_mode == "attachable" => executable_named("cursor"),
+            None => {
+                return Err(
+                    "cursor-agent is not installed; headless Cursor launches require it \
+                     (a bare `cursor` is the editor launcher and cannot run a headless agent). \
+                     Install cursor-agent, set CURSOR_AGENT, or use --cursor-mode attachable."
+                        .into(),
+                )
+            }
+        }
     } else {
         executable_named(provider)
     }
@@ -4535,6 +4554,39 @@ fn dispatch(
                             .ok()
                             .and_then(|data| serde_json::from_slice::<Value>(&data).ok());
                         if let Some(mut receipt) = existing {
+                            // Replaying the stored receipt is what makes
+                            // re-running a partially expanded formation safe.
+                            // It is only safe when the repeat is the *same*
+                            // request, though: replaying it for a different
+                            // provider/model/cwd silently ignores what the
+                            // caller asked for while reporting `ok: true,
+                            // status: launched`, which reads as success and is
+                            // not. Idempotency requires matching the request,
+                            // not just the task id.
+                            let mismatched = [
+                                ("provider", Some(provider.as_str())),
+                                ("model", model.as_deref()),
+                                ("cwd", Some(cwd.as_str())),
+                            ]
+                            .into_iter()
+                            .filter(|(field, requested)| match requested {
+                                // A field the caller left unset cannot
+                                // conflict; the stored value stands.
+                                None => false,
+                                Some(value) => receipt
+                                    .get(*field)
+                                    .and_then(Value::as_str)
+                                    .is_some_and(|stored| stored != *value),
+                            })
+                            .map(|(field, _)| field)
+                            .collect::<Vec<_>>();
+                            if !mismatched.is_empty() {
+                                return err(&format!(
+                                    "managed task id {task_id} is already active with a different \
+                                     request ({} differ); use a new task id",
+                                    mismatched.join(", ")
+                                ));
+                            }
                             receipt["ok"] = true.into();
                             return Dispatch::Reply(Response::Json(receipt));
                         }
