@@ -1,0 +1,364 @@
+// FocalPoint setup diagnostics — production-safe local probes and fixes.
+// MIT License.
+
+import AppKit
+import ApplicationServices
+import Foundation
+import ServiceManagement
+
+struct LocalSetupDiagnosticCheck: SetupDiagnosticChecking {
+    let id: SetupDiagnosticID
+    private let operation: @Sendable () async -> SetupDiagnosticResult
+
+    init(id: SetupDiagnosticID,
+         operation: @escaping @Sendable () async -> SetupDiagnosticResult) {
+        self.id = id
+        self.operation = operation
+    }
+
+    func run() async -> SetupDiagnosticResult { await operation() }
+}
+
+enum LocalSetupDiagnostics {
+    static func checks() -> [any SetupDiagnosticChecking] {
+        [daemonCheck(), adaptersCheck(), tmuxCheck(), permissionsCheck(),
+         loginStartupCheck(), providersCheck()]
+    }
+
+    private static func daemonCheck() -> LocalSetupDiagnosticCheck {
+        .init(id: .daemon) {
+            await Task.detached {
+                let path = focalpointSocketPath()
+                let socketExists = FileManager.default.fileExists(atPath: path)
+                guard let fd = focalpointConnect(recvTimeout: 0.75) else {
+                    return SetupDiagnosticResult(
+                        id: .daemon,
+                        status: .failed,
+                        summary: socketExists
+                            ? "The daemon socket exists but is not accepting connections."
+                            : "The daemon socket was not found.",
+                        evidence: [
+                            .init("Socket", socketExists ? "Present at ~/…/focalpoint.sock" : "Not found"),
+                            .init("Protocol handshake", "Unavailable")
+                        ],
+                        actions: [
+                            .init(.startDaemon, title: "Start daemon", isPrimary: true),
+                            .init(.copyInstallCommand, title: "Copy install command"),
+                            .init(.recheck, title: "Recheck")
+                        ])
+                }
+                defer { close(fd) }
+                guard let request = focalpointEncode(["cmd": "get-state"]),
+                      focalpointSendLine(fd, request) else {
+                    return SetupDiagnosticResult(
+                        id: .daemon, status: .failed,
+                        summary: "Connected, but could not send a protocol request.",
+                        evidence: [.init("Socket", "Connected"), .init("Protocol handshake", "Failed")],
+                        actions: [.init(.recheck, title: "Recheck", isPrimary: true)])
+                }
+                var receivedResponse = false
+                focalpointReadLines(fd) { object in
+                    receivedResponse = object["ok"] != nil || object["state"] != nil
+                    return false
+                }
+                return SetupDiagnosticResult(
+                    id: .daemon,
+                    status: receivedResponse ? .passed : .failed,
+                    summary: receivedResponse
+                        ? "The local daemon accepted a protocol request."
+                        : "The daemon connected but did not return a valid response.",
+                    evidence: [
+                        .init("Socket", "Connected at ~/…/focalpoint.sock"),
+                        .init("Protocol handshake", receivedResponse ? "Successful" : "No valid response")
+                    ],
+                    actions: [.init(.recheck, title: "Recheck")])
+            }.value
+        }
+    }
+
+    private static func adaptersCheck() -> LocalSetupDiagnosticCheck {
+        .init(id: .adapters) {
+            await Task.detached {
+                let home = FileManager.default.homeDirectoryForCurrentUser
+                let config = home.appendingPathComponent(".config/focalpoint/adapters")
+                let probes = [
+                    ("Claude Code", "hooks.sh", home.appendingPathComponent(".claude/settings.json"),
+                     ".config/focalpoint/adapters/hooks.sh"),
+                    ("Codex", "codex-hooks.sh", home.appendingPathComponent(".codex/hooks.json"),
+                     ".config/focalpoint/adapters/codex-hooks.sh"),
+                    ("Cursor", "cursor-hooks.sh", home.appendingPathComponent(".cursor/hooks.json"),
+                     ".config/focalpoint/adapters/cursor-hooks.sh")
+                ]
+                let evidence = probes.map { provider, script, settings, marker -> SetupDiagnosticEvidence in
+                    let scriptURL = config.appendingPathComponent(script)
+                    let installed = FileManager.default.isExecutableFile(atPath: scriptURL.path)
+                    let configured = fileContainsMarker(settings, marker: marker)
+                    let value: String
+                    if installed && configured { value = "Installed and configured" }
+                    else if installed { value = "Adapter installed; hook not configured" }
+                    else { value = "Adapter not installed" }
+                    return .init(provider, value)
+                }
+                let ready = evidence.filter { $0.value == "Installed and configured" }.count
+                return SetupDiagnosticResult(
+                    id: .adapters,
+                    status: ready == probes.count ? .passed : (ready > 0 ? .warning : .failed),
+                    summary: ready == probes.count
+                        ? "All bundled provider adapters are wired into their local hooks."
+                        : "\(ready) of \(probes.count) bundled adapters are fully configured.",
+                    evidence: evidence,
+                    actions: [
+                        .init(.copyInstallCommand, title: "Copy safe installer command", isPrimary: ready == 0),
+                        .init(.revealFocalPointConfig, title: "Show adapter folder"),
+                        .init(.recheck, title: "Recheck")
+                    ])
+            }.value
+        }
+    }
+
+    private static func tmuxCheck() -> LocalSetupDiagnosticCheck {
+        .init(id: .tmux) {
+            await Task.detached {
+                let executable = findExecutable("tmux")
+                let config = FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent(".config/focalpoint/tmux.conf")
+                let runner = FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent(".config/focalpoint/focalpoint-run.sh")
+                let configPresent = FileManager.default.fileExists(atPath: config.path)
+                let runnerPresent = FileManager.default.isExecutableFile(atPath: runner.path)
+                let ready = executable != nil && configPresent && runnerPresent
+                return SetupDiagnosticResult(
+                    id: .tmux,
+                    status: ready ? .passed : (executable == nil ? .warning : .failed),
+                    summary: ready
+                        ? "Managed-session transport is ready."
+                        : "tmux is optional, but required for precise managed-session attachment.",
+                    evidence: [
+                        .init("tmux command", executable == nil ? "Not found on PATH" : "Available"),
+                        .init("FocalPoint tmux config", configPresent ? "Present" : "Missing"),
+                        .init("Managed launcher", runnerPresent ? "Installed" : "Missing")
+                    ],
+                    actions: [
+                        .init(.copyTmuxInstallCommand, title: "Copy tmux install command",
+                              isPrimary: executable == nil),
+                        .init(.copyInstallCommand, title: "Copy FocalPoint installer command"),
+                        .init(.recheck, title: "Recheck")
+                    ])
+            }.value
+        }
+    }
+
+    private static func permissionsCheck() -> LocalSetupDiagnosticCheck {
+        .init(id: .permissions) {
+            await Task.detached {
+                let accessibility = AXIsProcessTrusted()
+                let inputMonitoring = CGPreflightListenEventAccess()
+                let automation = automationPermissionLabel()
+                let hasDenied = automation == "Denied"
+                let status: SetupDiagnosticStatus = hasDenied ? .failed
+                    : ((!accessibility || !inputMonitoring || automation == "Not requested") ? .warning : .passed)
+                return SetupDiagnosticResult(
+                    id: .permissions,
+                    status: status,
+                    summary: status == .passed
+                        ? "Optional macOS permissions are available."
+                        : "Core menu-bar features work without these permissions; integrations may request them when used.",
+                    evidence: [
+                        .init("Accessibility (optional)", accessibility ? "Granted" : "Not granted"),
+                        .init("Input Monitoring (optional)", inputMonitoring ? "Granted" : "Not granted"),
+                        .init("iTerm Automation", automation)
+                    ],
+                    actions: [
+                        .init(.openAccessibilitySettings, title: "Open Privacy settings"),
+                        .init(.openAutomationSettings, title: "Open Automation settings"),
+                        .init(.recheck, title: "Recheck")
+                    ])
+            }.value
+        }
+    }
+
+    private static func loginStartupCheck() -> LocalSetupDiagnosticCheck {
+        .init(id: .loginStartup) {
+            await Task.detached {
+                let home = FileManager.default.homeDirectoryForCurrentUser
+                let plist = home.appendingPathComponent("Library/LaunchAgents/dev.focalpoint.daemon.plist")
+                let plistPresent = FileManager.default.fileExists(atPath: plist.path)
+                let launchdLoaded = commandSucceeded("/bin/launchctl", [
+                    "print", "gui/\(getuid())/dev.focalpoint.daemon"
+                ])
+                let appStatus = await MainActor.run { loginItemLabel(SMAppService.mainApp.status) }
+                let ready = plistPresent && launchdLoaded
+                return SetupDiagnosticResult(
+                    id: .loginStartup,
+                    status: ready && appStatus == "Enabled" ? .passed : (ready ? .warning : .failed),
+                    summary: ready
+                        ? "The daemon is configured to start at login."
+                        : "The daemon launch agent is missing or not loaded.",
+                    evidence: [
+                        .init("Daemon LaunchAgent", plistPresent ? "Installed" : "Missing"),
+                        .init("Daemon launchd job", launchdLoaded ? "Loaded" : "Not loaded"),
+                        .init("Menu-bar app login item", appStatus)
+                    ],
+                    actions: [
+                        .init(.startDaemon, title: "Start daemon", isPrimary: !launchdLoaded),
+                        .init(.copyInstallCommand, title: "Copy installer command"),
+                        .init(.enableAppLogin, title: "Enable app at login", isPrimary: ready && appStatus != "Enabled"),
+                        .init(.openLoginItemsSettings, title: "Open Login Items"),
+                        .init(.recheck, title: "Recheck")
+                    ])
+            }.value
+        }
+    }
+
+    private static func providersCheck() -> LocalSetupDiagnosticCheck {
+        .init(id: .providers) {
+            await Task.detached {
+                let providers = [
+                    ("Claude Code", ["claude"]),
+                    ("Codex", ["codex"]),
+                    ("Cursor", ["cursor-agent", "cursor"])
+                ]
+                let evidence = providers.map { name, commands -> SetupDiagnosticEvidence in
+                    let available = commands.contains { findExecutable($0) != nil }
+                    return .init(name, available ? "CLI available; account checked by provider on launch" : "CLI not found")
+                }
+                let available = evidence.filter { $0.value.hasPrefix("CLI available") }.count
+                return SetupDiagnosticResult(
+                    id: .providers,
+                    status: available > 0 ? (available == providers.count ? .passed : .warning) : .failed,
+                    summary: available > 0
+                        ? "\(available) of \(providers.count) supported provider CLIs are available."
+                        : "No supported provider CLI was found on PATH.",
+                    evidence: evidence,
+                    actions: [
+                        .init(.openProviderSetupGuide, title: "Open provider setup guide",
+                              isPrimary: available == 0),
+                        .init(.recheck, title: "Recheck")
+                    ])
+            }.value
+        }
+    }
+}
+
+struct LocalSetupDiagnosticActionPerformer: SetupDiagnosticActionPerforming {
+    func perform(_ action: SetupDiagnosticAction) async -> SetupDiagnosticActionOutcome {
+        switch action.kind {
+        case .recheck:
+            return .init(succeeded: true, message: "Running the check again…", shouldRecheck: true)
+        case .copyInstallCommand:
+            return await copy("./install.sh", message: "Copied ./install.sh. Run it from a trusted FocalPoint checkout.")
+        case .copyTmuxInstallCommand:
+            return await copy("brew install tmux", message: "Copied brew install tmux.")
+        case .openAccessibilitySettings:
+            return await openURL("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+                                 success: "Opened System Settings.")
+        case .openAutomationSettings:
+            return await openURL("x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
+                                 success: "Opened System Settings.")
+        case .openLoginItemsSettings:
+            return await openURL("x-apple.systempreferences:com.apple.LoginItems-Settings.extension",
+                                 success: "Opened System Settings.")
+        case .revealFocalPointConfig:
+            return await MainActor.run {
+                let url = FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent(".config/focalpoint/adapters", isDirectory: true)
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+                return .init(succeeded: true, message: "Opened the FocalPoint adapter folder.")
+            }
+        case .openProviderSetupGuide:
+            return await openURL("https://github.com/tchamp1912/FocalPoint#install",
+                                 success: "Opened the provider setup guide.")
+        case .startDaemon:
+            let ok = await Task.detached {
+                commandSucceeded("/bin/launchctl", ["kickstart", "gui/\(getuid())/dev.focalpoint.daemon"])
+            }.value
+            return .init(succeeded: ok,
+                         message: ok ? "Asked launchd to start the daemon." : "launchd could not start the daemon.",
+                         shouldRecheck: ok)
+        case .enableAppLogin:
+            return await MainActor.run {
+                do {
+                    try SMAppService.mainApp.register()
+                    return .init(succeeded: true, message: "Enabled FocalPoint at login.", shouldRecheck: true)
+                } catch {
+                    return .init(succeeded: false, message: "Could not enable the login item. Open Login Items to review it.")
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func copy(_ value: String, message: String) -> SetupDiagnosticActionOutcome {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+        return .init(succeeded: true, message: message)
+    }
+
+    @MainActor
+    private func openURL(_ value: String, success: String) -> SetupDiagnosticActionOutcome {
+        guard let url = URL(string: value), NSWorkspace.shared.open(url) else {
+            return .init(succeeded: false, message: "Could not open the requested page.")
+        }
+        return .init(succeeded: true, message: success)
+    }
+}
+
+private func findExecutable(_ name: String) -> URL? {
+    let path = ProcessInfo.processInfo.environment["PATH"] ?? "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+    for directory in path.split(separator: ":") {
+        let candidate = URL(fileURLWithPath: String(directory)).appendingPathComponent(name)
+        if FileManager.default.isExecutableFile(atPath: candidate.path) { return candidate }
+    }
+    return nil
+}
+
+private func fileContainsMarker(_ url: URL, marker: String) -> Bool {
+    guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+    defer { try? handle.close() }
+    guard let data = try? handle.read(upToCount: 2 * 1024 * 1024),
+          let text = String(data: data, encoding: .utf8) else { return false }
+    return text.contains(marker)
+}
+
+private func commandSucceeded(_ executable: String, _ arguments: [String]) -> Bool {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: executable)
+    process.arguments = arguments
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    do {
+        try process.run()
+        process.waitUntilExit()
+        return process.terminationStatus == 0
+    } catch {
+        return false
+    }
+}
+
+private func automationPermissionLabel() -> String {
+    guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.googlecode.iterm2") != nil else {
+        return "iTerm not installed"
+    }
+    let descriptor = NSAppleEventDescriptor(bundleIdentifier: "com.googlecode.iterm2")
+    let status = AEDeterminePermissionToAutomateTarget(descriptor.aeDesc,
+                                                       typeWildCard,
+                                                       typeWildCard,
+                                                       false)
+    return switch status {
+    case noErr: "Granted"
+    case OSStatus(errAEEventNotPermitted): "Denied"
+    case -1744: "Not requested"
+    default: "Not requested"
+    }
+}
+
+@MainActor
+private func loginItemLabel(_ status: SMAppService.Status) -> String {
+    switch status {
+    case .enabled: "Enabled"
+    case .requiresApproval: "Needs approval"
+    case .notRegistered: "Not enabled"
+    case .notFound: "Unavailable for this app copy"
+    @unknown default: "Unknown"
+    }
+}
