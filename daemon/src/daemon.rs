@@ -2378,7 +2378,15 @@ fn session_to_dto(s: &Session, connected: Option<bool>) -> SessionDto {
         kind: s.kind.clone(),
         label: s.label.clone(),
         name: s.name.clone(),
-        slot: s.slot,
+        // A numbered slot represents a currently authoritative runtime.
+        // Tombstones retain their previous slot privately in `slot_history`
+        // for exact re-registration, but disconnected/unverified DTOs must
+        // render slotless so clients cannot route focus to stale endpoints.
+        slot: if connected == Some(false) || !s.has_authoritative_attachment() {
+            None
+        } else {
+            s.slot
+        },
         state: s.state.name().to_string(),
         backlogged: s.is_backlogged(),
         meta,
@@ -2508,8 +2516,9 @@ fn session_from_json(v: &serde_json::Value, last_update: Instant, live: bool) ->
             _ => None,
         });
     // Snapshot migration: pre-attachment live rows had `attachment: null`.
-    // Represent them explicitly as unverified so the five-minute grace rule
-    // can release stale slots. Tombstones stay detached with no attachment.
+    // Represent them explicitly as unverified; Registry::restore immediately
+    // releases their stale numbered slots while retaining slot history.
+    // Tombstones stay detached with no attachment.
     let migrated_unverified = live
         && persisted_attachment.is_none()
         && persisted_health != Some(SessionHealth::Detached);
@@ -4691,12 +4700,18 @@ mod tests {
     #[test]
     fn replay_explicitly_clears_every_unoccupied_key() {
         let mut registry = Registry::new(None);
+        let meta = Map::from_iter([
+            ("pid".into(), json!(4242)),
+            ("process_boot_time".into(), json!(7)),
+            ("process_start_time".into(), json!(11)),
+            ("provider_executable".into(), json!("/usr/local/bin/codex")),
+        ]);
         registry.set_state(
             Some("only-session"),
             State::Running,
             None,
             None,
-            None,
+            Some(meta),
             Instant::now(),
         );
         let shared = Mutex::new(Shared {
@@ -5144,6 +5159,39 @@ mod tests {
             .get(crate::session::BACKLOGGED_META_KEY)
             .is_none());
         assert_eq!(external.meta["turns"], json!(7));
+    }
+
+    #[test]
+    fn disconnected_dto_hides_last_held_slot() {
+        let session = Session {
+            id: "detached".into(),
+            kind: Some("codex".into()),
+            label: None,
+            name: None,
+            meta: Map::new(),
+            carry: Map::new(),
+            slot: Some(6),
+            state: State::Idle,
+            last_update: Instant::now(),
+            attachment: Some(Attachment::Process {
+                id: "process:7:42:11:codex".into(),
+                boot_time: 7,
+                pid: 42,
+                process_start_time: 11,
+                executable: "/usr/local/bin/codex".into(),
+                pane_tty: None,
+                terminal: TerminalEndpoint::default(),
+            }),
+            health: SessionHealth::Detached,
+            health_reason: Some("provider process exited".into()),
+            last_verified: None,
+            failed_probes: 0,
+            first_probe_failure: None,
+            slot_history: vec![6],
+        };
+
+        assert_eq!(session_to_dto(&session, Some(false)).slot, None);
+        assert_eq!(session.slot, Some(6), "durable history stays private");
     }
 
     #[test]

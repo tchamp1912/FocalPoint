@@ -157,8 +157,12 @@ a new session (a state-less session has no state to key `SET_KEY_STATE`
 off of). Staleness is presentation-only; neither `set-meta` nor `set-state`
 drives an age-based session removal.
 
-- Each session claims the **lowest free numbered key** (1–12) at
-  registration. After that, slot placement is user-controlled: `swap-slots`
+- Each session with an authoritative process or managed attachment claims the
+  **lowest free numbered key** (1–12) at registration. An unverified/unknown
+  session remains visible with `slot: null` until exact registration proves
+  ownership; it then reclaims its most recent historical slot when free, or
+  takes the lowest free slot. After that, slot placement is user-controlled:
+  `swap-slots`
   exchanges two live sessions' slots outright, and `move-slot` places a
   live, active session on any free slot — deliberately leaving a gap
   (sparse placement is the point; a slotless overflow session can be moved
@@ -167,8 +171,9 @@ drives an age-based session removal.
   or parking a session in the backlog compacts the remaining active slots
   back to contiguous 1..N, so the rendered list and the physical key map
   never keep a hole the user didn't just make. A sweep-reap (below) frees
-  the slot *without* compacting; the disconnected row still reports its
-  last-held slot. Sessions beyond 12 are tracked with `slot: null` and
+  the slot *without* compacting; the disconnected row reports `slot: null`
+  while the daemon privately retains its slot history for exact recovery.
+  Sessions beyond 12 are tracked with `slot: null` and
   can't participate in a swap — there's no slot to give.
 - A session ends via explicit `end-session`, or — for a session carrying a
   `tty` in `meta` (the well-known key, resolved by the daemon — see

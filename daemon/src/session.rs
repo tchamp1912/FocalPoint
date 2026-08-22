@@ -506,6 +506,16 @@ pub struct Session {
 }
 
 impl Session {
+    /// A numbered key is a claim about a concrete, focusable runtime, not
+    /// merely a durable provider conversation. Unverified adapter activity
+    /// remains visible but must stay slotless until ownership is proven.
+    pub fn has_authoritative_attachment(&self) -> bool {
+        matches!(
+            self.attachment,
+            Some(Attachment::Process { .. } | Attachment::Managed { .. })
+        )
+    }
+
     /// Backlog is daemon-owned presentation/routing state stored in private
     /// metadata so older snapshots and the many session construction paths
     /// remain compatible. It is exposed as a top-level protocol field, never
@@ -1143,6 +1153,43 @@ impl Registry {
         (1..=12).find(|n| !used.contains(n))
     }
 
+    /// Give an exactly attached session a numbered key. Prefer its most
+    /// recent historical key when that key is still free; otherwise use the
+    /// lowest free key. This is deliberately called only after authoritative
+    /// process/tmux registration.
+    fn reclaim_slot(&mut self, id: &str, authorized: Option<u8>) -> Option<u8> {
+        let session = self.sessions.get(id)?;
+        if session.is_backlogged() || !session.has_authoritative_attachment() {
+            return None;
+        }
+        if session.slot.is_some() {
+            return session.slot;
+        }
+        let historical = session.slot_history.last().copied();
+        let is_free = |candidate: u8, registry: &Registry| {
+            !registry
+                .sessions
+                .values()
+                .any(|other| other.id != id && other.slot == Some(candidate))
+                && !registry
+                    .managed_launch_reservations
+                    .values()
+                    .any(|reservation| reservation.slot == Some(candidate))
+        };
+        let slot = authorized
+            .filter(|candidate| is_free(*candidate, self))
+            .or_else(|| historical.filter(|candidate| is_free(*candidate, self)))
+            .or_else(|| self.lowest_free_slot());
+        let session = self.sessions.get_mut(id).expect("validated live session");
+        session.slot = slot;
+        if let Some(slot) = slot {
+            if session.slot_history.last().copied() != Some(slot) {
+                session.slot_history.push(slot);
+            }
+        }
+        slot
+    }
+
     /// Claim the numbered identity embedded in a managed agent's initial
     /// prompt. The reservation is consumed by the first registration carrying
     /// this stable orchestrator task id.
@@ -1223,7 +1270,9 @@ impl Registry {
         let mut ordered: Vec<(String, Option<u8>)> = self
             .sessions
             .values()
-            .filter(|session| !session.is_backlogged())
+            .filter(|session| {
+                !session.is_backlogged() && session.has_authoritative_attachment()
+            })
             .map(|session| (session.id.clone(), session.slot))
             .collect();
         ordered.sort_by_key(|(id, slot)| (slot.is_none(), slot.unwrap_or(u8::MAX), id.clone()));
@@ -1302,7 +1351,10 @@ impl Registry {
                 effects.push(Effect::SlotCleared { slot });
             }
         } else {
-            let slot = self.lowest_free_slot();
+            let slot = current
+                .has_authoritative_attachment()
+                .then(|| self.lowest_free_slot())
+                .flatten();
             let session = self.sessions.get_mut(id).expect("validated live session");
             session.meta.remove(BACKLOGGED_META_KEY);
             session.slot = slot;
@@ -1509,7 +1561,10 @@ impl Registry {
                         record_claude_precompact(&mut sess.meta, &mut m, state, is_claude);
                         apply_meta_update(&mut sess.meta, &sess.carry, m);
                     }
-                    if let Some(slot) = authorized_slot.filter(|slot| sess.slot != Some(*slot)) {
+                    if let Some(slot) = authorized_slot
+                        .filter(|_| sess.has_authoritative_attachment())
+                        .filter(|slot| sess.slot != Some(*slot))
+                    {
                         if let Some(old_slot) = sess.slot {
                             effects.push(Effect::SlotCleared { slot: old_slot });
                         }
@@ -1528,6 +1583,16 @@ impl Registry {
                         slot: sess.slot,
                         state,
                     });
+                    let needs_slot = sess.slot.is_none() && sess.has_authoritative_attachment();
+                    if needs_slot {
+                        let _ = sess;
+                        let slot = self.reclaim_slot(id, authorized_slot);
+                        if let Some(Effect::SessionUpsert { slot: effect_slot, .. }) =
+                            effects.last_mut()
+                        {
+                            *effect_slot = slot;
+                        }
+                    }
                 } else {
                     // Before registering a brand-new session, check for a
                     // session it might be the continuation of — either a
@@ -1672,7 +1737,30 @@ impl Registry {
                             is_claude,
                         );
                         incoming_meta.insert("attachment_registration".into(), Value::Bool(true));
-                        update_attachment(&mut sess, &incoming_meta, now);
+                        if was_tombstoned {
+                            // Never resurrect a runtime from the tombstone's
+                            // stale pid/tty fields. Only the incoming exact
+                            // registration may reclaim the historical slot.
+                            let attachment = attachment_from_meta(&incoming_meta);
+                            let verified = !matches!(attachment, Attachment::Unverified { .. });
+                            sess.attachment = Some(attachment);
+                            sess.health = if verified {
+                                SessionHealth::Healthy
+                            } else {
+                                SessionHealth::Unknown
+                            };
+                            sess.health_reason = (!verified).then(|| {
+                                "awaiting authoritative process or tmux ownership".into()
+                            });
+                            sess.last_verified = verified.then_some(now);
+                            sess.failed_probes = 0;
+                            sess.first_probe_failure = None;
+                            if !verified {
+                                sess.slot = None;
+                            }
+                        } else {
+                            update_attachment(&mut sess, &incoming_meta, now);
+                        }
                         apply_meta_update(&mut sess.meta, &sess.carry, incoming_meta);
                         sess.last_update = now;
                         effects.push(Effect::SessionRekeyed {
@@ -1689,27 +1777,14 @@ impl Registry {
                             state,
                         });
                         self.sessions.insert(id.to_string(), sess);
+                        let slot = self.reclaim_slot(id, authorized_slot);
+                        if let Some(Effect::SessionUpsert { slot: effect_slot, .. }) =
+                            effects.last_mut()
+                        {
+                            *effect_slot = slot;
+                        }
                     } else {
                         // Register.
-                        let slot = match reserved_launch {
-                            Some(reservation) => reservation.slot,
-                            None => incoming_meta
-                                .get("_authorized_requested_slot")
-                                .and_then(Value::as_u64)
-                                .and_then(|value| u8::try_from(value).ok())
-                                .filter(|value| (1..=12).contains(value))
-                                .filter(|requested| {
-                                    !self
-                                        .sessions
-                                        .values()
-                                        .any(|session| session.slot == Some(*requested))
-                                        && !self
-                                            .managed_launch_reservations
-                                            .values()
-                                            .any(|reservation| reservation.slot == Some(*requested))
-                                })
-                                .or_else(|| self.lowest_free_slot()),
-                        };
                         let mut session_meta = Map::new();
                         record_claude_precompact(
                             &mut session_meta,
@@ -1721,6 +1796,12 @@ impl Registry {
                         let attachment = attachment_from_meta(&session_meta);
                         let verified_attachment =
                             !matches!(attachment, Attachment::Unverified { .. });
+                        // `authorized_slot` was resolved before consuming the
+                        // launch receipt. It is eligible only when this same
+                        // registration also proves concrete ownership.
+                        let slot = verified_attachment
+                            .then(|| authorized_slot.or_else(|| self.lowest_free_slot()))
+                            .flatten();
                         let sess = Session {
                             id: id.to_string(),
                             kind,
@@ -1800,7 +1881,8 @@ impl Registry {
         }
         apply_meta_update(&mut sess.meta, &sess.carry, meta);
         sess.last_update = now;
-        vec![Effect::SessionUpsert {
+        let needs_slot = sess.slot.is_none() && sess.has_authoritative_attachment();
+        let mut effects = vec![Effect::SessionUpsert {
             id: sess.id.clone(),
             kind: sess.kind.clone(),
             label: sess.label.clone(),
@@ -1808,7 +1890,15 @@ impl Registry {
             meta: sess.meta.clone(),
             slot: sess.slot,
             state: sess.state,
-        }]
+        }];
+        if needs_slot {
+            let _ = sess;
+            let slot = self.reclaim_slot(id, None);
+            if let Some(Effect::SessionUpsert { slot: effect_slot, .. }) = effects.last_mut() {
+                *effect_slot = slot;
+            }
+        }
+        effects
     }
 
     /// Set (or clear) a session's user-assigned display name.
@@ -2103,6 +2193,11 @@ impl Registry {
             if session.is_backlogged() {
                 return Err(format!("session is backlogged and holds no slot: {id}"));
             }
+            if !session.has_authoritative_attachment() {
+                return Err(format!(
+                    "session has no authoritative runtime attachment: {id}"
+                ));
+            }
             if session.slot == Some(target) {
                 return Ok(Vec::new());
             }
@@ -2239,6 +2334,13 @@ impl Registry {
     ) -> Registry {
         let mut r = Registry::new(ttl).with_tombstone_ttl(tombstone_ttl);
         for mut s in sessions {
+            if !s.has_authoritative_attachment() {
+                if let Some(slot) = s.slot.take() {
+                    if s.slot_history.last().copied() != Some(slot) {
+                        s.slot_history.push(slot);
+                    }
+                }
+            }
             if let Some(slot) = s.slot {
                 if r.sessions.values().any(|x| x.slot == Some(slot)) {
                     s.slot = r.lowest_free_slot();
@@ -2263,16 +2365,50 @@ mod tests {
         Instant::now()
     }
 
+    fn authoritative_meta(seed: i64) -> Map<String, Value> {
+        Map::from_iter([
+            ("pid".into(), seed.into()),
+            ("process_boot_time".into(), 7.into()),
+            ("process_start_time".into(), (seed as u64 + 100).into()),
+            (
+                "provider_executable".into(),
+                "/usr/local/bin/focalpoint-test-provider".into(),
+            ),
+        ])
+    }
+
+    fn add_authoritative_meta(meta: &mut Map<String, Value>, seed: i64) {
+        meta.extend(authoritative_meta(seed));
+    }
+
+    fn register_authoritative(
+        registry: &mut Registry,
+        id: &str,
+        state: State,
+        seed: i64,
+        now: Instant,
+    ) -> Vec<Effect> {
+        registry.set_state(
+            Some(id),
+            state,
+            None,
+            None,
+            Some(authoritative_meta(seed)),
+            now,
+        )
+    }
+
     #[test]
     fn registers_and_assigns_lowest_free_slot() {
         let mut r = Registry::new(Some(Duration::from_secs(3600)));
         let now = t0();
+        let meta_a = authoritative_meta(101);
         let e = r.set_state(
             Some("a"),
             State::Thinking,
             Some("claude".into()),
             None,
-            None,
+            Some(meta_a.clone()),
             now,
         );
         assert!(e.contains(&Effect::SessionUpsert {
@@ -2280,7 +2416,7 @@ mod tests {
             kind: Some("claude".into()),
             label: None,
             name: None,
-            meta: Map::new(),
+            meta: meta_a,
             slot: Some(1),
             state: State::Thinking,
         }));
@@ -2289,10 +2425,17 @@ mod tests {
             State::Running,
             Some("codex".into()),
             None,
-            None,
+            Some(authoritative_meta(102)),
             now,
         );
-        r.set_state(Some("c"), State::Idle, None, None, None, now);
+        r.set_state(
+            Some("c"),
+            State::Idle,
+            None,
+            None,
+            Some(authoritative_meta(103)),
+            now,
+        );
         let slots: Vec<_> = r.list().iter().map(|s| (s.id.clone(), s.slot)).collect();
         assert_eq!(
             slots,
@@ -2318,7 +2461,7 @@ mod tests {
             State::Thinking,
             Some("codex".into()),
             None,
-            None,
+            Some(authoritative_meta(110)),
             now,
         );
         assert_eq!(registry.sessions.get("unrelated").unwrap().slot, Some(2));
@@ -2326,6 +2469,7 @@ mod tests {
         let mut meta = Map::new();
         meta.insert("orchestrator_task_id".into(), Value::from("worker-1"));
         meta.insert("_correlated_launch_task_id".into(), Value::from("worker-1"));
+        add_authoritative_meta(&mut meta, 111);
         registry.set_state(
             Some("provider-session"),
             State::Thinking,
@@ -2351,7 +2495,7 @@ mod tests {
                 State::Idle,
                 Some("codex".into()),
                 None,
-                None,
+                Some(authoritative_meta(200 + index)),
                 now,
             );
         }
@@ -2361,6 +2505,7 @@ mod tests {
         );
         let mut unrelated = Map::new();
         unrelated.insert("cwd".into(), "/same/repo".into());
+        add_authoritative_meta(&mut unrelated, 300);
         registry.set_state(
             Some("unrelated"),
             State::Thinking,
@@ -2374,6 +2519,7 @@ mod tests {
         let mut correlated = Map::new();
         correlated.insert("orchestrator_task_id".into(), "worker-6".into());
         correlated.insert("_correlated_launch_task_id".into(), "worker-6".into());
+        add_authoritative_meta(&mut correlated, 301);
         registry.set_state(
             Some("worker-provider"),
             State::Thinking,
@@ -2395,7 +2541,7 @@ mod tests {
             State::Thinking,
             Some("codex".into()),
             None,
-            None,
+            Some(authoritative_meta(400)),
             now,
         );
         assert_eq!(registry.sessions["provider-session"].slot, Some(1));
@@ -2520,16 +2666,16 @@ mod tests {
     }
 
     #[test]
-    fn unverified_activity_releases_its_slot_after_five_minutes() {
+    fn unverified_activity_is_slotless_and_disconnects_at_configured_timeout() {
         let mut registry = Registry::new(None);
         let now = Instant::now();
         registry.set_state(Some("generic"), State::Thinking, Some("generic".into()), None, None, now);
-        assert_eq!(registry.list()[0].slot, Some(1));
+        assert_eq!(registry.list()[0].slot, None);
         let effects = registry.expire_unverified_attachments(
             now + Duration::from_secs(300),
             Some(Duration::from_secs(300)),
         );
-        assert!(effects.iter().any(|effect| matches!(effect, Effect::SessionDisconnected { slot: Some(1), .. })));
+        assert!(effects.iter().any(|effect| matches!(effect, Effect::SessionDisconnected { slot: None, .. })));
         let retained = registry.session_or_tombstone("generic").unwrap();
         assert_eq!(retained.health, SessionHealth::Unknown);
     }
@@ -2551,7 +2697,77 @@ mod tests {
             None,
         );
         assert!(effects.is_empty());
-        assert_eq!(registry.list()[0].slot, Some(1));
+        assert_eq!(registry.list()[0].slot, None);
+    }
+
+    #[test]
+    fn exact_registration_promotes_unknown_and_reclaims_historical_slot() {
+        let mut registry = Registry::new(None);
+        let now = Instant::now();
+        registry.set_state(
+            Some("conversation"),
+            State::Thinking,
+            Some("codex".into()),
+            None,
+            None,
+            now,
+        );
+        let session = registry.sessions.get_mut("conversation").unwrap();
+        session.slot_history.push(4);
+        assert_eq!(session.slot, None);
+        assert_eq!(session.health, SessionHealth::Unknown);
+
+        registry.set_state(
+            Some("conversation"),
+            State::Running,
+            Some("codex".into()),
+            None,
+            Some(authoritative_meta(777)),
+            now + Duration::from_secs(1),
+        );
+
+        let session = &registry.sessions["conversation"];
+        assert_eq!(session.health, SessionHealth::Healthy);
+        assert_eq!(session.slot, Some(4));
+        assert!(session.has_authoritative_attachment());
+    }
+
+    #[test]
+    fn restore_strips_unverified_slot_but_preserves_it_for_reregistration() {
+        let now = Instant::now();
+        let restored = Session {
+            id: "unknown".into(),
+            kind: Some("cursor".into()),
+            label: None,
+            name: None,
+            meta: Map::new(),
+            carry: Map::new(),
+            slot: Some(3),
+            state: State::Idle,
+            last_update: now,
+            attachment: Some(Attachment::Unverified {
+                id: "unverified:restored:unknown".into(),
+            }),
+            health: SessionHealth::Unknown,
+            health_reason: None,
+            last_verified: None,
+            failed_probes: 0,
+            first_probe_failure: None,
+            slot_history: Vec::new(),
+        };
+        let mut registry = Registry::restore(None, None, vec![restored], Vec::new());
+        assert_eq!(registry.sessions["unknown"].slot, None);
+        assert_eq!(registry.sessions["unknown"].slot_history, vec![3]);
+
+        registry.set_state(
+            Some("unknown"),
+            State::Running,
+            Some("cursor".into()),
+            None,
+            Some(authoritative_meta(778)),
+            now + Duration::from_secs(1),
+        );
+        assert_eq!(registry.sessions["unknown"].slot, Some(3));
     }
 
     #[test]
@@ -2580,12 +2796,13 @@ mod tests {
     fn pane_reregistration_reclaims_requested_slot_only_when_free() {
         let mut registry = Registry::new(None);
         let now = Instant::now();
-        registry.set_state(Some("first"), State::Running, None, None, None, now);
+        register_authoritative(&mut registry, "first", State::Running, 500, now);
 
         let mut requested = Map::new();
         requested.insert("requested_slot".into(), Value::from(4));
         requested.insert("_authorized_requested_slot".into(), Value::from(4));
         requested.insert("reregistered".into(), Value::Bool(true));
+        add_authoritative_meta(&mut requested, 501);
         registry.set_state(
             Some("recovered"),
             State::Thinking,
@@ -2600,6 +2817,7 @@ mod tests {
         occupied.insert("requested_slot".into(), Value::from(4));
         occupied.insert("_authorized_requested_slot".into(), Value::from(4));
         occupied.insert("reregistered".into(), Value::Bool(true));
+        add_authoritative_meta(&mut occupied, 502);
         registry.set_state(
             Some("fallback"),
             State::Thinking,
@@ -2666,10 +2884,10 @@ mod tests {
     fn navigation_target_and_sequential_cycles_follow_live_sessions() {
         let mut r = Registry::new(None);
         let now = t0();
-        r.set_state(Some("run"), State::Running, None, None, None, now);
-        r.set_state(Some("wait"), State::Waiting, None, None, None, now);
-        r.set_state(Some("approval"), State::Approval, None, None, None, now);
-        r.set_state(Some("err"), State::Error, None, None, None, now);
+        register_authoritative(&mut r, "run", State::Running, 551, now);
+        register_authoritative(&mut r, "wait", State::Waiting, 552, now);
+        register_authoritative(&mut r, "approval", State::Approval, 553, now);
+        register_authoritative(&mut r, "err", State::Error, 554, now);
         assert_eq!(
             r.navigation_states(),
             NavStates {
@@ -2729,9 +2947,9 @@ mod tests {
     fn ending_compacts_slots_before_next_registration() {
         let mut r = Registry::new(None);
         let now = t0();
-        r.set_state(Some("a"), State::Running, None, None, None, now);
-        r.set_state(Some("b"), State::Running, None, None, None, now);
-        r.set_state(Some("c"), State::Running, None, None, None, now);
+        register_authoritative(&mut r, "a", State::Running, 601, now);
+        register_authoritative(&mut r, "b", State::Running, 602, now);
+        register_authoritative(&mut r, "c", State::Running, 603, now);
         // End b (slot 2). c shifts down, so the next registration takes #3.
         let e = r.end_session("b");
         assert!(e.contains(&Effect::SessionEnded {
@@ -2752,7 +2970,7 @@ mod tests {
             .expect("compaction repaints c at its destination slot");
         assert!(clear_source < repaint_destination);
         assert_eq!(r.session_by_slot(2).unwrap().id, "c");
-        r.set_state(Some("d"), State::Running, None, None, None, now);
+        register_authoritative(&mut r, "d", State::Running, 604, now);
         assert_eq!(r.session_by_slot(3).unwrap().id, "d");
     }
 
@@ -2760,9 +2978,9 @@ mod tests {
     fn backlog_releases_slot_and_routing_but_remains_focusable() {
         let mut r = Registry::new(None);
         let now = t0();
-        r.set_state(Some("a"), State::Running, None, None, None, now);
-        r.set_state(Some("b"), State::Error, None, None, None, now);
-        r.set_state(Some("c"), State::Waiting, None, None, None, now);
+        register_authoritative(&mut r, "a", State::Running, 611, now);
+        register_authoritative(&mut r, "b", State::Error, 612, now);
+        register_authoritative(&mut r, "c", State::Waiting, 613, now);
         r.set_attention_order(vec!["b".into(), "c".into(), "a".into()])
             .unwrap();
 
@@ -2814,9 +3032,9 @@ mod tests {
     fn swap_slots_exchanges_two_sessions() {
         let mut r = Registry::new(None);
         let now = t0();
-        r.set_state(Some("a"), State::Running, None, None, None, now);
-        r.set_state(Some("b"), State::Running, None, None, None, now);
-        r.set_state(Some("c"), State::Running, None, None, None, now);
+        register_authoritative(&mut r, "a", State::Running, 621, now);
+        register_authoritative(&mut r, "b", State::Running, 622, now);
+        register_authoritative(&mut r, "c", State::Running, 623, now);
         let effects = r.swap_slots("a", "c").unwrap();
         assert_eq!(r.sessions.get("a").unwrap().slot, Some(3));
         assert_eq!(r.sessions.get("b").unwrap().slot, Some(2));
@@ -2841,9 +3059,9 @@ mod tests {
     fn move_slot_places_on_free_slot_and_keeps_the_gap() {
         let mut r = Registry::new(None);
         let now = t0();
-        r.set_state(Some("a"), State::Running, None, None, None, now);
-        r.set_state(Some("b"), State::Running, None, None, None, now);
-        r.set_state(Some("c"), State::Running, None, None, None, now);
+        register_authoritative(&mut r, "a", State::Running, 631, now);
+        register_authoritative(&mut r, "b", State::Running, 632, now);
+        register_authoritative(&mut r, "c", State::Running, 633, now);
         let effects = r.move_slot("a", 5).unwrap();
         assert_eq!(r.sessions.get("a").unwrap().slot, Some(5));
         // The gap is deliberate: b and c stay exactly where they were (no
@@ -2863,8 +3081,8 @@ mod tests {
     fn move_slot_rejects_occupied_unknown_backlogged_and_out_of_range() {
         let mut r = Registry::new(None);
         let now = t0();
-        r.set_state(Some("a"), State::Running, None, None, None, now);
-        r.set_state(Some("b"), State::Running, None, None, None, now);
+        register_authoritative(&mut r, "a", State::Running, 641, now);
+        register_authoritative(&mut r, "b", State::Running, 642, now);
         assert!(r.move_slot("a", 2).is_err()); // occupied — that's swap-slots
         assert!(r.move_slot("ghost", 4).is_err());
         assert!(r.move_slot("a", 0).is_err());
@@ -2879,8 +3097,8 @@ mod tests {
     fn explicit_end_compacts_slots_and_later_updates_keep_the_new_order() {
         let mut r = Registry::new(None);
         let now = t0();
-        r.set_state(Some("a"), State::Running, None, None, None, now);
-        r.set_state(Some("b"), State::Running, None, None, None, now);
+        register_authoritative(&mut r, "a", State::Running, 651, now);
+        register_authoritative(&mut r, "b", State::Running, 652, now);
         r.end_session("a"); // b moves from slot 2 to slot 1
                             // An update must preserve that compacted mapping.
         r.set_state(Some("b"), State::Waiting, None, None, None, now);
@@ -2892,7 +3110,7 @@ mod tests {
         let mut r = Registry::new(None);
         let now = t0();
         for i in 0..13 {
-            r.set_state(Some(&format!("s{i}")), State::Idle, None, None, None, now);
+            register_authoritative(&mut r, &format!("s{i}"), State::Idle, 700 + i, now);
         }
         let slotless: Vec<_> = r.list().into_iter().filter(|s| s.slot.is_none()).collect();
         assert_eq!(slotless.len(), 1);
@@ -2943,8 +3161,8 @@ mod tests {
         let ttl = Duration::from_secs(600); // 10 min
         let mut r = Registry::new(Some(ttl));
         let t = Instant::now();
-        r.set_state(Some("a"), State::Running, None, None, None, t);
-        r.set_state(Some("b"), State::Waiting, None, None, None, t);
+        register_authoritative(&mut r, "a", State::Running, 801, t);
+        register_authoritative(&mut r, "b", State::Waiting, 802, t);
         // Advance far beyond the old TTL. Staleness belongs to the UI, not
         // session lifecycle, so both sessions remain live.
         let t_late = t.checked_add(Duration::from_secs(10_000)).unwrap();
@@ -3016,7 +3234,7 @@ mod tests {
             label: None,
             name: None,
             meta: expected_meta,
-            slot: Some(1),
+            slot: None,
             state: State::Running,
         }));
         // State (and therefore aggregate) must be untouched by a meta-only update.
@@ -3056,7 +3274,7 @@ mod tests {
             label: Some("daemon".into()),
             name: Some("Backend".into()),
             meta: Map::new(),
-            slot: Some(1),
+            slot: None,
             state: State::Running,
         }));
         assert_eq!(r.list()[0].display_name(), "Backend");
@@ -3132,7 +3350,7 @@ mod tests {
         // Renaming is the user acting, not the session reporting activity.
         let t_expired = t_late.checked_add(Duration::from_secs(301)).unwrap();
         assert!(r.expire(t_expired).is_empty());
-        assert!(r.session_by_slot(1).is_some());
+        assert!(r.session_or_tombstone("a").is_some());
     }
 
     #[test]
@@ -3869,7 +4087,7 @@ mod tests {
             .list()
             .iter()
             .any(|s| s.id == "old" && s.state == State::Compacting));
-        assert!(r.list().iter().any(|s| s.id == "new" && s.slot == Some(2)));
+        assert!(r.list().iter().any(|s| s.id == "new" && s.slot.is_none()));
     }
 
     #[test]
@@ -3884,16 +4102,16 @@ mod tests {
             Some(meta("/repo", "/dev/ttys004")),
             t,
         );
-        r.set_state(Some("b"), State::Running, None, None, None, t);
+        register_authoritative(&mut r, "b", State::Running, 901, t);
 
         let past_grace = t
             .checked_add(COMPACT_GRACE + Duration::from_secs(1))
             .unwrap();
         let effects = r.expire_compacting(past_grace);
         assert!(effects.is_empty());
-        assert!(r.session_by_slot(1).is_some());
+        assert!(r.session_or_tombstone("a").is_some());
         assert!(
-            r.session_by_slot(2).is_some(),
+            r.session_by_slot(1).is_some(),
             "unrelated session b untouched"
         );
         assert_eq!(r.list().len(), 2);

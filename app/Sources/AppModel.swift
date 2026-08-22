@@ -642,6 +642,7 @@ final class AppModel: ObservableObject {
                let idx = sessions.firstIndex(where: { $0.id == id }) {
                 log("row disconnect id=\(boundedLogField(id)) slot=\(sessions[idx].slot.map(String.init) ?? "-") state=\(sessions[idx].state.rawValue)")
                 sessions[idx].connected = false
+                sessions[idx].slot = nil
                 if sessions[idx].health != .unknown { sessions[idx].health = .detached }
                 if focusedSessionID == id { focusedSessionID = nil }
                 sortSessions()
@@ -1095,8 +1096,8 @@ final class AppModel: ObservableObject {
     }
 
     /// Numbered slots not held by any live, active session — the destinations
-    /// Move to Slot offers. A disconnected row's last-held slot counts as
-    /// free: it reports that slot but no longer occupies it (PROTOCOL.md §3).
+    /// Move to Slot offers. Disconnected and unverified rows are slotless;
+    /// only authoritative live attachments occupy numbered keys.
     var freeSlots: [Int] {
         let used = Set(sessions.compactMap { $0.connected && !$0.backlogged ? $0.slot : nil })
         return (1...12).filter { !used.contains($0) }

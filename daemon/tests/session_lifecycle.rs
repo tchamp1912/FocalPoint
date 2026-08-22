@@ -264,7 +264,17 @@ fn subscription_snapshot_is_framed_and_includes_disconnected_sessions() {
     let live = events.iter().find(|event| event["session"] == "live").unwrap();
     let gone = events.iter().find(|event| event["session"] == "gone").unwrap();
     assert_eq!(live["connected"], true);
+    assert_eq!(
+        live["slot"],
+        serde_json::Value::Null,
+        "a restored unverified attachment must release its stale slot"
+    );
     assert_eq!(gone["connected"], false);
+    assert_eq!(
+        gone["slot"],
+        serde_json::Value::Null,
+        "a disconnected durable row must not advertise its old slot"
+    );
 }
 
 #[test]
