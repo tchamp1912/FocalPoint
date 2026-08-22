@@ -1,7 +1,7 @@
 [formation]
 name = "review-fanout"
-version = 1
-description = "Three-perspective review, one synthesizer"
+version = 2
+description = "Four independent review lanes and one synthesizer"
 
 [[role]]
 name = "synth"
@@ -16,6 +16,16 @@ prep = "worktree"
 [[role]]
 name = "perf"
 type = "perf-reviewer"
+prep = "worktree"
+
+[[role]]
+name = "correctness"
+type = "correctness-reviewer"
+prep = "worktree"
+
+[[role]]
+name = "tests"
+type = "test-verifier"
 prep = "worktree"
 
 [escalate]

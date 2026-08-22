@@ -1,0 +1,18 @@
+[type]
+name = "threat-modeler"
+version = 1
+description = "High-complexity threat-boundary analysis before specialized review"
+
+[provider]
+prefer = ["claude"]
+model = "claude-opus-5"
+requires = ["channels"]
+
+[persona]
+prompt = "persona.md"
+title = "Threat model"
+
+[advisory]
+scope = "Map assets, actors, trust boundaries, and abuse paths; do not modify source."
+output = "Prioritized threat hypotheses with evidence and explicit review targets."
+escalate_as = "blocker"

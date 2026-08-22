@@ -1,10 +1,11 @@
 [type]
 name = "synthesizer"
-version = 1
-description = "Combines independent reviews into one deduplicated report"
+version = 2
+description = "High-complexity synthesis of independent reviews into one deduplicated report"
 
 [provider]
-prefer = ["claude", "codex"]
+prefer = ["claude"]
+model = "claude-opus-5"
 requires = ["channels"]
 
 [persona]

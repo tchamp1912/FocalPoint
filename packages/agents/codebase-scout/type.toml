@@ -1,0 +1,18 @@
+[type]
+name = "codebase-scout"
+version = 1
+description = "Low-complexity bounded repository mapping and evidence collection"
+
+[provider]
+prefer = ["claude"]
+model = "claude-haiku-4-5"
+requires = ["channels"]
+
+[persona]
+prompt = "persona.md"
+title = "Codebase scout"
+
+[advisory]
+scope = "Inspect only the assigned area and report evidence without modifying source."
+output = "Relevant paths, symbols, dependencies, and concise uncertainty notes."
+escalate_as = "question"

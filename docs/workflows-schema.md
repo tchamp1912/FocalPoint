@@ -54,6 +54,12 @@ default. `requires` is an optional list of capabilities the launcher can check;
 `channels` excludes Cursor attachable mode because that mode is not a live
 FocalPoint channel member.
 
+Although schema version 1 permits an omitted model, every bundled example pins
+one provider and one provider-valid model ID. This keeps example launches from
+inheriting a last-used or changing provider default and makes their
+complexity-based selection auditable. See
+[the 2026-08-22 formation research notes](formation-research-2026-08-22.md).
+
 ### Advisory is prompt text, never enforcement
 
 The entire optional `[advisory]` table is prompt material prepended to the task.

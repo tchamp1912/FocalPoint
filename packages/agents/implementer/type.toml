@@ -1,10 +1,11 @@
 [type]
 name = "implementer"
-version = 1
-description = "Implements one bounded slice and verifies it"
+version = 2
+description = "Medium-complexity implementation of one bounded, independently testable slice"
 
 [provider]
-prefer = ["codex", "claude", "cursor"]
+prefer = ["claude"]
+model = "claude-sonnet-5"
 requires = ["channels"]
 
 [persona]

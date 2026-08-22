@@ -1,7 +1,7 @@
 [formation]
 name = "bounded-delivery"
-version = 1
-description = "Plan, confirm bounded implementation fan-out, then review"
+version = 2
+description = "Plan, confirm bounded implementation fan-out, then run fixed verification lanes"
 
 [[phase]]
 name = "plan"
@@ -28,7 +28,15 @@ after = "implement"
 gate = "auto"
 
 [[phase.role]]
-name = "reviewer"
+name = "correctness"
+type = "correctness-reviewer"
+
+[[phase.role]]
+name = "tests"
+type = "test-verifier"
+
+[[phase.role]]
+name = "security"
 type = "security-reviewer"
 
 [escalate]

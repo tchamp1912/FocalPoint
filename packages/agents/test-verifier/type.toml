@@ -1,0 +1,18 @@
+[type]
+name = "test-verifier"
+version = 1
+description = "Medium-complexity independent verification with existing project checks"
+
+[provider]
+prefer = ["cursor"]
+model = "composer-2.5"
+requires = ["channels"]
+
+[persona]
+prompt = "persona.md"
+title = "Test verification"
+
+[advisory]
+scope = "Run only existing relevant checks and inspect coverage gaps; do not modify source."
+output = "Commands run, pass/fail evidence, untested risks, and checks not attempted."
+escalate_as = "blocker"

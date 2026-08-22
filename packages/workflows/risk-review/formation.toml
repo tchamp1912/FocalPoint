@@ -1,0 +1,57 @@
+[formation]
+name = "risk-review"
+version = 1
+description = "Threat-model first, then fixed independent review lanes and synthesis"
+
+[[phase]]
+name = "threat-model"
+gate = "authorized"
+
+[[phase.role]]
+name = "threats"
+type = "threat-modeler"
+task = "Create the authorized change threat model and report review targets."
+
+[[phase]]
+name = "review"
+after = "threat-model"
+gate = "auto"
+
+[[phase.role]]
+name = "correctness"
+type = "correctness-reviewer"
+prep = "worktree"
+task = "Review the authorized change and the prepared threat-model handoff."
+
+[[phase.role]]
+name = "tests"
+type = "test-verifier"
+prep = "worktree"
+task = "Verify the authorized change and the prepared threat-model handoff."
+
+[[phase.role]]
+name = "security"
+type = "security-reviewer"
+prep = "worktree"
+task = "Review the authorized change and the prepared threat-model handoff."
+
+[[phase.role]]
+name = "performance"
+type = "perf-reviewer"
+prep = "worktree"
+task = "Review the authorized change and the prepared threat-model handoff."
+
+[[phase]]
+name = "synthesize"
+after = "review"
+gate = "auto"
+
+[[phase.role]]
+name = "synthesis"
+type = "synthesizer"
+task = "Synthesize the prepared reviewer handoff without hiding dissent or failed checks."
+
+[escalate]
+channel_kinds = ["blocker", "question"]
+states = ["error", "approval"]
+completion = "all-roles-done"

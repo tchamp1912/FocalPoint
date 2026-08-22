@@ -1,10 +1,11 @@
 [type]
 name = "perf-reviewer"
-version = 1
-description = "Performance reviewer focused on measurable regressions"
+version = 2
+description = "Medium-complexity performance review focused on measurable regressions"
 
 [provider]
-prefer = ["codex", "claude", "cursor"]
+prefer = ["codex"]
+model = "gpt-5.6-terra"
 requires = ["channels"]
 
 [persona]

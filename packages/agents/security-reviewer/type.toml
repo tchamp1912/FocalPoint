@@ -1,10 +1,10 @@
 [type]
 name = "security-reviewer"
-version = 1
-description = "Adversarial reviewer; findings only, no fixes"
+version = 2
+description = "High-complexity adversarial security review; findings only, no fixes"
 
 [provider]
-prefer = ["codex", "claude"]
+prefer = ["codex"]
 model = "gpt-5.6-sol"
 requires = ["channels"]
 

@@ -1,0 +1,18 @@
+[type]
+name = "correctness-reviewer"
+version = 1
+description = "Medium-complexity correctness and regression review of a bounded change"
+
+[provider]
+prefer = ["codex"]
+model = "gpt-5.6-terra"
+requires = ["channels"]
+
+[persona]
+prompt = "persona.md"
+title = "Correctness review"
+
+[advisory]
+scope = "Review behavior and regressions; report findings without modifying source."
+output = "Ranked, evidence-backed findings with file:line and a verification path."
+escalate_as = "blocker"
