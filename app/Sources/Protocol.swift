@@ -121,9 +121,8 @@ enum SessionHealth: String, Codable {
 
 // MARK: - Roadmap architecture seams
 
-/// Explicit identity for every new managed launch. `provider-default` is a
-/// model selection, not an omitted value, so receipts and diagnostics can
-/// distinguish an intentional default from an old/partial caller.
+/// Explicit identity for every new managed launch. Agent type and model are
+/// always concrete; the daemon rejects omitted/default/auto sentinels.
 struct ManagedLaunchSpec: Equatable {
     var agentType: String
     var provider: String

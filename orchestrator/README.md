@@ -77,8 +77,8 @@ dependencies, run setup commands, choose sandbox or approval settings,
 decompose tasks, retry failed launches, answer approvals, or read transcripts.
 Those decisions belong to the supervising orchestrator before `launch`.
 
-`--model` accepts a provider model id or alias and is optional; omitting it
-uses the provider's configured default.
+`--model` accepts a concrete provider model id or alias and is required. The
+launcher rejects omitted values and default/auto sentinels.
 
 Cursor adds a launch-mode choice. The default is `headless`, which invokes the
 installed Cursor stream wrapper and is therefore visible to FocalPoint with

@@ -465,11 +465,11 @@ orchestrator cannot name a manager. The launcher propagates these as
 session's own `meta.orchestrator_task_id`, so clients can render multiple
 independent orchestration groups without inferring them from labels.
 
-New managed callers send explicit `agent_type`, `provider`, `model`, `cwd`,
-and `task_id`. The literal model value `provider-default` intentionally selects
-the provider default. Older callers may omit the additive `agent_type`/`model`
-fields; the daemon records them as `general`/`provider-default` so receipts and
-session metadata remain typed. Optional workflow observation fields are
+Every managed launch must send concrete `agent_type`, `provider`, `model`,
+`cwd`, and `task_id` values. The daemon rejects omitted selections and the
+sentinels `auto`, `default`, `general`, and `provider-default`; callers must
+resolve task complexity, capability, risk, and provider headroom before the
+launch reaches the daemon. Optional workflow observation fields are
 `workflow_id`, `workflow_run_id`, `workflow_phase`, `workflow_gate`, and
 `workflow_fanout`. A `confirm` gate requires
 `transition_confirmation: "user-confirmed"`; fan-out with `auto` is always

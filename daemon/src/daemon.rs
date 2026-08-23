@@ -1064,6 +1064,41 @@ fn valid_roadmap_id(id: &str, max: usize) -> bool {
         && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
 }
 
+#[cfg(unix)]
+fn required_launch_selection<'a>(
+    agent_type: Option<&'a str>,
+    model: Option<&'a str>,
+) -> Result<(&'a str, &'a str), String> {
+    let agent_type = agent_type
+        .ok_or("agent_type is required; resolve a task-appropriate agent before launch")?;
+    if matches!(
+        agent_type.to_ascii_lowercase().as_str(),
+        "auto" | "default" | "general"
+    ) {
+        return Err("agent_type must be concrete; auto/default/general are not launchable".into());
+    }
+    if !valid_roadmap_id(agent_type, 128) {
+        return Err(
+            "agent_type must use 1-128 letters, digits, dots, underscores, or dashes".into(),
+        );
+    }
+
+    let model = model
+        .ok_or("model is required; resolve a task-appropriate provider model before launch")?;
+    if matches!(
+        model.to_ascii_lowercase().as_str(),
+        "auto" | "default" | "provider-default"
+    ) {
+        return Err(
+            "model must be concrete; auto/default/provider-default are not launchable".into(),
+        );
+    }
+    if !valid_orchestrator_model_id(model) {
+        return Err("model must be 1-128 letters, digits, dots, underscores, dashes, slashes, colons, or @ signs".into());
+    }
+    Ok((agent_type, model))
+}
+
 /// Validate optional workflow annotations without turning the daemon into a
 /// workflow engine. The orchestrator remains authoritative for sequencing;
 /// these fields make its already-authorized launches observable. Confirm
@@ -1348,7 +1383,7 @@ fn close_exact_terminal_endpoint(endpoint: &TerminalEndpoint) -> Result<(), Stri
 #[cfg(unix)]
 fn launch_orchestrated_session(
     provider: &str,
-    model: Option<&str>,
+    model: &str,
     agent_type: &str,
     cursor_mode: Option<&str>,
     cwd: &str,
@@ -1376,14 +1411,7 @@ fn launch_orchestrated_session(
     if !matches!(role, "orchestrator" | "worker") {
         return Err("role must be 'orchestrator' or 'worker'".into());
     }
-    if model.is_some_and(|id| !valid_orchestrator_model_id(id)) {
-        return Err("model must be 1-128 letters, digits, dots, underscores, dashes, slashes, colons, or @ signs".into());
-    }
-    if !valid_roadmap_id(agent_type, 128) {
-        return Err(
-            "agent_type must use 1-128 letters, digits, dots, underscores, or dashes".into(),
-        );
-    }
+    let (agent_type, model) = required_launch_selection(Some(agent_type), Some(model))?;
     if task.trim().is_empty() || task.len() > 16_384 || task.contains('\0') {
         return Err("task must contain 1-16384 UTF-8 bytes".into());
     }
@@ -1488,7 +1516,7 @@ fn launch_orchestrated_session(
         "provider": provider,
         "agent_type": agent_type,
         "cursor_mode": (provider == "cursor").then_some(cursor_mode),
-        "model": model.unwrap_or("provider-default"),
+        "model": model,
         "cwd": cwd,
         "terminal_bundle_id": terminal_bundle_id.clone(),
         "role": role,
@@ -1532,7 +1560,7 @@ fn launch_orchestrated_session(
     let provider_command = if provider == "cursor" {
         cursor_provider_command(
             &provider_bin,
-            model,
+            Some(model),
             &prompt,
             cursor_mode,
             (cursor_mode == "headless"
@@ -1541,7 +1569,7 @@ fn launch_orchestrated_session(
             .then_some(cursor_wrapper.as_path()),
         )?
     } else {
-        orchestrated_provider_command(&provider_bin, model, &prompt)
+        orchestrated_provider_command(&provider_bin, Some(model), &prompt)
     };
     let manager_export = manager_task_id
         .map(|id| format!("export FOCALPOINT_MANAGER_TASK_ID={}\n", shell_quote(id)))
@@ -1646,7 +1674,7 @@ fn launch_orchestrated_session(
         "slot": slot,
         "provider": provider,
         "agent_type": agent_type,
-        "model": model.unwrap_or("provider-default"),
+        "model": model,
         "cursor_mode": (provider == "cursor").then_some(cursor_mode),
         "cwd": cwd,
         "role": role,
@@ -4747,11 +4775,11 @@ fn dispatch(
             workflow_fanout,
             transition_confirmation,
         } => {
-            // Additive defaults keep older launch clients working while every
-            // new receipt/session exposes an explicit selection.
-            let agent_type = agent_type.as_deref().unwrap_or("general");
-            let selected_model = model.as_deref().unwrap_or("provider-default");
-            let provider_model = (selected_model != "provider-default").then_some(selected_model);
+            let (agent_type, selected_model) =
+                match required_launch_selection(agent_type.as_deref(), model.as_deref()) {
+                    Ok(selection) => selection,
+                    Err(message) => return err(&message),
+                };
             if let Err(message) = validate_workflow_launch_metadata(
                 workflow_id.as_deref(),
                 workflow_run_id.as_deref(),
@@ -4852,7 +4880,7 @@ fn dispatch(
             );
             match launch_orchestrated_session(
                 &provider,
-                provider_model,
+                selected_model,
                 agent_type,
                 cursor_mode.as_deref(),
                 &cwd,
@@ -5964,12 +5992,22 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn legacy_and_explicit_launch_requests_both_decode() {
+    fn launch_selection_is_required_and_never_defaults() {
         let legacy = serde_json::from_value::<Request>(json!({
             "cmd":"launch-session", "provider":"codex", "cwd":"/tmp",
             "task":"Inspect it", "task_id":"inspect-1"
         }));
-        assert!(legacy.is_ok(), "additive launch fields must stay optional");
+        assert!(
+            legacy.is_ok(),
+            "omissions decode so the daemon can return an actionable error"
+        );
+        assert!(required_launch_selection(None, None).is_err());
+        assert!(required_launch_selection(Some("general"), Some("gpt-5.6-terra")).is_err());
+        assert!(required_launch_selection(Some("reviewer"), Some("provider-default")).is_err());
+        assert_eq!(
+            required_launch_selection(Some("correctness-reviewer"), Some("gpt-5.6-terra")),
+            Ok(("correctness-reviewer", "gpt-5.6-terra"))
+        );
 
         let explicit = serde_json::from_value::<Request>(json!({
             "cmd":"launch-session", "agent_type":"reviewer", "provider":"codex",

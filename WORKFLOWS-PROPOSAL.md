@@ -149,7 +149,7 @@ description = "Adversarial reviewer; findings only, no fixes"
 
 [provider]
 prefer   = ["codex", "claude"]   # preference order, resolved by the orchestrator
-model    = "gpt-5.6-sol"         # optional; omit for the provider default
+model    = "gpt-5.6-sol"         # required; never inherited from provider/UI state
 requires = ["channels"]          # checkable; excludes cursor --cursor-mode attachable
 
 [persona]

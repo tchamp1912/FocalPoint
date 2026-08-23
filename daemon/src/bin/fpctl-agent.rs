@@ -49,11 +49,11 @@ enum AgentCommand {
     Launch {
         #[arg(long)]
         provider: Provider,
-        /// Reusable agent type identity. Defaults explicitly to `general`.
-        #[arg(long, default_value = "general")]
+        /// Concrete reusable agent type selected for this task.
+        #[arg(long)]
         agent_type: String,
-        /// Provider model id or alias. `provider-default` selects the provider default.
-        #[arg(long, default_value = "provider-default")]
+        /// Concrete provider model id or alias selected for this task.
+        #[arg(long)]
         model: String,
         #[arg(long)]
         cwd: PathBuf,
@@ -544,6 +544,8 @@ mod tests {
             "claude",
             "--model",
             "sonnet",
+            "--agent-type",
+            "planner",
             "--cwd",
             "/tmp",
             "--task",
@@ -572,12 +574,41 @@ mod tests {
     }
 
     #[test]
-    fn launch_defaults_are_explicit_and_workflow_fields_parse() {
+    fn launch_requires_explicit_agent_type_and_model() {
+        let base = [
+            "fpctl-agent",
+            "launch",
+            "--provider",
+            "codex",
+            "--cwd",
+            "/tmp",
+            "--task",
+            "Review it.",
+            "--task-id",
+            "review-1",
+        ];
+        assert!(Cli::try_parse_from(base).is_err());
+
+        let mut missing_agent_type = base.to_vec();
+        missing_agent_type.extend(["--model", "gpt-5.6-terra"]);
+        assert!(Cli::try_parse_from(missing_agent_type).is_err());
+
+        let mut missing_model = base.to_vec();
+        missing_model.extend(["--agent-type", "correctness-reviewer"]);
+        assert!(Cli::try_parse_from(missing_model).is_err());
+    }
+
+    #[test]
+    fn launch_workflow_fields_parse_with_explicit_selection() {
         let parsed = Cli::try_parse_from([
             "fpctl-agent",
             "launch",
             "--provider",
             "codex",
+            "--agent-type",
+            "correctness-reviewer",
+            "--model",
+            "gpt-5.6-terra",
             "--cwd",
             "/tmp",
             "--task",
@@ -603,8 +634,8 @@ mod tests {
                 workflow_gate,
                 ..
             } => {
-                assert_eq!(agent_type, "general");
-                assert_eq!(model, "provider-default");
+                assert_eq!(agent_type, "correctness-reviewer");
+                assert_eq!(model, "gpt-5.6-terra");
                 assert_eq!(workflow_gate.as_deref(), Some("confirm"));
             }
             _ => panic!("expected launch"),
@@ -620,6 +651,10 @@ mod tests {
             "cursor",
             "--cursor-mode",
             "attachable",
+            "--agent-type",
+            "test-verifier",
+            "--model",
+            "composer-2.5",
             "--cwd",
             "/tmp",
             "--task",
@@ -666,6 +701,10 @@ mod tests {
             "launch",
             "--provider",
             "codex",
+            "--agent-type",
+            "implementer",
+            "--model",
+            "gpt-5.6-terra",
             "--cwd",
             "/tmp",
             "--task",
