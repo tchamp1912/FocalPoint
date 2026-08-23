@@ -37,7 +37,10 @@ enum WorkflowCatalogCoreTests {
         // A second install is a collision, and the installed file remains untouched.
         guard case .failure(let collision) = plan.install() else { fatalError("collision must fail") }
         precondition(collision.contains("Won't overwrite"))
-        let installed = try String(contentsOf: config.appendingPathComponent("agents/scout/type.toml"))
+        let installed = try String(
+            contentsOf: config.appendingPathComponent("agents/scout/type.toml"),
+            encoding: .utf8
+        )
         precondition(installed == "scout")
 
         guard case .success(let repeatPlan) = BundledCatalogInstallPlan.formation(
