@@ -366,9 +366,12 @@ won't be offered for recovery). `quit-session`
 it asks the agent process itself to exit (SIGINT, a second SIGINT after a
 short grace, then SIGTERM — never SIGKILL) so the tool runs its own teardown
 and its `SessionEnd` hook fires (which itself calls `end-session`); the daemon
-also removes the session as an idempotent safety net once the process is gone.
-For a session with no resolved `pid` (Cursor, or one whose identity never
-resolved) `quit-session` degrades to a plain `end-session`.
+then closes the captured exact terminal session/tab and removes the session as
+an idempotent safety net once the process is gone. Terminal cleanup never uses
+cwd/title or generic application activation. For a session with no resolved
+`pid`, `quit-session` still closes a captured exact terminal endpoint; Cursor
+or an unverified session with neither pid nor terminal identity degrades to a
+plain `end-session`.
 
 `relaunch-managed-session`
 (`{"cmd":"relaunch-managed-session","session":"id"}`) is the explicit

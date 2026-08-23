@@ -91,6 +91,17 @@ focus_log() {
     "${TARGET_MUX_SESSION:-}" "${TARGET_MUX_PANE:-}" >&2
 }
 
+# The helper's normal stderr is intentionally quiet. Opt-in timing output is
+# already bounded to durations/counts, so let it reach the daemon log when a
+# latency trace is explicitly requested.
+run_iterm_helper() {
+  if [ "${FOCALPOINT_FOCUS_TIMING:-}" = "1" ]; then
+    "$@" >/dev/null
+  else
+    "$@" >/dev/null 2>&1
+  fi
+}
+
 # Ttys claimed by registered sessions, for the fuzzy fallback's skip list
 # (strategy 2 above). Only queried when this session itself has no tty —
 # the exact-tty strategies never need it. Extraction is grep/sed, not jq,
@@ -131,10 +142,10 @@ run_osa() {
   osascript -e "$script" >"$tmp" 2>/dev/null &
   local pid=$!
 
-  # Poll in 0.1s ticks (not whole seconds) so the common case — osascript
-  # returning almost instantly — doesn't pay up to a full extra second of
-  # latency on a key press. TIMEOUT_SECS is still the hard ceiling.
-  local max_ticks=$((TIMEOUT_SECS * 10))
+  # Poll in 10 ms ticks. The previous 100 ms interval added up to 100 ms
+  # after every successful AppleScript call; 10 ms keeps that bounded without
+  # changing the existing timeout/kill behavior.
+  local max_ticks=$((TIMEOUT_SECS * 100))
   local ticks=0
   while kill -0 "$pid" 2>/dev/null; do
     if [ "$ticks" -ge "$max_ticks" ]; then
@@ -143,7 +154,7 @@ run_osa() {
       rm -f "$tmp"
       return 124
     fi
-    sleep 0.1
+    sleep 0.01
     ticks=$((ticks + 1))
   done
 
@@ -176,10 +187,10 @@ raise_terminal_by_tty() {
   if [ -x "$ITERM_FOCUS_HELPER" ]; then
     local helper_args=(--focus --tty "$tty")
     if [ -n "$TARGET_TERMINAL_PID" ]; then
-      "$ITERM_FOCUS_HELPER" "${helper_args[@]}" \
-        --application-pid "$TARGET_TERMINAL_PID" >/dev/null 2>&1 && return 0
+      run_iterm_helper "$ITERM_FOCUS_HELPER" "${helper_args[@]}" \
+        --application-pid "$TARGET_TERMINAL_PID" && return 0
     fi
-    "$ITERM_FOCUS_HELPER" "${helper_args[@]}" >/dev/null 2>&1 && return 0
+    run_iterm_helper "$ITERM_FOCUS_HELPER" "${helper_args[@]}" && return 0
   fi
 
   if app_running "iTerm2"; then
@@ -409,10 +420,10 @@ try_iterm_exact_helper() {
     return 1
   fi
   if [ -n "$TARGET_TERMINAL_PID" ]; then
-    "$ITERM_FOCUS_HELPER" "${helper_args[@]}" \
-      --application-pid "$TARGET_TERMINAL_PID" >/dev/null 2>&1 && return 0
+    run_iterm_helper "$ITERM_FOCUS_HELPER" "${helper_args[@]}" \
+      --application-pid "$TARGET_TERMINAL_PID" && return 0
   fi
-  "$ITERM_FOCUS_HELPER" "${helper_args[@]}" >/dev/null 2>&1
+  run_iterm_helper "$ITERM_FOCUS_HELPER" "${helper_args[@]}"
 }
 
 try_terminal_tty() {

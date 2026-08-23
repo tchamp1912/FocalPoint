@@ -1351,11 +1351,39 @@ fn open_terminal_launcher(bundle_id: &str, launcher: &Path) -> Result<(), String
 
 #[cfg(unix)]
 fn close_exact_terminal_endpoint(endpoint: &TerminalEndpoint) -> Result<(), String> {
+    let helper = std::env::var_os("FOCALPOINT_ITERM_FOCUS_HELPER")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            dirs::home_dir()
+                .map(|home| home.join(".config/focalpoint/adapters/focalpoint-iterm-focus"))
+        });
+    close_exact_terminal_endpoint_with_helper(endpoint, helper.as_deref())
+}
+
+#[cfg(unix)]
+fn close_exact_terminal_endpoint_with_helper(
+    endpoint: &TerminalEndpoint,
+    helper: Option<&Path>,
+) -> Result<(), String> {
     let (bundle, session_id, host_tty) = (
         endpoint.bundle_id.as_deref(),
         endpoint.session_id.as_deref(),
         endpoint.host_tty.as_deref(),
     );
+    if let (Some("com.googlecode.iterm2"), Some(session_id)) = (bundle, session_id) {
+        if let Some(helper) = helper.filter(|path| path.is_file()) {
+            let mut command = Command::new(helper);
+            command.args(["--close", "--session-id", session_id]);
+            if let Some(pid) = endpoint.application_pid {
+                command.args(["--application-pid", &pid.to_string()]);
+            }
+            let status = command.status().map_err(|error| error.to_string())?;
+            if status.success() {
+                return Ok(());
+            }
+        }
+    }
     let script = match (bundle, session_id, host_tty) {
         (Some("com.googlecode.iterm2"), Some(session_id), _) => format!(
             "tell application id \"com.googlecode.iterm2\" to repeat with w in windows\nrepeat with t in tabs of w\nrepeat with s in sessions of t\nif unique ID of s is \"{}\" then close s\nend repeat\nend repeat\nend repeat",
@@ -4270,12 +4298,16 @@ fn dispatch(
             // running. When we can signal, the removal rides the agent's real
             // SessionEnd hook; the thread's own end_session is the idempotent
             // safety net after the process is gone (or the grace elapses).
-            let pid = shared
-                .lock()
-                .unwrap()
-                .registry
-                .session_or_tombstone(&id)
-                .and_then(|s| s.pid());
+            let target = shared.lock().unwrap().registry.session_or_tombstone(&id);
+            let pid = target.as_ref().and_then(Session::pid);
+            let terminal = target
+                .as_ref()
+                .and_then(|session| match session.attachment.as_ref() {
+                    Some(
+                        Attachment::Process { terminal, .. } | Attachment::Managed { terminal, .. },
+                    ) => Some(terminal.clone()),
+                    _ => None,
+                });
             match pid {
                 Some(pid) => {
                     let ctx = ctx.clone();
@@ -4283,17 +4315,53 @@ fn dispatch(
                     let id = id.clone();
                     std::thread::spawn(move || {
                         quit_agent_process(pid);
+                        if let Some(endpoint) = terminal {
+                            match close_exact_terminal_endpoint(&endpoint) {
+                                Ok(()) => eprintln!(
+                                    "[session] quit-terminal id={} result=closed",
+                                    diagnostic_text(&id)
+                                ),
+                                Err(reason) => eprintln!(
+                                    "[session] quit-terminal id={} result=left-open reason={}",
+                                    diagnostic_text(&id),
+                                    diagnostic_text(&reason)
+                                ),
+                            }
+                        }
                         let _transition = ctx.transition.lock().unwrap();
                         let effects = ctx.shared.lock().unwrap().registry.end_session(&id);
                         apply_effects(effects, &ctx, &host_tx);
                     });
                 }
                 None => {
-                    // Nothing to signal (no resolved pid) — just remove it,
-                    // same as end-session.
-                    let _transition = ctx.transition.lock().unwrap();
-                    let effects = shared.lock().unwrap().registry.end_session(&id);
-                    apply_effects(effects, ctx, host_tx);
+                    // A disconnected session can lose its provider pid while
+                    // retaining an exact terminal endpoint. Close that endpoint
+                    // before removing the durable row.
+                    if let Some(endpoint) = terminal {
+                        let ctx = ctx.clone();
+                        let host_tx = host_tx.clone();
+                        let id = id.clone();
+                        std::thread::spawn(move || {
+                            match close_exact_terminal_endpoint(&endpoint) {
+                                Ok(()) => eprintln!(
+                                    "[session] quit-terminal id={} result=closed",
+                                    diagnostic_text(&id)
+                                ),
+                                Err(reason) => eprintln!(
+                                    "[session] quit-terminal id={} result=left-open reason={}",
+                                    diagnostic_text(&id),
+                                    diagnostic_text(&reason)
+                                ),
+                            }
+                            let _transition = ctx.transition.lock().unwrap();
+                            let effects = ctx.shared.lock().unwrap().registry.end_session(&id);
+                            apply_effects(effects, &ctx, &host_tx);
+                        });
+                    } else {
+                        let _transition = ctx.transition.lock().unwrap();
+                        let effects = shared.lock().unwrap().registry.end_session(&id);
+                        apply_effects(effects, ctx, host_tx);
+                    }
                 }
             }
             ok()
@@ -5560,6 +5628,41 @@ mod tests {
         assert!(quit_agent_process(pid));
         let _ = child.wait();
         assert!(!process_is_alive(pid));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn terminal_cleanup_passes_exact_iterm_session_and_application_pid() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!(
+            "focalpoint-close-test-{}-{}",
+            std::process::id(),
+            SNAPSHOT_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        let calls = dir.join("calls");
+        let helper = dir.join("helper");
+        std::fs::write(
+            &helper,
+            format!("#!/bin/sh\nprintf '%s\\n' \"$*\" > '{}'\n", calls.display()),
+        )
+        .unwrap();
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let endpoint = TerminalEndpoint {
+            bundle_id: Some("com.googlecode.iterm2".into()),
+            application_pid: Some(26748),
+            window_id: None,
+            session_id: Some("exact-session-id".into()),
+            host_tty: Some("/dev/ttys002".into()),
+        };
+
+        close_exact_terminal_endpoint_with_helper(&endpoint, Some(&helper)).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&calls).unwrap().trim(),
+            "--close --session-id exact-session-id --application-pid 26748"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

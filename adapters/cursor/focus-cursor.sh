@@ -58,9 +58,10 @@ run_guarded() {
   "$@" >/dev/null 2>&1 &
   local pid=$!
 
-  # Poll in 0.1s ticks so the common case — returning almost instantly —
-  # doesn't pay up to a full extra second of latency on a key press.
-  local max_ticks=$((TIMEOUT_SECS * 10))
+  # Poll in 10 ms ticks. The previous 100 ms interval added up to 100 ms
+  # after every successful CLI or AppleScript call; 10 ms keeps that bounded
+  # without changing the existing timeout/kill behavior.
+  local max_ticks=$((TIMEOUT_SECS * 100))
   local ticks=0
   while kill -0 "$pid" 2>/dev/null; do
     if [ "$ticks" -ge "$max_ticks" ]; then
@@ -68,7 +69,7 @@ run_guarded() {
       wait "$pid" 2>/dev/null
       return 124
     fi
-    sleep 0.1
+    sleep 0.01
     ticks=$((ticks + 1))
   done
 

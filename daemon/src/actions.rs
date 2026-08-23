@@ -29,7 +29,8 @@ pub fn run_with_env(action: &Action, env: &[(&str, String)]) {
 /// completion so the daemon can emit `focus-result`; ordinary actions remain
 /// detached through `run_with_env`.
 pub fn run_with_env_status(action: &Action, env: &[(&str, String)]) -> Result<(), String> {
-    match action {
+    let started = std::time::Instant::now();
+    let outcome = match action {
         Action::None => Err("no focus action is configured".into()),
         Action::Shell { run } => {
             let mut command = std::process::Command::new("sh");
@@ -51,7 +52,13 @@ pub fn run_with_env_status(action: &Action, env: &[(&str, String)]) -> Result<()
             run_paste(text);
             Ok(())
         }
-    }
+    };
+    eprintln!(
+        "[focus-timing] hop=action result={} elapsed_ms={:.3}",
+        if outcome.is_ok() { "ok" } else { "error" },
+        started.elapsed().as_secs_f64() * 1000.0,
+    );
+    outcome
 }
 
 fn run_shell(cmd: &str, env: &[(&str, String)]) {
