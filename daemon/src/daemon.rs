@@ -675,6 +675,58 @@ fn managed_launch_provider_kind(kind: Option<&str>) -> Option<&str> {
 }
 
 #[cfg(unix)]
+const CURSOR_LAUNCH_REGISTRATION_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// A terminal-open acknowledgement only means LaunchServices accepted a
+/// wrapper.  Cursor must also prove that its real chat (headless) or its
+/// launch-scoped pane (attachable) registered against this exact receipt.
+/// Keep the wait bounded: a broken CLI must not leave callers believing an
+/// invisible agent was launched, or hold their socket forever.
+#[cfg(unix)]
+fn await_cursor_launch_registration(receipt: &Path, timeout: Duration) -> Result<(), String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let status = std::fs::read(receipt)
+            .ok()
+            .and_then(|data| serde_json::from_slice::<Value>(&data).ok())
+            .and_then(|value| {
+                value
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            });
+        match status.as_deref() {
+            Some("registered") => return Ok(()),
+            Some("failed") => return Err("Cursor launch registration failed".into()),
+            _ if Instant::now() >= deadline => {
+                return Err("Cursor did not register within 15 seconds; its CLI or managed wrapper may have exited before starting. Check the managed terminal, then retry with a new task id.".into())
+            }
+            _ => std::thread::sleep(Duration::from_millis(50)),
+        }
+    }
+}
+
+#[cfg(unix)]
+fn update_launch_receipt_status(receipt: &Path, status: &str, error: Option<&str>) {
+    let Ok(data) = std::fs::read(receipt) else {
+        return;
+    };
+    let Ok(mut value) = serde_json::from_slice::<Value>(&data) else {
+        return;
+    };
+    value["status"] = status.into();
+    if let Some(error) = error {
+        value["error"] = error.into();
+    }
+    let temporary = receipt.with_extension(format!("json.{}.tmp", std::process::id()));
+    if let Ok(data) = serde_json::to_vec_pretty(&value) {
+        if std::fs::write(&temporary, data).is_ok() {
+            let _ = std::fs::rename(temporary, receipt);
+        }
+    }
+}
+
+#[cfg(unix)]
 fn correlate_pending_managed_launch(
     registry: &Registry,
     kind: Option<&str>,
@@ -737,12 +789,20 @@ fn correlate_pending_managed_launch(
             else {
                 continue;
             };
-            let active_status = receipt
-                .get("status")
-                .and_then(Value::as_str)
-                .map_or(true, |status| {
-                    matches!(status, "opening" | "launched" | "launching" | "registered")
-                });
+            let active_status =
+                receipt
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .map_or(true, |status| {
+                        matches!(
+                            status,
+                            "opening"
+                                | "awaiting-registration"
+                                | "launched"
+                                | "launching"
+                                | "registered"
+                        )
+                    });
             if active_status
                 && receipt.get("task_id").and_then(Value::as_str) == Some(task_id)
                 && receipt.get("provider").and_then(Value::as_str) == receipt_provider
@@ -1520,6 +1580,13 @@ fn launch_orchestrated_session(
             &std::fs::read(&receipt).map_err(|e| format!("cannot read launch receipt: {e}"))?,
         )
         .map_err(|e| format!("invalid launch receipt: {e}"))?;
+        if existing.get("status").and_then(Value::as_str) == Some("failed") {
+            return Err(existing
+                .get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("managed launch previously failed before registration; retry with a new task id")
+                .to_string());
+        }
         existing["ok"] = Value::Bool(true);
         return Ok(existing);
     }
@@ -1687,7 +1754,10 @@ fn launch_orchestrated_session(
         let _ = std::fs::remove_file(&receipt);
         return Err(error);
     }
-    receipt_value["status"] = Value::String("launched".into());
+    // Opening a terminal is transport progress, not launch success.  The
+    // dispatch path waits for Cursor's receipt-bound registration before it
+    // ever returns `status: launched` to the caller.
+    receipt_value["status"] = Value::String("awaiting-registration".into());
     let receipt_update = receipt.with_extension(format!("json.{}.tmp", std::process::id()));
     if let Ok(data) = serde_json::to_vec_pretty(&receipt_value) {
         if std::fs::write(&receipt_update, data).is_ok() {
@@ -1714,7 +1784,7 @@ fn launch_orchestrated_session(
         "workflow_gate": workflow_gate,
         "workflow_fanout": workflow_fanout,
         "terminal_bundle_id": terminal_bundle_id,
-        "status": "launched",
+        "status": "awaiting-registration",
     }))
 }
 
@@ -4899,6 +4969,12 @@ fn dispatch(
                         .ok()
                         .and_then(|data| serde_json::from_slice::<Value>(&data).ok());
                         if let Some(mut receipt) = existing {
+                            if receipt.get("status").and_then(Value::as_str) == Some("failed") {
+                                return err(receipt
+                                    .get("error")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or("managed launch previously failed before registration; retry with a new task id"));
+                            }
                             // Replaying the stored receipt is what makes
                             // re-running a partially expanded formation safe.
                             // It is only safe when the repeat is the *same*
@@ -4965,11 +5041,37 @@ fn dispatch(
                 workflow_gate.as_deref(),
                 workflow_fanout.unwrap_or(false),
             ) {
-                Ok(response) => {
+                Ok(mut response) => {
+                    if provider == "cursor" {
+                        let receipt = crate::paths::daemon_state_dir()
+                            .join("launches")
+                            .join(format!("{task_id}.json"));
+                        if let Err(message) = await_cursor_launch_registration(
+                            &receipt,
+                            CURSOR_LAUNCH_REGISTRATION_TIMEOUT,
+                        ) {
+                            update_launch_receipt_status(&receipt, "failed", Some(&message));
+                            let _transition = ctx.transition.lock().unwrap();
+                            shared
+                                .lock()
+                                .unwrap()
+                                .registry
+                                .cancel_managed_launch(&task_id);
+                            eprintln!(
+                                "[managed-launch] registration-failed task_id={} provider=cursor error={}",
+                                diagnostic_text(&task_id),
+                                diagnostic_text(&message),
+                            );
+                            return err(&message);
+                        }
+                        response["status"] = "launched".into();
+                    }
                     eprintln!(
-                        "[managed-launch] terminal-open accepted task_id={} title={} slot={} provider={}",
-                        diagnostic_text(&task_id), diagnostic_text(&title),
-                        slot.map(|value| value.to_string()).unwrap_or_else(|| "overflow".into()),
+                        "[managed-launch] confirmed task_id={} title={} slot={} provider={}",
+                        diagnostic_text(&task_id),
+                        diagnostic_text(&title),
+                        slot.map(|value| value.to_string())
+                            .unwrap_or_else(|| "overflow".into()),
                         diagnostic_text(&provider),
                     );
                     Dispatch::Reply(Response::Json(response))
@@ -5559,6 +5661,22 @@ mod tests {
         );
         assert_eq!(managed_launch_provider_kind(Some("cursor")), Some("cursor"));
         assert_eq!(managed_launch_provider_kind(Some("codex")), Some("codex"));
+    }
+
+    #[test]
+    fn cursor_launch_receipt_requires_registration_before_success() {
+        let receipt = std::env::temp_dir().join(format!(
+            "focalpoint-cursor-launch-receipt-{}-{}.json",
+            std::process::id(),
+            unix_ms_now()
+        ));
+        std::fs::write(&receipt, r#"{"status":"awaiting-registration"}"#).unwrap();
+        let error = await_cursor_launch_registration(&receipt, Duration::ZERO).unwrap_err();
+        assert!(error.contains("did not register"));
+
+        update_launch_receipt_status(&receipt, "registered", None);
+        assert!(await_cursor_launch_registration(&receipt, Duration::ZERO).is_ok());
+        let _ = std::fs::remove_file(receipt);
     }
 
     #[test]

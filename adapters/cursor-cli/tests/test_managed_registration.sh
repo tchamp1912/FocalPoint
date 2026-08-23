@@ -15,6 +15,7 @@ printf '%s\n' '#!/bin/bash' \
   '  *"#{pane_id}"*) printf "%%7\\n" ;;' \
   '  *"#{session_name}"*) printf "fp-cursor-77\\n" ;;' \
   '  *"#{pane_pid}"*) printf "7777\\n" ;;' \
+  '  *"#{pane_tty}"*) printf "/dev/ttys077\\n" ;;' \
   'esac' > "$TMP_ROOT/bin/tmux"
 printf '%s\n' '#!/bin/bash' \
   'printf "%s\\n" '\''{"type":"system","subtype":"init","cwd":"/tmp/work","session_id":"cursor-real-id","model":"composer"}'\''' \
@@ -33,8 +34,26 @@ TMUX='/tmp/tmux-501/fp-cursor-self-42,123,0' \
 
 grep -F -- 'set-state thinking --session cursor-real-id --kind cursor-cli' "$CAPTURE" >/dev/null
 grep -F -- '--meta pid=7777' "$CAPTURE" >/dev/null
+grep -F -- '--meta tty=/dev/ttys077' "$CAPTURE" >/dev/null
+grep -F -- '--meta attachment_registration=true' "$CAPTURE" >/dev/null
 grep -F -- '--meta mux_server=fp-cursor-self-42' "$CAPTURE" >/dev/null
 grep -F -- '--meta orchestrator_task_id=cursor-self' "$CAPTURE" >/dev/null
 grep -F -- 'end-session cursor-real-id' "$CAPTURE" >/dev/null
+
+printf '%s\n' '#!/bin/bash' 'exit 42' > "$TMP_ROOT/bin/cursor-agent-fails"
+chmod 700 "$TMP_ROOT/bin/cursor-agent-fails"
+: > "$CAPTURE"
+if PATH="$TMP_ROOT/bin:$PATH" \
+  FOCALPOINT_PATH="$TMP_ROOT/bin/focalpoint" \
+  CURSOR_AGENT="$TMP_ROOT/bin/cursor-agent-fails" \
+  FOCALPOINT_MANAGED=1 \
+  FOCALPOINT_TMUX_SERVER=fp-cursor-self-42 \
+  FOCALPOINT_ORCHESTRATOR_TASK_ID=cursor-self \
+  TMUX='/tmp/tmux-501/fp-cursor-self-42,123,0' \
+  bash "$ROOT/adapters/cursor-cli/wrap.sh" 'Test task' >/dev/null 2>/dev/null; then
+  echo "wrapper unexpectedly succeeded after Cursor CLI exited early" >&2
+  exit 1
+fi
+[ ! -s "$CAPTURE" ]
 
 echo "Cursor managed registration test passed"
