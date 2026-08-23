@@ -14,6 +14,8 @@ import AppKit
 struct WorkflowEditorView: View {
     @ObservedObject var store: WorkflowEditorModel
     @State private var confirmingDelete = false
+    @State private var bundledInstall: BundledInstallRequest?
+    @State private var catalogError: String?
 
     var body: some View {
         NavigationSplitView {
@@ -33,6 +35,28 @@ struct WorkflowEditorView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("The package directory is moved to the Trash and can be restored from there.")
+        }
+        .alert(item: $bundledInstall) { request in
+            Alert(
+                title: Text("Install bundled package?"),
+                message: Text(request.confirmationText),
+                primaryButton: .default(Text("Install")) {
+                    let error: String?
+                    switch request {
+                    case .formation(let formation): error = store.installBundledFormation(formation)
+                    case .agentType(let type): error = store.installBundledAgentType(type)
+                    }
+                    catalogError = error
+                },
+                secondaryButton: .cancel()
+            )
+        }
+        .alert("Couldn't install bundled package", isPresented: Binding(
+            get: { catalogError != nil }, set: { if !$0 { catalogError = nil } }
+        )) {
+            Button("OK", role: .cancel) { catalogError = nil }
+        } message: {
+            Text(catalogError ?? "")
         }
     }
 
@@ -66,6 +90,20 @@ struct WorkflowEditorView: View {
                     sidebarRow(title: package.id, detail: "Malformed", symbol: "exclamationmark.triangle",
                                dirty: false, tint: .orange)
                         .tag(EditorSelection.broken(.agentType, package.id))
+                }
+            }
+            Section("Bundled Workflows") {
+                ForEach(store.bundledFormations) { formation in
+                    sidebarRow(title: formation.name, detail: formationDetail(formation),
+                               symbol: "shippingbox", dirty: false, tint: .accentColor)
+                        .tag(EditorSelection.bundledFormation(formation.id))
+                }
+            }
+            Section("Bundled Agent Types") {
+                ForEach(store.bundledAgentTypes) { type in
+                    sidebarRow(title: type.name, detail: type.prefer.joined(separator: " › "),
+                               symbol: "shippingbox", dirty: false, tint: .accentColor)
+                        .tag(EditorSelection.bundledAgentType(type.id))
                 }
             }
         }
@@ -150,6 +188,18 @@ struct WorkflowEditorView: View {
             } else {
                 placeholder("Select a workflow or agent type")
             }
+        case .bundledFormation(let id):
+            if let formation = store.bundledFormations.first(where: { $0.id == id }) {
+                BundledFormationView(formation: formation) { bundledInstall = .formation(formation) }
+            } else {
+                placeholder("Select a workflow or agent type")
+            }
+        case .bundledAgentType(let id):
+            if let type = store.bundledAgentTypes.first(where: { $0.id == id }) {
+                BundledAgentTypeView(type: type) { bundledInstall = .agentType(type) }
+            } else {
+                placeholder("Select a workflow or agent type")
+            }
         case .broken(_, let id):
             if let package = store.broken.first(where: { $0.id == id }) {
                 BrokenPackageView(package: package, store: store)
@@ -174,6 +224,74 @@ struct WorkflowEditorView: View {
                 .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private enum BundledInstallRequest: Identifiable {
+    case formation(EditableFormation)
+    case agentType(EditableAgentType)
+
+    var id: String {
+        switch self {
+        case .formation(let formation): return "formation-\(formation.id)"
+        case .agentType(let type): return "agent-\(type.id)"
+        }
+    }
+
+    var confirmationText: String {
+        switch self {
+        case .formation(let formation):
+            let types = formation.referencedAgentTypes.joined(separator: ", ")
+            return "This copies workflow '\(formation.name)' and its referenced agent types (\(types)) into your FocalPoint configuration. Existing package directories are never overwritten; installation stops if any collide."
+        case .agentType(let type):
+            return "This copies agent type '\(type.name)' into your FocalPoint configuration. Existing package directories are never overwritten."
+        }
+    }
+}
+
+private struct BundledFormationView: View {
+    let formation: EditableFormation
+    let install: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Bundled workflow").font(.caption).foregroundStyle(.secondary)
+            Text(formation.name).font(.title2.weight(.semibold))
+            Text(formation.description).foregroundStyle(.secondary)
+            EditorCard(title: "Will install") {
+                Text("Workflow: \(formation.name)")
+                Text("Agent types: \(formation.referencedAgentTypes.joined(separator: ", "))")
+                Text("Installation requires confirmation and refuses every name collision; it never overwrites installed packages.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Button("Install bundled workflow…", action: install)
+                .buttonStyle(.borderedProminent)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(24)
+    }
+}
+
+private struct BundledAgentTypeView: View {
+    let type: EditableAgentType
+    let install: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Bundled agent type").font(.caption).foregroundStyle(.secondary)
+            Text(type.name).font(.title2.weight(.semibold))
+            Text(type.description).foregroundStyle(.secondary)
+            Text("\(type.prefer.joined(separator: " › ")) · \(type.model)")
+                .font(.callout).foregroundStyle(.secondary)
+            Text("Installing requires confirmation and refuses existing package directories; it never overwrites them.")
+                .font(.caption).foregroundStyle(.secondary)
+            Button("Install bundled agent type…", action: install)
+                .buttonStyle(.borderedProminent)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(24)
     }
 }
 

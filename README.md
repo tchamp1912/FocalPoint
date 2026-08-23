@@ -69,6 +69,11 @@ It will:
   backing up those files before changing them; and
 - preserve an existing `~/.config/focalpoint/config.toml`.
 
+The app also includes a curated workflow catalog. **Start Workflow** and
+**Workflow Editor** list bundled formations separately from installed packages.
+Installing one asks for confirmation, copies its referenced agent types too,
+and refuses any name collision rather than overwriting an existing package.
+
 Restart any agent sessions that were already open so they load the new hooks.
 The FocalPoint keyboard icon will appear in the macOS menu bar. Waiting/error
 sessions are highlighted in the desktop widget without system notifications.

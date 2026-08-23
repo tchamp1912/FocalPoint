@@ -1,0 +1,35 @@
+[formation]
+name = "ui-verification"
+version = 1
+description = "Trace a user-facing flow and independently verify behavior, regressions, and test evidence"
+
+[[phase]]
+name = "map-flow"
+gate = "authorized"
+
+[[phase.role]]
+name = "ui-map"
+type = "codebase-scout"
+task = "Map the authorized user flow, states, accessibility surfaces, and existing UI checks; report evidence only."
+
+[[phase]]
+name = "verify"
+after = "map-flow"
+gate = "auto"
+
+[[phase.role]]
+name = "behavior"
+type = "correctness-reviewer"
+prep = "worktree"
+task = "Review the prepared user-flow handoff for behavior and regression risks; report findings only."
+
+[[phase.role]]
+name = "checks"
+type = "test-verifier"
+prep = "worktree"
+task = "Run existing relevant UI or integration checks and report commands, observed evidence, and coverage gaps."
+
+[escalate]
+channel_kinds = ["blocker", "question"]
+states = ["error", "approval"]
+completion = "all-roles-done"

@@ -132,7 +132,19 @@ struct BrokenPackage: Identifiable, Equatable {
 enum EditorSelection: Hashable {
     case formation(String)
     case agentType(String)
+    case bundledFormation(String)
+    case bundledAgentType(String)
     case broken(BrokenPackage.Kind, String)
+}
+
+extension EditableFormation {
+    /// Fixed roles and bounded fan-out types are both dependencies of a
+    /// formation. This is planning data only; it never expands fan-out.
+    var referencedAgentTypes: [String] {
+        let fixed = phased ? phases.flatMap { $0.roles.map(\.type) } : roles.map(\.type)
+        let fanout = phased ? phases.filter(\.useFanout).map { $0.fanout.type } : []
+        return Array(Set((fixed + fanout).filter { !$0.isEmpty })).sorted()
+    }
 }
 
 /// Load result for one package. Not Swift.Result: its Failure must conform
@@ -788,6 +800,9 @@ final class WorkflowEditorModel: ObservableObject {
     @Published var formations: [EditableFormation] = []
     @Published var agentTypes: [EditableAgentType] = []
     @Published var broken: [BrokenPackage] = []
+    @Published var bundledFormations: [EditableFormation] = []
+    @Published var bundledAgentTypes: [EditableAgentType] = []
+    @Published var bundledBroken: [BrokenPackage] = []
     @Published var selection: EditorSelection?
 
     /// Last-saved (or last-loaded) value per package id — dirty tracking is
@@ -814,6 +829,12 @@ final class WorkflowEditorModel: ObservableObject {
         configRoot.appendingPathComponent("agents", isDirectory: true)
     }
 
+    /// Bundled packages ship as app resources and remain separate from user
+    /// configuration until an explicit catalog install copies them there.
+    nonisolated static var bundledCatalogDirectory: URL? {
+        Bundle.main.resourceURL?.appendingPathComponent("BundledPackages", isDirectory: true)
+    }
+
     var installedTypeNames: [String] { agentTypes.map(\.name).sorted() }
 
     // MARK: Dirty tracking
@@ -831,8 +852,13 @@ final class WorkflowEditorModel: ObservableObject {
     func reload() {
         let workflowsDir = Self.workflowsDirectory
         let agentsDir = Self.agentsDirectory
+        let bundledRoot = Self.bundledCatalogDirectory
         DispatchQueue.global(qos: .userInitiated).async {
             let result = Self.scan(workflows: workflowsDir, agents: agentsDir)
+            let bundled = bundledRoot.map {
+                Self.scan(workflows: $0.appendingPathComponent("workflows", isDirectory: true),
+                          agents: $0.appendingPathComponent("agents", isDirectory: true))
+            }
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 // A reload must not silently discard unsaved edits: packages
@@ -855,6 +881,9 @@ final class WorkflowEditorModel: ObservableObject {
                     return loaded
                 }
                 self.broken = result.broken
+                self.bundledFormations = bundled?.formations ?? []
+                self.bundledAgentTypes = bundled?.agentTypes ?? []
+                self.bundledBroken = bundled?.broken ?? []
                 if let selection = self.selection, !self.selectionExists(selection) {
                     self.selection = nil
                 }
@@ -866,8 +895,53 @@ final class WorkflowEditorModel: ObservableObject {
         switch selection {
         case .formation(let id): return formations.contains { $0.id == id }
         case .agentType(let id): return agentTypes.contains { $0.id == id }
+        case .bundledFormation(let id): return bundledFormations.contains { $0.id == id }
+        case .bundledAgentType(let id): return bundledAgentTypes.contains { $0.id == id }
         case .broken(let kind, let id):
             return broken.contains { $0.id == id && $0.kind == kind }
+        }
+    }
+
+    /// The UI must call this only after its explicit confirmation dialog. The
+    /// core installer rejects every collision and never overwrites a package.
+    func installBundledFormation(_ formation: EditableFormation) -> String? {
+        guard let sourceRoot = Self.bundledCatalogDirectory else {
+            return "Bundled catalog resources are unavailable."
+        }
+        let planning = BundledCatalogInstallPlan.formation(
+            name: formation.id, sourceRoot: sourceRoot, configRoot: Self.configRoot,
+            referencedAgentTypes: formation.referencedAgentTypes
+        )
+        guard case .success(let plan) = planning else {
+            if case .failure(let error) = planning { return error }
+            return "Could not plan bundled formation installation."
+        }
+        switch plan.install() {
+        case .success:
+            log("workflow editor installed bundled formation \(boundedLogField(formation.name))")
+            reload()
+            return nil
+        case .failure(let error): return error
+        }
+    }
+
+    func installBundledAgentType(_ type: EditableAgentType) -> String? {
+        guard let sourceRoot = Self.bundledCatalogDirectory else {
+            return "Bundled catalog resources are unavailable."
+        }
+        let planning = BundledCatalogInstallPlan.agentType(
+            name: type.id, sourceRoot: sourceRoot, configRoot: Self.configRoot
+        )
+        guard case .success(let plan) = planning else {
+            if case .failure(let error) = planning { return error }
+            return "Could not plan bundled agent installation."
+        }
+        switch plan.install() {
+        case .success:
+            log("workflow editor installed bundled agent type \(boundedLogField(type.name))")
+            reload()
+            return nil
+        case .failure(let error): return error
         }
     }
 
@@ -1025,6 +1099,10 @@ final class WorkflowEditorModel: ObservableObject {
             return formations.first { $0.id == id }?.directoryURL
         case .agentType(let id):
             return agentTypes.first { $0.id == id }?.directoryURL
+        case .bundledFormation(let id):
+            return bundledFormations.first { $0.id == id }?.directoryURL
+        case .bundledAgentType(let id):
+            return bundledAgentTypes.first { $0.id == id }?.directoryURL
         case .broken(let kind, let id):
             return broken.first { $0.id == id && $0.kind == kind }?.directoryURL
         }

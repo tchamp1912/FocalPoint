@@ -1,0 +1,33 @@
+[formation]
+name = "discovery-planning"
+version = 1
+description = "Map an unfamiliar change area, then produce one evidence-backed delivery plan"
+
+[[phase]]
+name = "discover"
+gate = "authorized"
+
+[[phase.role]]
+name = "codebase-map"
+type = "codebase-scout"
+task = "Map the authorized change area, relevant symbols, tests, and dependencies; report evidence only."
+
+[[phase.role]]
+name = "risk-map"
+type = "codebase-scout"
+task = "Independently trace inputs, state changes, and integration boundaries for the authorized change; report evidence only."
+
+[[phase]]
+name = "plan"
+after = "discover"
+gate = "auto"
+
+[[phase.role]]
+name = "delivery-plan"
+type = "planner"
+task = "Turn the prepared discovery handoffs into a bounded implementation plan with dependencies and acceptance checks."
+
+[escalate]
+channel_kinds = ["blocker", "question"]
+states = ["error", "approval"]
+completion = "all-roles-done"

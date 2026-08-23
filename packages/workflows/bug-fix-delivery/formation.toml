@@ -1,0 +1,46 @@
+[formation]
+name = "bug-fix-delivery"
+version = 1
+description = "Plan a defect repair, confirm at most two independent fixes, then verify the result"
+
+[[phase]]
+name = "diagnose"
+gate = "authorized"
+
+[[phase.role]]
+name = "repair-plan"
+type = "planner"
+task = "Diagnose the authorized defect and propose no more than two independently testable repair slices with acceptance checks."
+
+[[phase]]
+name = "repair"
+after = "diagnose"
+gate = "confirm"
+
+[phase.fanout]
+from = "repair-plan"
+max = 2
+type = "implementer"
+cwd_root = "worktrees/"
+
+[[phase]]
+name = "verify"
+after = "repair"
+gate = "auto"
+
+[[phase.role]]
+name = "correctness"
+type = "correctness-reviewer"
+prep = "worktree"
+task = "Review the prepared repair for regressions and correctness; report findings only."
+
+[[phase.role]]
+name = "tests"
+type = "test-verifier"
+prep = "worktree"
+task = "Run relevant existing checks against the prepared repair and report evidence and gaps."
+
+[escalate]
+channel_kinds = ["blocker"]
+states = ["error", "approval"]
+completion = "all-roles-done"

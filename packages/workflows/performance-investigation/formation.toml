@@ -1,0 +1,35 @@
+[formation]
+name = "performance-investigation"
+version = 1
+description = "Establish a performance baseline and investigate bounded hypotheses without editing source"
+
+[[phase]]
+name = "scope"
+gate = "authorized"
+
+[[phase.role]]
+name = "codebase-map"
+type = "codebase-scout"
+task = "Locate the requested performance path, its measurements, and likely bottlenecks; report evidence only."
+
+[[phase.role]]
+name = "baseline"
+type = "test-verifier"
+prep = "worktree"
+task = "Run existing relevant performance or regression checks and report commands, results, and measurement gaps."
+
+[[phase]]
+name = "investigate"
+after = "scope"
+gate = "auto"
+
+[[phase.role]]
+name = "performance"
+type = "perf-reviewer"
+prep = "worktree"
+task = "Analyze the prepared baseline and code map for measurable performance risks; report ranked hypotheses and measurements."
+
+[escalate]
+channel_kinds = ["blocker", "question"]
+states = ["error", "approval"]
+completion = "all-roles-done"

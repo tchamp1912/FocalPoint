@@ -61,6 +61,23 @@ set therefore uses three deliberately limited shapes:
   proposes independent slices and a human confirms the resolved fan-out. Its
   automatic phase contains only the manifest's fixed verification roles.
 
+The bundled catalog also provides task-specific entry points without adding
+new agent types or unbounded teams:
+
+- `discovery-planning` runs two independent, read-only repository maps before
+  one fixed planner reconciles their evidence.
+- `bug-fix-delivery` diagnoses first, then requires confirmation before at
+  most two independently testable implementation slices, followed by fixed
+  correctness and test lanes.
+- `performance-investigation` separates baseline evidence from code-path
+  mapping, then gives one performance reviewer the prepared handoff.
+- `ui-verification` maps the user flow before fixed correctness and existing-
+  check verification lanes inspect it independently.
+
+These names describe the intended work shape, not extra authority. In
+particular, the only plan-authored launches are capped fan-out phases behind a
+`confirm` gate.
+
 Anthropic's agent-team guidance recommends teams for independent research,
 review, competing debugging hypotheses, and separately owned feature areas;
 it recommends a simpler approach for sequential work and overlapping files.

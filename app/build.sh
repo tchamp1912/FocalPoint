@@ -28,6 +28,9 @@ fi
 echo "==> compiling"
 rm -rf "$APP"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR/Assets"
+# Keep curated packages inside the app bundle. They are discoverable in the
+# editor but are not copied to user configuration until explicitly confirmed.
+cp -R ../packages "$RESOURCES_DIR/BundledPackages"
 
 ICONSET_DIR="$(mktemp -d /tmp/focalpoint-iconset.XXXXXX)"
 trap 'rm -rf "$ICONSET_DIR"' EXIT

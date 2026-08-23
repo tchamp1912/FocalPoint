@@ -27,6 +27,7 @@ APP_DIR="$SCRIPT_DIR/app"
 PACKAGING_DIR="$SCRIPT_DIR/packaging"
 ORCHESTRATOR_DIR="$SCRIPT_DIR/orchestrator"
 ORCHESTRATOR_SKILL_SOURCE="$SCRIPT_DIR/skills/focalpoint-orchestrator"
+PACKAGE_VALIDATOR="$SCRIPT_DIR/packages/validate.sh"
 # shellcheck source=packaging/install-lib.sh
 source "$PACKAGING_DIR/install-lib.sh"
 
@@ -231,6 +232,14 @@ done
 
 FOCALPOINT_BIN="$BIN_DIR/focalpoint"
 FOCALPOINTD_BIN="$BIN_DIR/focalpointd"
+
+# ---------------------------------------------------------------------------
+# 4b. Bundled workflow catalog
+# ---------------------------------------------------------------------------
+
+step "Bundled workflow catalog"
+"$PACKAGE_VALIDATOR"
+ok "validated bundled formations (available in the app; not installed into user config)"
 
 # ---------------------------------------------------------------------------
 # 5. Config (never clobber a user's existing config)

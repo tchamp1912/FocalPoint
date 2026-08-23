@@ -4,6 +4,18 @@ This document defines schema version 1 for agent-type and formation packages.
 Packages are inert, untrusted data. Loading a package does not authorize a
 process launch, create a worktree, or execute package content.
 
+## Bundled catalog installation
+
+The app may ship a read-only catalog of formation and agent-type directories in
+its resources. Bundled packages are listed separately from packages installed
+under `~/.config/focalpoint/` (or `$XDG_CONFIG_HOME/focalpoint/`) in both the
+menu-bar **Start Workflow** picker and **Workflow Editor**. Selecting a bundled
+formation is still inert. Installation requires an explicit UI confirmation and
+copies that formation plus every fixed role and fan-out agent type it
+references. The destination set is checked before copying and checked again
+immediately before each copy; any collision fails the request. The app never
+merges, replaces, or silently overwrites an installed package.
+
 ## Agent-type packages
 
 An agent type is a directory with exactly two required files:

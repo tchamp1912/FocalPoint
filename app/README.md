@@ -86,6 +86,15 @@ target), assembles `FocalPoint.app`, and ad-hoc-codesigns it
 No Xcode project and no SPM manifest are required — just the Xcode Command Line
 Tools.
 
+### Bundled workflow catalog
+
+`build.sh` packages the repository's `packages/` catalog inside the app. In
+**Start Workflow** and **Workflow Editor**, bundled formations and agent types
+appear separately from packages in the user's configuration. Installing a
+bundled formation requires an explicit confirmation and copies its referenced
+agent types; any existing destination directory is a hard error and is never
+overwritten.
+
 ### Liquid Glass
 
 The dropdown, desktop widget, and settings cards render with **Liquid Glass**

@@ -417,6 +417,11 @@ struct FormationPackage: Identifiable, Equatable {
         phases.isEmpty ? roles : phases.flatMap(\.roles)
     }
 
+    /// Fixed roles and bounded fan-out types referenced by this formation.
+    var referencedAgentTypes: [String] {
+        Array(Set(allRoles.map(\.type))).sorted()
+    }
+
     var complexitySignals: WorkflowComplexitySignals {
         WorkflowComplexitySignals(
             fixedRoleCount: roleCount,
@@ -443,6 +448,8 @@ struct FormationIssue: Identifiable, Equatable {
 final class WorkflowLauncherModel: ObservableObject {
 
     @Published private(set) var packages: [FormationPackage] = []
+    /// Bundled formations not yet installed under the user's config root.
+    @Published private(set) var bundledPackages: [FormationPackage] = []
     @Published private(set) var issues: [FormationIssue] = []
     /// False until the first scan lands — keeps "No Workflows Installed"
     /// from flashing for a frame in front of a populated directory.
@@ -452,9 +459,15 @@ final class WorkflowLauncherModel: ObservableObject {
     /// orchestrators for one gesture.
     @Published private(set) var launchInFlightID: String?
     @Published private(set) var outcome: LaunchOutcome?
+    @Published private(set) var catalogOutcome: CatalogOutcome?
 
     enum LaunchOutcome: Equatable {
         case launched(package: String, detail: String)
+        case failed(package: String, detail: String)
+    }
+
+    enum CatalogOutcome: Equatable {
+        case installed(package: String, detail: String)
         case failed(package: String, detail: String)
     }
 
@@ -463,25 +476,36 @@ final class WorkflowLauncherModel: ObservableObject {
     /// Kept off AppModel so this feature touches no file outside its lane.
     private let client = DaemonClient()
 
+    /// FocalPoint configuration root ($XDG_CONFIG_HOME/focalpoint, else
+    /// ~/.config/focalpoint). Workflows and agent types are siblings beneath it.
+    nonisolated static var configRoot: URL {
+        if let xdg = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"], !xdg.isEmpty {
+            return URL(fileURLWithPath: xdg, isDirectory: true)
+                .appendingPathComponent("focalpoint", isDirectory: true)
+        }
+        return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            .appendingPathComponent(".config/focalpoint", isDirectory: true)
+    }
+
     /// Where formation packages live. Mirrors the daemon's config-root rule
     /// ($XDG_CONFIG_HOME/focalpoint, else ~/.config/focalpoint).
     nonisolated static var workflowsDirectory: URL {
-        if let xdg = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"], !xdg.isEmpty {
-            return URL(fileURLWithPath: xdg, isDirectory: true)
-                .appendingPathComponent("focalpoint/workflows", isDirectory: true)
-        }
-        return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-            .appendingPathComponent(".config/focalpoint/workflows", isDirectory: true)
+        configRoot.appendingPathComponent("workflows", isDirectory: true)
     }
 
     /// Installed agent types, sibling of `workflowsDirectory`.
     nonisolated static var agentsDirectory: URL {
-        if let xdg = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"], !xdg.isEmpty {
-            return URL(fileURLWithPath: xdg, isDirectory: true)
-                .appendingPathComponent("focalpoint/agents", isDirectory: true)
-        }
-        return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-            .appendingPathComponent(".config/focalpoint/agents", isDirectory: true)
+        configRoot.appendingPathComponent("agents", isDirectory: true)
+    }
+
+    /// Bundled packages ship as app resources and remain separate from user
+    /// configuration until an explicit catalog install copies them there.
+    nonisolated static var bundledCatalogDirectory: URL? {
+        Bundle.main.resourceURL?.appendingPathComponent("BundledPackages", isDirectory: true)
+    }
+
+    nonisolated static var bundledWorkflowsDirectory: URL? {
+        bundledCatalogDirectory?.appendingPathComponent("workflows", isDirectory: true)
     }
 
     /// Non-nil when an agent type declares an `[enforced]` table, which the
@@ -513,15 +537,62 @@ final class WorkflowLauncherModel: ObservableObject {
 
     func refresh() {
         let directory = Self.workflowsDirectory
+        let bundledDirectory = Self.bundledWorkflowsDirectory
         DispatchQueue.global(qos: .userInitiated).async {
             let result = Self.scan(directory: directory)
+            let bundled = bundledDirectory.map { Self.scan(directory: $0) }
+            let installedIDs = Set(result.packages.map(\.id))
+            let bundledOnly = bundled?.packages.filter { !installedIDs.contains($0.id) } ?? []
             Task { @MainActor [weak self] in
                 self?.packages = result.packages
+                self?.bundledPackages = bundledOnly
                 self?.issues = result.issues
                 self?.hasScanned = true
             }
         }
     }
+
+    /// The UI must call this only after its explicit confirmation dialog. The
+    /// core installer rejects every collision and never overwrites a package.
+    func installBundledFormation(_ package: FormationPackage) {
+        guard let sourceRoot = Self.bundledCatalogDirectory else {
+            catalogOutcome = .failed(package: package.name,
+                                     detail: "Bundled catalog resources are unavailable.")
+            return
+        }
+        let planning = BundledCatalogInstallPlan.formation(
+            name: package.id, sourceRoot: sourceRoot, configRoot: Self.configRoot,
+            referencedAgentTypes: package.referencedAgentTypes
+        )
+        guard case .success(let plan) = planning else {
+            if case .failure(let error) = planning {
+                catalogOutcome = .failed(package: package.name, detail: error)
+            } else {
+                catalogOutcome = .failed(package: package.name,
+                                         detail: "Could not plan bundled formation installation.")
+            }
+            return
+        }
+        switch plan.install() {
+        case .success:
+            log("workflow launcher installed bundled formation \(boundedLogField(package.name))")
+            catalogOutcome = .installed(
+                package: package.name,
+                detail: "Copied workflow and \(package.referencedAgentTypes.count) agent type\(package.referencedAgentTypes.count == 1 ? "" : "s")"
+            )
+            refresh()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
+                guard let self,
+                      case .installed(let name, _) = self.catalogOutcome,
+                      name == package.name else { return }
+                self.catalogOutcome = nil
+            }
+        case .failure(let error):
+            catalogOutcome = .failed(package: package.name, detail: error)
+        }
+    }
+
+    func dismissCatalogOutcome() { catalogOutcome = nil }
 
     /// Filesystem scan + manifest load. Missing workflows directory means
     /// "nothing installed", not an error.
@@ -1020,6 +1091,7 @@ struct WorkflowLauncherSection: View {
     /// the human explicitly presses "Select This Folder".
     let targetCwd: String
     @State private var preflightPackage: FormationPackage?
+    @State private var bundledInstall: FormationPackage?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -1051,10 +1123,23 @@ struct WorkflowLauncherSection: View {
             if let outcome = launcher.outcome {
                 outcomeLine(outcome)
             }
+            if let outcome = launcher.catalogOutcome {
+                catalogOutcomeLine(outcome)
+            }
         }
         .padding(.horizontal, Metrics.hPad)
         .padding(.vertical, 8)
         .onAppear { launcher.refresh() }
+        .alert(item: $bundledInstall) { package in
+            Alert(
+                title: Text("Install bundled workflow?"),
+                message: Text(Self.bundledInstallConfirmation(for: package)),
+                primaryButton: .default(Text("Install")) {
+                    launcher.installBundledFormation(package)
+                },
+                secondaryButton: .cancel()
+            )
+        }
         .sheet(item: $preflightPackage) { package in
             WorkflowLaunchPreflightView(
                 package: package,
@@ -1091,18 +1176,34 @@ struct WorkflowLauncherSection: View {
         Text("Project folder is chosen in preflight")
         if !launcher.hasScanned {
             Text("Scanning\u{2026}")
-        } else if launcher.packages.isEmpty && launcher.issues.isEmpty {
+        } else if launcher.packages.isEmpty && launcher.bundledPackages.isEmpty && launcher.issues.isEmpty {
             Text("No Workflows Installed")
-            Text("Add a formation package to \(Self.shortPath(WorkflowLauncherModel.workflowsDirectory))")
+            Text("Install a bundled workflow below or add one to \(Self.shortPath(WorkflowLauncherModel.workflowsDirectory))")
         } else {
-            ForEach(launcher.packages) { package in
-                Button {
-                    preflightPackage = package
-                } label: {
-                    Label("\(package.name) · \(package.menuDetail)",
-                          systemImage: "person.3.sequence")
+            if !launcher.packages.isEmpty {
+                Text("Installed")
+                ForEach(launcher.packages) { package in
+                    Button {
+                        preflightPackage = package
+                    } label: {
+                        Label("\(package.name) · \(package.menuDetail)",
+                              systemImage: "person.3.sequence")
+                    }
+                    .disabled(!daemonConnected || launcher.launchInFlightID != nil)
                 }
-                .disabled(!daemonConnected || launcher.launchInFlightID != nil)
+            }
+            if !launcher.bundledPackages.isEmpty {
+                if !launcher.packages.isEmpty { Divider() }
+                Text("Bundled Catalog")
+                ForEach(launcher.bundledPackages) { package in
+                    Button {
+                        bundledInstall = package
+                    } label: {
+                        Label("\(package.name) · \(package.menuDetail)",
+                              systemImage: "shippingbox")
+                    }
+                    .disabled(launcher.launchInFlightID != nil)
+                }
             }
             if !launcher.issues.isEmpty {
                 Divider()
@@ -1124,6 +1225,39 @@ struct WorkflowLauncherSection: View {
         Button("Refresh") { launcher.refresh() }
         Button("Open Workflows Folder\u{2026}") { launcher.openWorkflowsFolder() }
         Button("Workflow Editor\u{2026}") { WorkflowEditorWindow.shared.show() }
+    }
+
+    private static func bundledInstallConfirmation(for package: FormationPackage) -> String {
+        let types = package.referencedAgentTypes.joined(separator: ", ")
+        return """
+        This copies workflow '\(package.name)' and its referenced agent types (\(types)) into your FocalPoint configuration. Existing package directories are never overwritten; installation stops if any collide.
+        """
+    }
+
+    @ViewBuilder
+    private func catalogOutcomeLine(_ outcome: WorkflowLauncherModel.CatalogOutcome) -> some View {
+        switch outcome {
+        case .installed(let name, let detail):
+            Label("\(name): \(detail)", systemImage: "checkmark.circle.fill")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        case .failed(let name, let detail):
+            HStack(alignment: .top, spacing: 5) {
+                Label("\(name): \(detail)", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .lineLimit(3)
+                Spacer(minLength: 2)
+                Button { launcher.dismissCatalogOutcome() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Dismiss")
+            }
+        }
     }
 
     @ViewBuilder
