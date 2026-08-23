@@ -223,7 +223,7 @@ struct HistoryWorkspaceView: View {
     private func filterSection<Value: Hashable & Identifiable>(
         _ title: String,
         values: [Value],
-        selected: (Value) -> Binding<Bool>,
+        selected: @escaping (Value) -> Binding<Bool>,
         label: @escaping (Value) -> String
     ) -> some View {
         Menu(title) {
