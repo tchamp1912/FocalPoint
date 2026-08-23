@@ -429,7 +429,8 @@ fn orchestrator_controls_require_matching_task_and_hide_transcript_path() {
         .is_none());
 
     let rejected = d.socket_json(serde_json::json!({
-        "cmd": "stop-orchestrated-session", "session": "owned", "task_id": "task-2"
+        "cmd": "stop-managed-session", "session": "owned", "task_id": "task-2",
+        "confirmation": "user-confirmed"
     }));
     assert_eq!(rejected["ok"], false);
     assert_eq!(
@@ -439,10 +440,16 @@ fn orchestrator_controls_require_matching_task_and_hide_transcript_path() {
         false
     );
     let stopped = d.socket_json(serde_json::json!({
-        "cmd": "stop-orchestrated-session", "session": "owned", "task_id": "task-1"
+        "cmd": "stop-managed-session", "session": "owned", "task_id": "task-1",
+        "confirmation": "user-confirmed"
     }));
     assert_eq!(stopped["ok"], true);
     assert_eq!(stopped["status"], "stopping");
+
+    let legacy = d.socket_json(serde_json::json!({
+        "cmd": "stop-orchestrated-session", "session": "owned", "task_id": "task-1"
+    }));
+    assert_eq!(legacy["ok"], false);
     assert!(d
         .cli_json(&["sessions", "--json"])
         .as_array()

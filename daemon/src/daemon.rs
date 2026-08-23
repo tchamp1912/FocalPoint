@@ -2647,7 +2647,8 @@ fn meta_truthy(value: Option<&serde_json::Value>) -> bool {
 }
 
 /// Resolve a session only when it is an orchestrator-owned managed process and
-/// the caller supplies the matching stable task id.
+/// the caller supplies the matching stable task id. Transcript support is
+/// narrowed separately because Cursor does not expose the same local format.
 #[cfg(unix)]
 fn orchestrated_session_target(
     registry: &Registry,
@@ -2670,8 +2671,11 @@ fn orchestrated_session_target(
     if owned_task != Some(task_id) {
         return Err("session does not match that orchestrator task id".into());
     }
-    if !matches!(session.kind.as_deref(), Some("claude" | "codex")) {
-        return Err("orchestrated stop/read supports only claude and codex".into());
+    if !matches!(
+        session.kind.as_deref(),
+        Some("claude" | "codex" | "cursor" | "cursor-cli")
+    ) {
+        return Err("managed stop supports only claude, codex, and cursor".into());
     }
     Ok(session)
 }
@@ -4933,30 +4937,10 @@ fn dispatch(
             })))
         }
         Request::StopOrchestratedSession {
-            session: id,
-            task_id,
+            session: _,
+            task_id: _,
         } => {
-            let session = match orchestrated_session_target(
-                &shared.lock().unwrap().registry,
-                &id,
-                &task_id,
-            ) {
-                Ok(session) => session,
-                Err(message) => return err(&message),
-            };
-            eprintln!(
-                "[orchestrator] stop id={} task_id={} pid={}",
-                diagnostic_text(&id),
-                diagnostic_text(&task_id),
-                session
-                    .pid()
-                    .map(|pid| pid.to_string())
-                    .unwrap_or_else(|| "-".into())
-            );
-            gracefully_end_session(&id, session.pid(), ctx, host_tx);
-            Dispatch::Reply(Response::Json(serde_json::json!({
-                "ok": true, "session": id, "task_id": task_id, "status": "stopping"
-            })))
+            err("stop-orchestrated-session is disabled; use stop-managed-session with explicit confirmation")
         }
         Request::ReadSessionTranscript {
             session: id,
@@ -6293,6 +6277,27 @@ mod tests {
         assert!(orchestrated_session_target(&registry, "missing", "task-1")
             .unwrap_err()
             .contains("unknown session"));
+
+        let mut cursor_meta = serde_json::Map::new();
+        cursor_meta.insert("managed".into(), serde_json::Value::Bool(true));
+        cursor_meta.insert(
+            "orchestrator_task_id".into(),
+            serde_json::Value::String("cursor-task".into()),
+        );
+        registry.set_state(
+            Some("cursor-owned"),
+            State::Done,
+            Some("cursor".into()),
+            None,
+            Some(cursor_meta),
+            Instant::now(),
+        );
+        assert_eq!(
+            orchestrated_session_target(&registry, "cursor-owned", "cursor-task")
+                .unwrap()
+                .id,
+            "cursor-owned"
+        );
     }
 
     #[test]

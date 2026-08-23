@@ -129,7 +129,7 @@ Requests:
  "workflow_phase": "orchestration", "workflow_gate": "authorized", "workflow_fanout": false,
  "workflow_assignments": [{"assignment_id":"review:reviewer:0", "phase":"review", "agent_type":"reviewer", "provider":"codex", "model":"gpt-5.6-sol", "gate":"confirm", "fanout":false, "fanout_limit":1}]}
 {"cmd": "approve-workflow-transition", "workflow_run_id": "workflow-run-1", "workflow_phase": "review"}
-{"cmd": "launch-session", "provider": "cursor", "cursor_mode": "headless", "cwd": "/prepared/path",
+{"cmd": "launch-session", "agent_type": "test-verifier", "provider": "cursor", "model": "composer-2.5", "cursor_mode": "headless", "cwd": "/prepared/path",
  "task": "Implement and test the assigned task.", "task_id": "cursor-task"}
 {"cmd": "channel-create", "task_id": "project-orchestrator"}
 {"cmd": "channel-post", "task_id": "worker-task", "channel": "ch-1", "kind": "blocker", "body": "Need a decision.", "to": "channel"}
@@ -138,7 +138,6 @@ Requests:
 {"cmd": "channel-close", "task_id": "project-orchestrator", "channel": "ch-1"}
 {"cmd": "read-session-transcript", "session": "id", "task_id": "stable-task-id",
  "tail": 20, "search": null}
-{"cmd": "stop-orchestrated-session", "session": "id", "task_id": "stable-task-id"}
 {"cmd": "stop-managed-session", "session": "id", "task_id": "stable-task-id",
  "confirmation": "user-confirmed"}
 {"cmd": "get-capabilities"}
@@ -505,17 +504,18 @@ including the old `"user-confirmed"` token, and `fpctl-agent` intentionally
 exposes no approval command. These fields remain observable through
 `list-workflow-runs`; the daemon does not sequence phases.
 
-`read-session-transcript`, legacy `stop-orchestrated-session`, and the preferred
-`stop-managed-session` require the session
-id and its matching stable orchestrator task id. The daemon also requires the
-session to be managed and Claude/Codex-owned. Transcript reads
+`read-session-transcript` and `stop-managed-session` require the session id and
+its matching stable orchestrator task id. The daemon also requires the session
+to be managed. Stops support exact-owned Claude, Codex, and Cursor sessions;
+transcript reads remain Claude/Codex-only and
 accept a tail of 1–8000 and an optional bounded case-insensitive search, return
 normalized user/assistant/tool messages, omit reasoning blocks and raw tool
 inputs, and resolve adapter-reported paths only within the provider's local
 transcript directory. Stop requests use the same graceful SIGINT-to-SIGTERM
 teardown as `quit-session`; they cannot target unrelated sessions. The preferred
 stop verb additionally requires the exact `confirmation: "user-confirmed"`
-field. The legacy verb remains for backwards compatibility.
+field. The legacy unconfirmed `stop-orchestrated-session` verb decodes only to
+return an actionable fail-closed error.
 
 ### Inter-agent channels
 
