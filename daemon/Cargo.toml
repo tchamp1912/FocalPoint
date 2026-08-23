@@ -24,6 +24,10 @@ path = "src/bin/focalpoint.rs"
 name = "fpctl-agent"
 path = "src/bin/fpctl-agent.rs"
 
+[[bin]]
+name = "focalpoint-mcp"
+path = "src/bin/focalpoint-mcp.rs"
+
 [dependencies]
 hidapi = "2"
 serde = { version = "1", features = ["derive"] }

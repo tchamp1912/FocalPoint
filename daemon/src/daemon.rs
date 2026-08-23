@@ -153,6 +153,12 @@ pub enum Request {
         channel: String,
         since: Option<u64>,
         tail: Option<u64>,
+        ack: Option<bool>,
+    },
+    ChannelAck {
+        task_id: String,
+        channel: String,
+        through: u64,
     },
     ChannelPost {
         task_id: String,
@@ -1752,6 +1758,7 @@ fn orchestrated_prompt(
     title: &str,
     task_id: &str,
     role: &str,
+    has_channel: bool,
     task: &str,
 ) -> String {
     let registration = if provider == "cursor" && cursor_mode == "attachable" {
@@ -1759,8 +1766,13 @@ fn orchestrated_prompt(
     } else {
         ""
     };
+    let coordination = if has_channel {
+        "\nFocalPoint coordination (required):\n- Claim your assignment with the focalpoint_claim_assignment MCP tool before repository work.\n- Use focalpoint_ask for questions, focalpoint_report_blocker for blockers, focalpoint_report_progress for meaningful milestones, and focalpoint_complete immediately before your final response.\n- Read and acknowledge pending coordination before crossing a workflow gate. If MCP tools are unavailable, use fpctl-agent channel commands with $FOCALPOINT_CHANNEL_ID and report that degraded state.\n"
+    } else {
+        ""
+    };
     format!(
-        "FocalPoint identity:\n- You are {numbered_identity}.\n- Your title is {title:?}.\n- Your stable task id is {task_id:?}.\n- Your orchestration role is {role:?}.\nUse this number and title when identifying yourself in progress, blocker, and completion messages.\n{registration}\nTask:\n{task}"
+        "FocalPoint identity:\n- You are {numbered_identity}.\n- Your title is {title:?}.\n- Your stable task id is {task_id:?}.\n- Your orchestration role is {role:?}.\nUse this number and title when identifying yourself in progress, blocker, and completion messages.\n{registration}{coordination}\nTask:\n{task}"
     )
 }
 
@@ -2115,6 +2127,7 @@ fn launch_orchestrated_session(
         title,
         task_id,
         role,
+        channel_id.is_some(),
         task,
     );
     let cursor_wrapper = home.join(".config/focalpoint/adapters/cursor-cli-focalpoint.sh");
@@ -2690,6 +2703,7 @@ fn channel_actor(registry: &Registry, task_id: &str) -> Result<Session, String> 
         .into_iter()
         .filter(|session| {
             meta_truthy(session.meta.get("managed"))
+                && session.has_authoritative_attachment()
                 && matches!(
                     session.kind.as_deref(),
                     Some("claude" | "codex" | "cursor" | "cursor-cli")
@@ -2757,6 +2771,119 @@ fn maybe_wake_channel_member(ctx: &EventCtx, channel: &str, recipient: &Session)
 fn channel_public(channel: &crate::channel::Channel) -> serde_json::Value {
     serde_json::json!({"channel_id": channel.id, "owner_session": channel.owner_session,
         "members": channel.members.keys().collect::<Vec<_>>(), "closed": false})
+}
+
+#[cfg(unix)]
+fn join_managed_channel(
+    channel: &mut crate::channel::Channel,
+    session_id: &str,
+    meta: &Map<String, Value>,
+) -> Result<bool, String> {
+    if !meta_truthy(meta.get("managed")) {
+        return Err("channel registration requires a managed session".into());
+    }
+    let task_id = meta
+        .get("orchestrator_task_id")
+        .and_then(Value::as_str)
+        .ok_or("channel registration requires a managed task id")?;
+    let role = meta
+        .get("orchestration_role")
+        .and_then(Value::as_str)
+        .ok_or("channel registration requires an orchestration role")?;
+    let was_member = channel.members.contains_key(session_id);
+    match role {
+        "orchestrator" if channel.owner_task_id == task_id => {
+            channel.bind_owner(session_id.to_string())?;
+        }
+        "worker"
+            if meta.get("manager_task_id").and_then(Value::as_str)
+                == Some(channel.owner_task_id.as_str()) =>
+        {
+            channel.join_at_tail(session_id.to_string());
+        }
+        _ => return Err("managed session identity does not authorize this channel".into()),
+    }
+    Ok(!was_member)
+}
+
+#[cfg(unix)]
+fn managed_channel_identity(registry: &Registry, session_id: &str) -> Option<Session> {
+    registry.list().into_iter().find(|session| {
+        session.id == session_id
+            && session.has_authoritative_attachment()
+            && meta_truthy(session.meta.get("managed"))
+            && matches!(
+                session.kind.as_deref(),
+                Some("claude" | "codex" | "cursor" | "cursor-cli")
+            )
+    })
+}
+
+#[cfg(unix)]
+fn post_managed_channel_lifecycle(
+    channel: &mut crate::channel::Channel,
+    session_id: &str,
+    meta: &Map<String, Value>,
+    state: State,
+    joined: bool,
+) {
+    let role = meta
+        .get("orchestration_role")
+        .and_then(Value::as_str)
+        .unwrap_or("worker");
+    let title = meta
+        .get("session_title")
+        .and_then(Value::as_str)
+        .unwrap_or(session_id);
+    let assignment = meta
+        .get("workflow_assignment")
+        .and_then(Value::as_str)
+        .map(|value| format!(" assignment={value}"))
+        .unwrap_or_default();
+    let (kind, body) = if joined {
+        (
+            "progress",
+            format!("{title} joined workflow coordination as {role}.{assignment}"),
+        )
+    } else {
+        match state {
+            State::Done => ("progress", format!("{title} completed.{assignment}")),
+            State::Error => ("blocker", format!("{title} entered an error state.{assignment}")),
+            State::Approval => (
+                "question",
+                format!("{title} is waiting for approval.{assignment}"),
+            ),
+            _ => return,
+        }
+    };
+    // Provider hooks can repeat terminal state events. Keep the automatic
+    // control-plane projection idempotent without suppressing model-authored
+    // messages that happen to have the same text.
+    if channel.messages.last().is_some_and(|message| {
+        message.from_session == "focalpoint"
+            && message.kind == kind
+            && message.body == body
+            && message.to
+                == if role == "orchestrator" {
+                    "channel"
+                } else {
+                    channel.owner_session.as_str()
+                }
+    }) {
+        return;
+    }
+    let to = if role == "orchestrator" {
+        "channel".to_string()
+    } else {
+        channel.owner_session.clone()
+    };
+    channel.post(
+        "focalpoint".into(),
+        to,
+        kind.into(),
+        body,
+        unix_ms_now(),
+    );
 }
 
 #[cfg(unix)]
@@ -4542,9 +4669,6 @@ fn dispatch(
                     label = Some(authoritative_title.to_string());
                 }
             }
-            let joins_channel = meta
-                .as_ref()
-                .is_some_and(|meta| meta.get("channel_id").and_then(Value::as_str).is_some());
             let state = match State::from_name(&name) {
                 Some(s) => s,
                 None => return err(&format!("unknown state: {name:?}")),
@@ -4563,7 +4687,7 @@ fn dispatch(
                     diagnostic_meta(fields, "relaunch_id"), diagnostic_meta(fields, "reregistered"),
                 );
             }
-            let effects = {
+            let (effects, channel_changed) = {
                 let mut shared = shared.lock().unwrap();
                 let effects = shared.registry.set_state(
                     session.as_deref(),
@@ -4573,20 +4697,42 @@ fn dispatch(
                     meta.clone(),
                     Instant::now(),
                 );
-                // Managed launch exports this id; the adapter reports it back
-                // in metadata when the real provider session registers.
-                if let (Some(id), Some(meta)) = (session.as_deref(), meta.as_ref()) {
-                    if let Some(channel_id) =
-                        meta.get("channel_id").and_then(serde_json::Value::as_str)
+                // Use the registry's merged, authoritatively attached
+                // identity, never the request's self-asserted metadata.
+                let identity = session
+                    .as_deref()
+                    .and_then(|id| managed_channel_identity(&shared.registry, id));
+                let mut channel_changed = false;
+                if let Some(identity) = identity {
+                    if let Some(channel_id) = identity
+                        .meta
+                        .get("channel_id")
+                        .and_then(serde_json::Value::as_str)
                     {
+                        channel_changed = true;
                         if let Some(channel) = shared.channels.channels.get_mut(channel_id) {
-                            channel.join_at_tail(id.to_string());
+                            match join_managed_channel(channel, &identity.id, &identity.meta) {
+                                Ok(joined) => {
+                                    post_managed_channel_lifecycle(
+                                        channel,
+                                        &identity.id,
+                                        &identity.meta,
+                                        state,
+                                        joined,
+                                    );
+                                }
+                                Err(message) => eprintln!(
+                                    "[channel] registration-rejected channel={} session={} error={}",
+                                    diagnostic_text(channel_id), diagnostic_text(&identity.id),
+                                    diagnostic_text(&message),
+                                ),
+                            }
                         }
                     }
                 }
-                effects
+                (effects, channel_changed)
             };
-            if !apply_effects(effects, ctx, host_tx) && joins_channel {
+            if !apply_effects(effects, ctx, host_tx) && channel_changed {
                 save_snapshot(shared);
             }
             ok()
@@ -4618,20 +4764,42 @@ fn dispatch(
             );
             // Unknown sessions are a silent no-op (never registers one) —
             // see `Registry::merge_meta`.
-            let effects = {
+            let (effects, channel_changed) = {
                 let mut shared = shared.lock().unwrap();
                 let effects =
                     shared
                         .registry
-                        .merge_meta(&session, kind, label, meta, Instant::now());
-                if let Some(channel_id) = joining_channel.as_deref() {
+                        .merge_meta(&session, kind, label, meta.clone(), Instant::now());
+                let identity = managed_channel_identity(&shared.registry, &session);
+                let mut channel_changed = false;
+                if let (Some(channel_id), Some(identity)) =
+                    (joining_channel.as_deref(), identity)
+                {
+                    channel_changed = true;
                     if let Some(channel) = shared.channels.channels.get_mut(channel_id) {
-                        channel.join_at_tail(session.to_string());
+                        match join_managed_channel(channel, &session, &identity.meta) {
+                            Ok(joined) => {
+                                if joined {
+                                    post_managed_channel_lifecycle(
+                                        channel,
+                                        &session,
+                                        &identity.meta,
+                                        identity.state,
+                                        true,
+                                    );
+                                }
+                            }
+                            Err(message) => eprintln!(
+                                "[channel] registration-rejected channel={} session={} error={}",
+                                diagnostic_text(channel_id), diagnostic_text(&session),
+                                diagnostic_text(&message),
+                            ),
+                        }
                     }
                 }
-                effects
+                (effects, channel_changed)
             };
-            if !apply_effects(effects, ctx, host_tx) && joining_channel.is_some() {
+            if !apply_effects(effects, ctx, host_tx) && channel_changed {
                 save_snapshot(shared);
             }
             ok()
@@ -5057,6 +5225,7 @@ fn dispatch(
             channel: channel_id,
             since,
             tail,
+            ack,
         } => {
             let _transition = ctx.transition.lock().unwrap();
             let actor = match channel_actor(&shared.lock().unwrap().registry, &task_id) {
@@ -5071,15 +5240,53 @@ fn dispatch(
             let Some(channel) = state.channels.channels.get_mut(&channel_id) else {
                 return err("unknown channel");
             };
-            let (messages, next) = match channel.read(&actor.id, since, tail as usize) {
+            let (messages, next, available_through) = match channel.read(&actor.id, since, tail as usize) {
                 Ok(value) => value,
                 Err(message) => return err(&message),
             };
+            let acknowledged_through = if ack.unwrap_or(false) {
+                match channel.ack(&actor.id, next) {
+                    Ok(cursor) => cursor,
+                    Err(message) => return err(&message),
+                }
+            } else {
+                channel.members.get(&actor.id).copied().unwrap_or(0)
+            };
             drop(state);
-            save_snapshot(shared);
+            if ack.unwrap_or(false) {
+                save_snapshot(shared);
+            }
             Dispatch::Reply(Response::Json(
-                serde_json::json!({"ok":true,"channel_id":channel_id,"messages":messages,"next_cursor":next}),
+                serde_json::json!({"ok":true,"channel_id":channel_id,"messages":messages,
+                    "next_cursor":next,"available_through":available_through,
+                    "acknowledged_through":acknowledged_through}),
             ))
+        }
+        Request::ChannelAck {
+            task_id,
+            channel: channel_id,
+            through,
+        } => {
+            let _transition = ctx.transition.lock().unwrap();
+            let actor = match channel_actor(&shared.lock().unwrap().registry, &task_id) {
+                Ok(actor) => actor,
+                Err(message) => return err(&message),
+            };
+            let acknowledged_through = {
+                let mut state = shared.lock().unwrap();
+                let Some(channel) = state.channels.channels.get_mut(&channel_id) else {
+                    return err("unknown channel");
+                };
+                match channel.ack(&actor.id, through) {
+                    Ok(cursor) => cursor,
+                    Err(message) => return err(&message),
+                }
+            };
+            save_snapshot(shared);
+            Dispatch::Reply(Response::Json(serde_json::json!({
+                "ok": true, "channel_id": channel_id,
+                "acknowledged_through": acknowledged_through,
+            })))
         }
         Request::ChannelPost {
             task_id,
@@ -5373,6 +5580,7 @@ fn dispatch(
             workflow_assignments,
             transition_confirmation,
         } => {
+            let mut channel_id = channel_id;
             let (agent_type, selected_model) =
                 match required_launch_selection(agent_type.as_deref(), model.as_deref()) {
                     Ok(selection) => selection,
@@ -5401,6 +5609,27 @@ fn dispatch(
             ) {
                 return err(&message);
             }
+            // Workflow workers inherit the run's daemon-owned channel. A
+            // caller may repeat that exact id for compatibility, but cannot
+            // substitute or omit coordination by choosing another channel.
+            if role == "worker" {
+                if let Some(run_id) = workflow_run_id.as_deref() {
+                    let receipt: Value = match std::fs::read(workflow_receipt_path(run_id))
+                        .ok()
+                        .and_then(|data| serde_json::from_slice(&data).ok())
+                    {
+                        Some(receipt) => receipt,
+                        None => return err("unknown workflow run"),
+                    };
+                    let Some(run_channel) = receipt.get("channel_id").and_then(Value::as_str) else {
+                        return err("workflow run has no coordination channel");
+                    };
+                    if channel_id.as_deref().is_some_and(|id| id != run_channel) {
+                        return err("workflow worker channel does not match the workflow run");
+                    }
+                    channel_id = Some(run_channel.to_string());
+                }
+            }
             let title = match orchestrator_session_title(title.as_deref(), &task_id) {
                 Ok(title) => title,
                 Err(message) => return err(&message),
@@ -5412,6 +5641,17 @@ fn dispatch(
                 let Ok(mut receipt) = serde_json::from_slice::<Value>(&data) else {
                     return err("managed task id has an invalid launch receipt");
                 };
+                // The initial workflow request intentionally has no channel
+                // argument: the daemon created and persisted it atomically.
+                if role == "orchestrator"
+                    && workflow_assignments.is_some()
+                    && channel_id.is_none()
+                {
+                    channel_id = receipt
+                        .get("channel_id")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                }
                 let exact_strings = [
                     ("provider", Some(provider.as_str())),
                     ("model", Some(selected_model)),
@@ -5443,7 +5683,7 @@ fn dispatch(
                 receipt["ok"] = true.into();
                 return Dispatch::Reply(Response::Json(receipt));
             }
-            let (slot, workflow_claim) = {
+            let (slot, workflow_claim, created_channel_id) = {
                 let _transition = ctx.transition.lock().unwrap();
                 let mut state = shared.lock().unwrap();
                 if let Err(message) = validate_orchestration_relationship(
@@ -5458,11 +5698,15 @@ fn dispatch(
                     let Some(channel) = state.channels.channels.get(channel_id) else {
                         return err("unknown channel");
                     };
-                    let Some(manager) = manager_task_id.as_deref() else {
-                        return err("launch --channel requires manager_task_id");
-                    };
-                    if channel.owner_task_id != manager {
-                        return err("channel is not owned by that orchestrator task");
+                    if role == "worker" {
+                        let Some(manager) = manager_task_id.as_deref() else {
+                            return err("launch --channel requires manager_task_id");
+                        };
+                        if channel.owner_task_id != manager {
+                            return err("channel is not owned by that orchestrator task");
+                        }
+                    } else {
+                        return err("top-level orchestrator channels are daemon-created");
                     }
                 }
                 let slot = match state
@@ -5484,6 +5728,15 @@ fn dispatch(
                                     .get("error")
                                     .and_then(Value::as_str)
                                     .unwrap_or("managed launch previously failed before registration; retry with a new task id"));
+                            }
+                            if role == "orchestrator"
+                                && workflow_assignments.is_some()
+                                && channel_id.is_none()
+                            {
+                                channel_id = receipt
+                                    .get("channel_id")
+                                    .and_then(Value::as_str)
+                                    .map(str::to_string);
                             }
                             // Replaying the stored receipt is what makes
                             // re-running a partially expanded formation safe.
@@ -5568,8 +5821,21 @@ fn dispatch(
                 } else {
                     None
                 };
-                (slot, claim)
+                let created_channel_id = if role == "orchestrator"
+                    && workflow_assignments.is_some()
+                    && channel_id.is_none()
+                {
+                    let channel = state.channels.create_pending(task_id.clone());
+                    channel_id = Some(channel.id.clone());
+                    Some(channel.id)
+                } else {
+                    None
+                };
+                (slot, claim, created_channel_id)
             };
+            if created_channel_id.is_some() {
+                save_snapshot(shared);
+            }
             eprintln!(
                 "[managed-launch] reserved task_id={} title={} slot={} provider={} role={} cwd={} terminal=new-window",
                 diagnostic_text(&task_id), diagnostic_text(&title),
@@ -5608,11 +5874,19 @@ fn dispatch(
                         ) {
                             update_launch_receipt_status(&receipt, "failed", Some(&message));
                             let _transition = ctx.transition.lock().unwrap();
-                            shared
-                                .lock()
-                                .unwrap()
-                                .registry
-                                .cancel_managed_launch(&task_id);
+                            {
+                                let mut state = shared.lock().unwrap();
+                                state.registry.cancel_managed_launch(&task_id);
+                                if let Some(channel_id) = created_channel_id.as_deref() {
+                                    state.channels.channels.remove(channel_id);
+                                }
+                            }
+                            if created_channel_id.is_some() {
+                                save_snapshot(shared);
+                            }
+                            if let Some(claim) = &workflow_claim {
+                                rollback_workflow_assignment(claim);
+                            }
                             eprintln!(
                                 "[managed-launch] registration-failed task_id={} provider=cursor error={}",
                                 diagnostic_text(&task_id),
@@ -5634,11 +5908,16 @@ fn dispatch(
                 }
                 Err(message) => {
                     let _transition = ctx.transition.lock().unwrap();
-                    shared
-                        .lock()
-                        .unwrap()
-                        .registry
-                        .cancel_managed_launch(&task_id);
+                    {
+                        let mut state = shared.lock().unwrap();
+                        state.registry.cancel_managed_launch(&task_id);
+                        if let Some(channel_id) = created_channel_id.as_deref() {
+                            state.channels.channels.remove(channel_id);
+                        }
+                    }
+                    if created_channel_id.is_some() {
+                        save_snapshot(shared);
+                    }
                     if let Some(claim) = &workflow_claim {
                         rollback_workflow_assignment(claim);
                     }
@@ -5944,6 +6223,47 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn managed_workflow_channel_binds_owner_and_authorized_worker() {
+        let mut channels = crate::channel::Channels::default();
+        let channel_id = channels.create_pending("run-orchestrator".into()).id.clone();
+        let channel = channels.channels.get_mut(&channel_id).unwrap();
+
+        let owner = Map::from_iter([
+            ("managed".into(), json!(true)),
+            ("orchestrator_task_id".into(), json!("run-orchestrator")),
+            ("orchestration_role".into(), json!("orchestrator")),
+        ]);
+        assert!(join_managed_channel(channel, "owner-session", &owner).unwrap());
+        assert_eq!(channel.owner_session, "owner-session");
+
+        let worker = Map::from_iter([
+            ("managed".into(), json!(true)),
+            ("orchestrator_task_id".into(), json!("worker-task")),
+            ("orchestration_role".into(), json!("worker")),
+            ("manager_task_id".into(), json!("run-orchestrator")),
+        ]);
+        assert!(join_managed_channel(channel, "worker-session", &worker).unwrap());
+        assert!(channel.members.contains_key("worker-session"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn managed_workflow_channel_rejects_identity_mismatch() {
+        let mut channels = crate::channel::Channels::default();
+        let channel_id = channels.create_pending("expected-owner".into()).id.clone();
+        let channel = channels.channels.get_mut(&channel_id).unwrap();
+        let impostor = Map::from_iter([
+            ("managed".into(), json!(true)),
+            ("orchestrator_task_id".into(), json!("wrong-owner")),
+            ("orchestration_role".into(), json!("orchestrator")),
+        ]);
+        assert!(join_managed_channel(channel, "impostor", &impostor).is_err());
+        assert!(channel.owner_session.is_empty());
+        assert!(channel.members.is_empty());
+    }
+
     #[test]
     fn channel_wake_requires_a_private_owned_tmux_target() {
         let mut meta = serde_json::Map::new();
@@ -6204,6 +6524,7 @@ mod tests {
             "Cursor audit",
             "cursor-audit-1",
             "worker",
+            true,
             "Inspect it.",
         );
         assert!(attachable.contains("Before any other work"));
@@ -6217,9 +6538,12 @@ mod tests {
             "Cursor audit",
             "cursor-audit-1",
             "worker",
+            false,
             "Inspect it.",
         );
         assert!(!headless.contains("focalpoint register"));
+        assert!(!headless.contains("focalpoint_claim_assignment"));
+        assert!(attachable.contains("focalpoint_claim_assignment"));
     }
 
     #[test]
@@ -6477,6 +6801,20 @@ mod tests {
             matches!(request, Request::SetSessionBacklogged { session, backlogged: true }
             if session == "s1")
         );
+
+        let request: Request = serde_json::from_value(json!({
+            "cmd": "channel-read", "task_id": "worker", "channel": "ch-1",
+            "tail": 25, "ack": true
+        }))
+        .expect("typed channel read decodes");
+        assert!(matches!(request, Request::ChannelRead { ack: Some(true), .. }));
+
+        let request: Request = serde_json::from_value(json!({
+            "cmd": "channel-ack", "task_id": "worker", "channel": "ch-1",
+            "through": 42
+        }))
+        .expect("typed channel acknowledgement decodes");
+        assert!(matches!(request, Request::ChannelAck { through: 42, .. }));
     }
 
     #[test]

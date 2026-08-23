@@ -57,8 +57,9 @@ skip that prompt, run `./install.sh --yes`.
 
 It will:
 
-- build and install the `focalpointd` daemon, general `focalpoint` CLI, and
-  narrow native `fpctl-agent` orchestration client;
+- build and install the `focalpointd` daemon, general `focalpoint` CLI, narrow
+  native `fpctl-agent` orchestration client, and `focalpoint-mcp` coordination
+  server;
 - install and launch the native FocalPoint menu-bar app;
 - configure a launchd user service so the daemon starts automatically;
 - install the guarded `focalpoint-orchestrator` agent-control skill;
@@ -66,7 +67,9 @@ It will:
 - install the managed-session launcher under `~/.config/focalpoint/` while
   preserving any existing FocalPoint tmux configuration;
 - merge FocalPoint lifecycle hooks into each installed agent's user config,
-  backing up those files before changing them; and
+  backing up those files before changing them;
+- register the identity-bound coordination MCP server with Claude, Codex, and
+  Cursor without overwriting same-name configurations; and
 - preserve an existing `~/.config/focalpoint/config.toml`.
 
 The app also includes a curated workflow catalog. **Start Workflow** and

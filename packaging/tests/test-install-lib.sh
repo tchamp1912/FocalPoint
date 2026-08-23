@@ -41,9 +41,12 @@ printf '%s\n' '#!/bin/sh' 'echo Control the FocalPoint macropad' > "$STALE/focal
 chmod +x "$STALE/focalpoint"
 printf '%s\n' '#!/bin/sh' 'echo unrelated' > "$STALE/focalpointd"
 chmod +x "$STALE/focalpointd"
+printf '%s\n' '#!/bin/sh' 'echo focalpoint-coordination' > "$STALE/focalpoint-mcp"
+chmod +x "$STALE/focalpoint-mcp"
 prune_managed_binary_root \
-  "$STALE" "$ACTIVE" "$ROOT/daemon/target" focalpoint focalpointd
+  "$STALE" "$ACTIVE" "$ROOT/daemon/target" focalpoint focalpointd focalpoint-mcp
 test ! -e "$STALE/focalpoint"
 test -f "$STALE/focalpointd"
+test ! -e "$STALE/focalpoint-mcp"
 
 echo "install cleanup tests passed"

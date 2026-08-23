@@ -54,8 +54,31 @@ handoffs all belong there. Do not use transcripts as a routine mailbox or to
 poll for ordinary completion.
 
 Channel commands work only inside a live FocalPoint-managed Claude, Codex, or
-registered Cursor session, where `FOCALPOINT_ORCHESTRATOR_TASK_ID` is set. An
-orchestrator creates and owns the channel; add a worker when launching it:
+registered Cursor session, where `FOCALPOINT_ORCHESTRATOR_TASK_ID` is set.
+Workflow launches automatically create one channel for the run, securely bind
+the orchestrator when it registers, and derive each worker's membership from
+the workflow receipt. Do not manually create or pass a channel for a workflow
+worker.
+
+When the FocalPoint MCP tools are available, claim the assignment before doing
+work, use `focalpoint_ask`, `focalpoint_report_progress`, and
+`focalpoint_report_blocker` while working, and call `focalpoint_complete` before
+the final response. Read and acknowledge coordination before a phase gate or
+completion. These tools take identity only from the managed launch environment,
+so never substitute a task or channel id.
+
+Use the guarded CLI as a fallback when MCP is unavailable. Reads are
+non-destructive by default; acknowledge only after processing the returned
+messages:
+
+```sh
+fpctl-agent channel read --channel "$FOCALPOINT_CHANNEL_ID" --tail 20
+fpctl-agent channel ack --channel "$FOCALPOINT_CHANNEL_ID" --through MESSAGE_ID
+fpctl-agent channel post --channel "$FOCALPOINT_CHANNEL_ID" --kind progress --body 'Implemented the parser slice; tests are running.'
+```
+
+For a managed, non-workflow work group, the orchestrator still creates and owns
+the channel explicitly and adds a worker when launching it:
 
 ```sh
 fpctl-agent channel create
@@ -72,16 +95,17 @@ Within the channel, use `post`, `read`, and `members` deliberately:
 
 ```sh
 fpctl-agent channel post --channel ch-1 --kind directive --body 'Take the parser slice.'
-fpctl-agent channel read --channel ch-1 --tail 20
+fpctl-agent channel read --channel ch-1 --tail 20 --ack
 fpctl-agent channel members --channel ch-1
 ```
 
 Valid message kinds are `note`, `question`, `progress`, `blocker`, and
 `directive`; bodies are limited to 4,096 characters. Workers may post only to
 their owning orchestrator (use the default recipient); an orchestrator may post
-to the channel or a member with `--to`. A worker joins at the channel's current
-tail, so include its assignment in the launch task or send it after the worker
-has joined. Close the channel when the work group is finished.
+to the channel or a member with `--to`. A non-workflow worker joins at the
+channel's current tail, so include its assignment in the launch task or send it
+after the worker has joined. Close manually created channels when the work
+group is finished.
 
 ## Launch
 
@@ -113,9 +137,10 @@ hard debugging, and synthesis that genuinely needs them. Do not choose every
 worker from the orchestrator's own provider. Before launch,
 consult `status` usage: missing usage is unknown, not free capacity; prefer
 comparable providers with available reported headroom. Record the concrete
-agent type, provider, model, and a short selection rationale in the orchestration
-channel so the choice is auditable and cannot inherit ambient UI or provider
-state. If headroom forces a substitution, record that substitution explicitly.
+agent type, provider, model, and a short selection rationale with
+`focalpoint_report_progress` (or the channel CLI fallback) so the choice is
+auditable and cannot inherit ambient UI or provider state. If headroom forces a
+substitution, record that substitution explicitly.
 
 Always pass a short, descriptive `--title` that is unique within the current
 work group. The daemon atomically reserves the worker's numbered slot before

@@ -139,6 +139,16 @@ enum ChannelCommand {
         since: Option<u64>,
         #[arg(long, default_value_t = 20)]
         tail: u16,
+        /// Acknowledge through the final returned message. Omit for a safe peek.
+        #[arg(long, default_value_t = false)]
+        ack: bool,
+    },
+    Ack {
+        #[arg(long)]
+        channel: String,
+        /// Highest message id that was processed successfully.
+        #[arg(long)]
+        through: u64,
     },
     Members {
         #[arg(long)]
@@ -461,8 +471,12 @@ fn run(command: AgentCommand) -> Result<(), String> {
                     channel,
                     since,
                     tail,
+                    ack,
                 } => request(
-                    json!({"cmd":"channel-read","task_id":task_id,"channel":channel,"since":since,"tail":tail}),
+                    json!({"cmd":"channel-read","task_id":task_id,"channel":channel,"since":since,"tail":tail,"ack":ack}),
+                )?,
+                ChannelCommand::Ack { channel, through } => request(
+                    json!({"cmd":"channel-ack","task_id":task_id,"channel":channel,"through":through}),
                 )?,
                 ChannelCommand::Members { channel } => {
                     request(json!({"cmd":"channel-members","task_id":task_id,"channel":channel}))?

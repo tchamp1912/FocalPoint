@@ -59,7 +59,7 @@ description = "Adversarial reviewer; findings only, no fixes"
 
 [provider]
 prefer   = ["codex", "claude"]
-model    = "gpt-5.6-sol"       # optional
+model    = "gpt-5.6-sol"       # optional concrete package recommendation
 requires = ["channels"]        # optional, checkable capabilities
 
 [persona]
@@ -84,15 +84,18 @@ to the package's required `persona.md` file.
 
 `provider.prefer` is ordered. Resolution selects the first available provider
 that satisfies every `provider.requires` capability and every `[enforced]`
-constraint. `model` is optional and is omitted to use the selected provider's
-default. `requires` is an optional list of capabilities the launcher can check;
+constraint. `model` is an optional package-level recommendation. If omitted,
+preflight must resolve a concrete value from the installed model catalog; it
+must never defer to a provider default. Every daemon launch requires that
+resolved value and rejects `auto`/`default` sentinels. `requires` is an optional
+list of capabilities the launcher can check;
 `channels` excludes Cursor attachable mode because that mode is not a live
 FocalPoint channel member.
 
-Although schema version 1 permits an omitted model, every bundled example pins
-one provider and one provider-valid model ID. This keeps example launches from
-inheriting a last-used or changing provider default and makes their
-complexity-based selection auditable. See
+Every bundled example pins one provider and one provider-valid model ID, while
+the catalog covers valid packages that omit the recommendation. This keeps
+launches from inheriting a last-used or changing provider default and makes
+their complexity-based selection auditable. See
 [the 2026-08-22 formation research notes](formation-research-2026-08-22.md).
 
 ### Advisory is prompt text, never enforcement

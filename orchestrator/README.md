@@ -117,6 +117,22 @@ same Unix-socket JSON API used by the app and adapters. Its guarded interface
 does not expose approval answers, arbitrary input injection, raw termination,
 or slot mutation.
 
+## Workflow coordination
+
+Every workflow run gets a daemon-owned channel automatically. The initial
+orchestrator launch reserves it, registration binds its owner, and authorized
+worker launches inherit membership from the workflow receipt. Callers do not
+need to copy channel ids between launches, and a mismatched supplied id fails
+closed.
+
+The installed `focalpoint-mcp` stdio server exposes the same control plane to
+Claude, Codex, and Cursor as structured tools: claim assignment, read,
+acknowledge, ask, report progress, report a blocker, and complete. It derives
+task and channel identity only from the managed launch environment. Agents
+should acknowledge messages after processing them; reads are otherwise
+non-destructive. `fpctl-agent channel` remains the guarded fallback when a
+provider cannot connect to MCP.
+
 ## Read and stop owned work
 
 Managed sessions launched with a stable task id can be inspected through a

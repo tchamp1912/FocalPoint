@@ -42,6 +42,7 @@ CODEX_SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/focalpoint-orchestrator"
 CLAUDE_SKILL_DIR="$CLAUDE_DIR/skills/focalpoint-orchestrator"
 CURSOR_DIR="$HOME/.cursor"
 CURSOR_HOOKS="$CURSOR_DIR/hooks.json"
+CURSOR_MCP="$CURSOR_DIR/mcp.json"
 LOG_DIR="$HOME/Library/Logs/focalpoint"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 PLIST_LABEL="dev.focalpoint.daemon"
@@ -153,8 +154,8 @@ fi
 step "About to install FocalPoint"
 cat <<EOF
 This will, all idempotently:
-  - cargo build --release the daemon and native CLIs
-  - symlink focalpoint, focalpointd, and fpctl-agent into /opt/homebrew/bin
+  - cargo build --release the daemon, native CLIs, and coordination MCP server
+  - symlink focalpoint, focalpointd, fpctl-agent, and focalpoint-mcp into /opt/homebrew/bin
     (or ~/.local/bin as a fallback)
   - install ~/.config/focalpoint/config.toml (only if one isn't already there)
   - install ~/.config/focalpoint/model-catalog.toml (only if one isn't already there)
@@ -168,6 +169,7 @@ This will, all idempotently:
   - merge FocalPoint's hooks into ~/.claude/settings.json and
     ~/.cursor/hooks.json (each backed up first; skipped cleanly if already
     merged)
+  - register the identity-bound FocalPoint MCP server with Codex, Claude, and Cursor
   - build the exact multi-process iTerm focus helper
   - build the macOS keyboard-backlight helper (non-fatal if it fails)
   - build + install the FocalPoint.app menu bar app, if this checkout has one
@@ -189,7 +191,7 @@ fi
 step "Building the daemon (cargo build --release)"
 ( cd "$DAEMON_DIR" && cargo build --release --quiet )
 RELEASE_DIR="$DAEMON_DIR/target/release"
-ok "built $RELEASE_DIR/{focalpoint,focalpointd,fpctl-agent}"
+ok "built $RELEASE_DIR/{focalpoint,focalpointd,fpctl-agent,focalpoint-mcp}"
 
 # ---------------------------------------------------------------------------
 # 4. Install the native FocalPoint binaries
@@ -208,7 +210,7 @@ if [ ! -d "$BIN_DIR" ] || [ ! -w "$BIN_DIR" ]; then
   esac
 fi
 
-for bin in focalpoint focalpointd fpctl-agent; do
+for bin in focalpoint focalpointd fpctl-agent focalpoint-mcp; do
   # LaunchAgents on Apple Silicon can stall in dyld/Rosetta when their
   # executable resolves through a symlink into a hidden worktree. Install an
   # immutable local copy and atomically repoint the public name instead. The
@@ -220,7 +222,7 @@ for bin in focalpoint focalpointd fpctl-agent; do
   mv -f "$staged" "$installed"
   ln -sfn "$installed" "$BIN_DIR/$bin"
 done
-ok "installed $BIN_DIR/{focalpoint,focalpointd,fpctl-agent}"
+ok "installed $BIN_DIR/{focalpoint,focalpointd,fpctl-agent,focalpoint-mcp}"
 
 # A previous install may have fallen back to ~/.local/bin and a later one to
 # /opt/homebrew/bin (or vice versa). Remove only FocalPoint's exact managed
@@ -228,11 +230,12 @@ ok "installed $BIN_DIR/{focalpoint,focalpointd,fpctl-agent}"
 for stale_bin_dir in /opt/homebrew/bin "$HOME/.local/bin"; do
   prune_managed_binary_root \
     "$stale_bin_dir" "$BIN_DIR" "$DAEMON_DIR/target" \
-    focalpoint focalpointd fpctl-agent focalpoint-attention focalpoint-tier2
+    focalpoint focalpointd fpctl-agent focalpoint-mcp focalpoint-attention focalpoint-tier2
 done
 
 FOCALPOINT_BIN="$BIN_DIR/focalpoint"
 FOCALPOINTD_BIN="$BIN_DIR/focalpointd"
+FOCALPOINT_MCP_BIN="$BIN_DIR/focalpoint-mcp"
 
 # ---------------------------------------------------------------------------
 # 4b. Bundled workflow catalog
@@ -496,6 +499,95 @@ if [ -f "$CODEX_CONFIG" ] && grep -q "codex-notify.sh" "$CODEX_CONFIG" 2>/dev/nu
 fi
 
 # ---------------------------------------------------------------------------
+# 8b. Provider-neutral workflow coordination MCP server
+# ---------------------------------------------------------------------------
+
+step "Workflow coordination MCP integration"
+
+MCP_STATUS=()
+
+if command -v codex >/dev/null 2>&1; then
+  if EXISTING_CODEX_MCP="$(codex mcp get focalpoint --json 2>/dev/null)"; then
+    EXISTING_CODEX_COMMAND="$(printf '%s' "$EXISTING_CODEX_MCP" | jq -r '.command // empty')"
+    EXISTING_CODEX_ARGS="$(printf '%s' "$EXISTING_CODEX_MCP" | jq -c '.args // []')"
+    EXISTING_CODEX_ENV="$(printf '%s' "$EXISTING_CODEX_MCP" | jq -c '.env // {}')"
+    if [ "$EXISTING_CODEX_COMMAND" = "$FOCALPOINT_MCP_BIN" ] \
+       && [ "$EXISTING_CODEX_ARGS" = "[]" ] \
+       && [ "$EXISTING_CODEX_ENV" = "{}" ]; then
+      MCP_STATUS+=("Codex current")
+      ok "Codex MCP server already current"
+    else
+      MCP_STATUS+=("Codex collision left untouched")
+      info "Codex already has a non-FocalPoint MCP server named focalpoint — left untouched"
+    fi
+  elif codex mcp add focalpoint -- "$FOCALPOINT_MCP_BIN" >/tmp/focalpoint-codex-mcp.log 2>&1; then
+    MCP_STATUS+=("Codex installed")
+    ok "registered FocalPoint MCP server with Codex"
+  else
+    MCP_STATUS+=("Codex registration failed")
+    info "Codex MCP registration failed — see /tmp/focalpoint-codex-mcp.log"
+  fi
+else
+  MCP_STATUS+=("Codex unavailable")
+  info "Codex CLI not found — skipping its MCP registration"
+fi
+
+if command -v claude >/dev/null 2>&1; then
+  if EXISTING_CLAUDE_MCP="$(claude mcp get focalpoint 2>/dev/null)"; then
+    if printf '%s' "$EXISTING_CLAUDE_MCP" | grep -Fq "$FOCALPOINT_MCP_BIN"; then
+      MCP_STATUS+=("Claude current")
+      ok "Claude MCP server already current"
+    else
+      MCP_STATUS+=("Claude collision left untouched")
+      info "Claude already has a non-FocalPoint MCP server named focalpoint — left untouched"
+    fi
+  elif claude mcp add --scope user focalpoint -- "$FOCALPOINT_MCP_BIN" \
+       >/tmp/focalpoint-claude-mcp.log 2>&1; then
+    MCP_STATUS+=("Claude installed")
+    ok "registered FocalPoint MCP server with Claude"
+  else
+    MCP_STATUS+=("Claude registration failed")
+    info "Claude MCP registration failed — see /tmp/focalpoint-claude-mcp.log"
+  fi
+else
+  MCP_STATUS+=("Claude unavailable")
+  info "Claude CLI not found — skipping its MCP registration"
+fi
+
+mkdir -p "$CURSOR_DIR"
+if [ ! -f "$CURSOR_MCP" ]; then
+  printf '%s\n' '{"mcpServers":{}}' > "$CURSOR_MCP"
+  ok "created $CURSOR_MCP"
+fi
+if ! jq -e 'type == "object" and ((.mcpServers // {}) | type == "object")' \
+     "$CURSOR_MCP" >/dev/null 2>&1; then
+  MCP_STATUS+=("Cursor invalid config left untouched")
+  info "$CURSOR_MCP is not a valid MCP configuration — left untouched"
+elif jq -e '.mcpServers.focalpoint != null' "$CURSOR_MCP" >/dev/null 2>&1; then
+  if jq -e --arg command "$FOCALPOINT_MCP_BIN" \
+       '.mcpServers.focalpoint.command == $command and (.mcpServers.focalpoint.args // []) == [] and (.mcpServers.focalpoint.env // {}) == {}' \
+       "$CURSOR_MCP" >/dev/null 2>&1; then
+    MCP_STATUS+=("Cursor current")
+    ok "Cursor MCP server already current"
+  else
+    MCP_STATUS+=("Cursor collision left untouched")
+    info "Cursor already has a non-FocalPoint MCP server named focalpoint — left untouched"
+  fi
+else
+  BACKUP="$CURSOR_MCP.bak-focalpoint-$(date +%Y%m%d%H%M%S)"
+  cp "$CURSOR_MCP" "$BACKUP"
+  MCP_TMP="$(mktemp)"
+  jq --arg command "$FOCALPOINT_MCP_BIN" \
+    '.mcpServers = (.mcpServers // {}) | .mcpServers.focalpoint = {command: $command, args: []}' \
+    "$CURSOR_MCP" > "$MCP_TMP"
+  mv "$MCP_TMP" "$CURSOR_MCP"
+  MCP_STATUS+=("Cursor installed")
+  ok "registered FocalPoint MCP server with Cursor (backup: $BACKUP)"
+fi
+MCP_STATUS_SUMMARY="$(printf '%s, ' "${MCP_STATUS[@]}")"
+MCP_STATUS_SUMMARY="${MCP_STATUS_SUMMARY%, }"
+
+# ---------------------------------------------------------------------------
 # 9. macOS backlight helper (non-fatal)
 # ---------------------------------------------------------------------------
 
@@ -651,7 +743,7 @@ ok "obsolete watcher/ranker files are absent"
 
 step "Summary"
 cat <<EOF
-  native binaries    $BIN_DIR/{focalpoint,focalpointd,fpctl-agent}
+  native binaries    $BIN_DIR/{focalpoint,focalpointd,fpctl-agent,focalpoint-mcp}
   config.toml        $CONFIG_STATUS
   managed launcher   $MANAGED_RUNNER
   tmux config        $TMUX_CONFIG_STATUS
@@ -661,6 +753,7 @@ cat <<EOF
   Claude Code hooks  $HOOKS_STATUS
   Cursor hooks       $CURSOR_STATUS
   Codex CLI          $CODEX_STATUS
+  coordination MCP   $MCP_STATUS_SUMMARY
   backlight helper   $BACKLIGHT_STATUS
   menu bar app       $APP_STATUS
   launchd agent      $PLIST_LABEL @ $PLIST_PATH$( [ "$USE_MOCK" -eq 1 ] && echo " (mock device)" )

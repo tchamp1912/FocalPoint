@@ -5,12 +5,16 @@ state to the macropad's RGB keys and turns key/dial/joystick events into agent
 actions. It implements [`PROTOCOL.md`](../PROTOCOL.md) v0.3 (the wire contract;
 the v0.3 material in PROTOCOL.md §6 is a draft and not implemented here).
 
-Two binaries, one crate:
+Four binaries, one crate:
 
 - **`focalpointd`** — the daemon. Talks USB Raw HID to the device and serves a
   Unix-socket API.
 - **`focalpoint`** — a thin CLI client over that socket (adapters and scripts call
   it). `focalpoint daemon` runs the daemon too.
+- **`fpctl-agent`** — the guarded orchestration client for managed launches,
+  attention order, and channel fallback operations.
+- **`focalpoint-mcp`** — the identity-bound stdio MCP façade that gives Claude,
+  Codex, and Cursor structured workflow coordination tools.
 
 ## Build
 

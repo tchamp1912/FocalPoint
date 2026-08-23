@@ -133,7 +133,8 @@ Requests:
  "task": "Implement and test the assigned task.", "task_id": "cursor-task"}
 {"cmd": "channel-create", "task_id": "project-orchestrator"}
 {"cmd": "channel-post", "task_id": "worker-task", "channel": "ch-1", "kind": "blocker", "body": "Need a decision.", "to": "channel"}
-{"cmd": "channel-read", "task_id": "worker-task", "channel": "ch-1", "since": 12, "tail": 20}
+{"cmd": "channel-read", "task_id": "worker-task", "channel": "ch-1", "since": 12, "tail": 20, "ack": false}
+{"cmd": "channel-ack", "task_id": "worker-task", "channel": "ch-1", "through": 19}
 {"cmd": "channel-members", "task_id": "worker-task", "channel": "ch-1"}
 {"cmd": "channel-close", "task_id": "project-orchestrator", "channel": "ch-1"}
 {"cmd": "read-session-transcript", "session": "id", "task_id": "stable-task-id",
@@ -520,19 +521,31 @@ return an actionable fail-closed error.
 ### Inter-agent channels
 
 Channels are persisted daemon-owned, pull-first mailboxes for one managed
-orchestrator and workers it launches. `channel-create` is allowed only for the
-live managed orchestrator identified by `task_id`; `channel-post`,
+orchestrator and workers it launches. An initial workflow-orchestrator launch
+creates a pending run channel and stores its id in the run receipt. Registration
+binds the owner, and workflow-worker launches derive the same channel from that
+receipt; a caller-supplied mismatch is rejected. For non-workflow groups,
+`channel-create` is allowed only for the live managed orchestrator identified by
+`task_id`; `channel-post`,
 `channel-read`, and `channel-members` require a member's own managed task id;
 only the creator can `channel-close`. Bodies are untrusted strings capped at
 4096 characters and kinds are `note`, `question`, `progress`, `blocker`, or
 `directive`. A worker post always routes to its owner, never a sibling.
 
-`channel-read` returns `messages` and `next_cursor`; omitted `since` uses and
-advances the member cursor. Logs retain the newest 100 messages (count-based,
-no TTL). `launch-session.channel_id` auto-joins the worker when its adapter
+`channel-read` returns the oldest bounded unread prefix, `next_cursor`, and
+`available_through`. Reads do not advance member state unless `ack: true` is
+explicitly supplied. `channel-ack.through` advances the monotonic cursor only
+after successful processing, preventing bounded reads from skipping messages.
+Logs retain the newest 100 messages (count-based, no TTL).
+`launch-session.channel_id` auto-joins a non-workflow worker when its adapter
 registers it, initializing its cursor at the then-current tail: no pre-join
 message is ever returned. Managed idle members may receive a debounced fixed
 tmux ping; it contains no message data, and waiting members are never woken.
+
+`focalpoint-mcp` is the provider-neutral stdio façade for these operations. It
+derives task and channel identity exclusively from the managed environment and
+exposes bounded claim, read, acknowledge, question, progress, blocker, and
+completion tools. Tool arguments never accept identity fields.
 
 `inject` feeds a synthetic device event through the same dispatch path as real
 hardware input (actions fire, subscribers see the event). It exists for

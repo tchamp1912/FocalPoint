@@ -71,6 +71,7 @@ prune_managed_binary_root() {
       focalpoint) legacy_marker="Control the FocalPoint macropad" ;;
       focalpointd) legacy_marker="FocalPoint host daemon" ;;
       fpctl-agent) legacy_marker="Safe FocalPoint orchestration controller" ;;
+      focalpoint-mcp) legacy_marker="focalpoint-coordination" ;;
     esac
     if [ -n "$legacy_marker" ] && [ -f "$link" ] && [ ! -L "$link" ] \
       && [ -x "$link" ] \

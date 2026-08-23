@@ -224,7 +224,7 @@ final class WorkflowLauncherModel: ObservableObject {
 
     /// Start one formation: launch its orchestrator via the daemon's
     /// `launch-session` primitive (PROTOCOL.md §3/§4). Everything after this —
-    /// revalidation, worktree prep, channel creation, role launch calls, and
+    /// revalidation, worktree prep, channel use, role launch calls, and
     /// fan-out gates — happens inside that orchestrator agent. The app passes
     /// reviewed assignments but never expands them into launch calls itself.
     ///
@@ -351,11 +351,11 @@ final class WorkflowLauncherModel: ObservableObject {
 
         You are this formation's orchestrator (launched role=orchestrator; your stable task id is in the launch preamble). Work the focalpoint-orchestrator skill end to end:
         1. Revalidate the manifest and agent types, then use the explicit provider/model assignments above; refuse if a provider cannot deliver a declared capability or enforcement constraint.
-        2. Prepare each role's working directory, wait for your own attachment to verify, then create the crew channel.
-        3. Launch each role with its exact --workflow-assignment id plus the recorded workflow run, phase, gate, type, provider, and model. Also pass --role worker --manager-task-id <your task id> --channel <id>, and wait for verified attachments. The daemon rejects every deviation and enforces each assignment's launch limit.
+        2. Claim this assignment with the FocalPoint coordination MCP tools. The daemon already created and exported this run's crew channel; report meaningful progress, questions, blockers, and completion there. Use the guarded fpctl-agent channel commands only as a fallback when MCP is unavailable.
+        3. Prepare each role's working directory, wait for your own attachment to verify, then launch each role with its exact --workflow-assignment id plus the recorded workflow run, phase, gate, type, provider, and model. Pass --role worker --manager-task-id <your task id>; the daemon securely derives and joins the run channel, rejects a mismatched supplied channel, and enforces each assignment's launch limit. Wait for verified attachments and channel claims.
         4. Honor every phase gate. The final preflight authorized only the formation and phases marked authorized; it did not pre-approve confirm gates. For a confirm gate, ask the human to approve that run and phase in the app, then retry without supplying any confirmation token. Never auto-approve, never silently retry, and on partial failure report to the human instead of stopping successful roles.
 
-        The daemon validates the persisted assignment ledger, approval consumption, and individual launch/channel/stop calls; sequencing judgment remains yours.
+        The daemon validates the persisted assignment ledger, approval consumption, automatic channel membership, and individual launch/stop calls; sequencing judgment remains yours.
         """
     }
 
