@@ -95,7 +95,7 @@ struct ManagedQuickLaunchView: View {
         GroupBox("Agent and identity") {
             VStack(alignment: .leading, spacing: 11) {
                 LabeledContent("Agent type") {
-                    TextField("implementer", text: $draft.agentType).frame(width: 280)
+                    TextField("Automatic from task", text: $draft.agentType).frame(width: 280)
                 }
                 fieldIssue(.agentType)
                 LabeledContent("Provider") {
@@ -104,9 +104,9 @@ struct ManagedQuickLaunchView: View {
                     }.labelsHidden().frame(width: 280)
                 }
                 LabeledContent("Explicit model") {
-                    TextField("Required model ID", text: $draft.model).frame(width: 280)
+                    TextField("Automatic from task", text: $draft.model).frame(width: 280)
                 }
-                Text("Required on every launch. FocalPoint never substitutes a provider default or last-selected model.")
+                Text("Leave both agent type and model blank to resolve them from this task. Every confirmed launch contains concrete values; provider defaults and last-used settings are never used.")
                     .font(.caption).foregroundStyle(.secondary)
                 fieldIssue(.model)
                 LabeledContent("Title") {
@@ -136,6 +136,10 @@ struct ManagedQuickLaunchView: View {
                 .pickerStyle(.segmented)
                 if draft.complexity == .infer {
                     Text("Inferred as \(recommendation.complexity.displayName.lowercased()) from the task text.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if draft.agentType.isEmpty && draft.model.isEmpty {
+                    Text("This recommendation will be applied automatically when you review the launch.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 HStack(alignment: .top) {

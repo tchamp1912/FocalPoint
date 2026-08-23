@@ -56,7 +56,7 @@ struct ManagedQuickLaunchRequest: Equatable, Identifiable {
 struct ManagedQuickLaunchDraft: Equatable {
     var task = ""
     var cwd = ""
-    var agentType = "implementer"
+    var agentType = "" // Blank agent + model means: resolve both from this task.
     var provider: ManagedQuickLaunchProvider = .codex
     var model = "" // Intentionally blank: there is no remembered/implicit model.
     var title = ""
@@ -95,6 +95,17 @@ struct ManagedQuickLaunchRecommendation: Equatable {
 }
 
 enum ManagedQuickLaunchRules {
+    private enum TaskIntent {
+        case planning
+        case threatModeling
+        case research
+        case synthesis
+        case verification
+        case performance
+        case correctnessReview
+        case implementation
+    }
+
     static func inferredComplexity(for task: String) -> ManagedQuickLaunchComplexity {
         let normalized = task.lowercased()
         let complexSignals = ["architect", "migration", "security", "concurrency", "distributed",
@@ -113,23 +124,49 @@ enum ManagedQuickLaunchRules {
         draft.complexity == .infer ? inferredComplexity(for: draft.task) : draft.complexity
     }
 
-    /// Product defaults are explicit model IDs/aliases already exercised by
-    /// this repository's managed launcher. Applying one is a visible user
-    /// action; merely viewing it never mutates the draft.
+    /// Resolve a task to a concrete provider, role, and model. The result is
+    /// recomputed from task text and complexity; no prior UI selection or
+    /// provider default participates in the decision.
     static func recommendation(for draft: ManagedQuickLaunchDraft) -> ManagedQuickLaunchRecommendation {
-        switch effectiveComplexity(for: draft) {
-        case .simple:
-            return .init(complexity: .simple, agentType: "implementer", provider: .claude,
-                         model: "sonnet",
-                         rationale: "A bounded change benefits from a fast implementation-focused agent and a capable general model.")
-        case .standard, .infer:
-            return .init(complexity: .standard, agentType: "implementer", provider: .codex,
-                         model: "gpt-5.6-sol",
-                         rationale: "A normal coding task benefits from the implementation agent and the repository's explicit Codex coding model.")
-        case .complex:
-            return .init(complexity: .complex, agentType: "planner", provider: .claude,
-                         model: "claude-opus-4-1",
-                         rationale: "Broad or high-risk work should begin with a planning agent and a stronger reasoning model before implementation is split up.")
+        let complexity = effectiveComplexity(for: draft)
+        let intent = taskIntent(for: draft.task)
+
+        switch intent {
+        case .verification:
+            return .init(complexity: complexity, agentType: "test-verifier", provider: .cursor,
+                         model: "composer-2.5",
+                         rationale: "IDE-grounded test, build, and UI verification is routed to Cursor Composer.")
+        case .planning, .threatModeling, .research, .synthesis:
+            let agentType: String
+            switch intent {
+            case .planning: agentType = "planner"
+            case .threatModeling: agentType = "threat-modeler"
+            case .research: agentType = "codebase-scout"
+            case .synthesis: agentType = "synthesizer"
+            default: preconditionFailure("unreachable task intent")
+            }
+            let model: String
+            switch complexity {
+            case .simple: model = "claude-haiku-4-5"
+            case .standard, .infer: model = "claude-sonnet-5"
+            case .complex: model = "claude-opus-5"
+            }
+            return .init(complexity: complexity, agentType: agentType, provider: .claude,
+                         model: model,
+                         rationale: "Planning, research, threat modeling, and synthesis use a task-matched Claude tier.")
+        case .implementation, .performance, .correctnessReview:
+            let agentType: String
+            switch intent {
+            case .performance: agentType = "perf-reviewer"
+            case .correctnessReview: agentType = "correctness-reviewer"
+            default: agentType = "implementer"
+            }
+            let model = complexity == .complex ? "gpt-5.6-sol" : "gpt-5.6-terra"
+            return .init(complexity: complexity, agentType: agentType, provider: .codex,
+                         model: model,
+                         rationale: complexity == .complex
+                            ? "Complex repository work uses Sol; ordinary implementation and review stay on the more efficient Terra tier."
+                            : "Ordinary repository implementation and review use the efficient Terra tier.")
         }
     }
 
@@ -175,17 +212,26 @@ enum ManagedQuickLaunchRules {
                             return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
                                 && isDirectory.boolValue
                         }) -> Result<ManagedQuickLaunchRequest, ManagedQuickLaunchValidationFailure> {
-        let issues = validate(draft, directoryExists: directoryExists)
+        var resolved = draft
+        let hasAgentType = !draft.agentType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasModel = !draft.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if !hasAgentType && !hasModel {
+            let selection = recommendation(for: draft)
+            resolved.agentType = selection.agentType
+            resolved.provider = selection.provider
+            resolved.model = selection.model
+        }
+        let issues = validate(resolved, directoryExists: directoryExists)
         guard issues.isEmpty else { return .failure(.init(issues: issues)) }
         return .success(.init(
-            task: draft.task.trimmingCharacters(in: .whitespacesAndNewlines),
-            cwd: URL(fileURLWithPath: draft.cwd).standardizedFileURL.path,
-            agentType: draft.agentType,
-            provider: draft.provider,
-            model: draft.model,
-            title: draft.title.trimmingCharacters(in: .whitespacesAndNewlines),
-            taskID: draft.taskID,
-            complexity: effectiveComplexity(for: draft)
+            task: resolved.task.trimmingCharacters(in: .whitespacesAndNewlines),
+            cwd: URL(fileURLWithPath: resolved.cwd).standardizedFileURL.path,
+            agentType: resolved.agentType,
+            provider: resolved.provider,
+            model: resolved.model,
+            title: resolved.title.trimmingCharacters(in: .whitespacesAndNewlines),
+            taskID: resolved.taskID,
+            complexity: effectiveComplexity(for: resolved)
         ))
     }
 
@@ -213,6 +259,27 @@ enum ManagedQuickLaunchRules {
         case "auto", "default", "provider-default": return true
         default: return false
         }
+    }
+
+    private static func taskIntent(for task: String) -> TaskIntent {
+        let normalized = task.lowercased()
+        func containsAny(_ signals: [String]) -> Bool {
+            signals.contains(where: normalized.contains)
+        }
+        if containsAny(["test verification", "verify tests", "run tests", "ui smoke", "xcode",
+                        "ide-grounded", "build verification", "reproduce in cursor"]) {
+            return .verification
+        }
+        if containsAny(["threat model", "abuse case", "attack surface"]) { return .threatModeling }
+        if containsAny(["research", "investigate options", "survey", "codebase scout"]) { return .research }
+        if containsAny(["synthesize", "synthesis", "reconcile findings"]) { return .synthesis }
+        if containsAny(["plan ", "planning", "architect", "architecture", "design proposal",
+                        "migration strategy"]) { return .planning }
+        if containsAny(["latency", "performance", "benchmark", "profil", "optimiz"]) { return .performance }
+        if containsAny(["correctness review", "review correctness", "code review", "audit implementation"]) {
+            return .correctnessReview
+        }
+        return .implementation
     }
 }
 
