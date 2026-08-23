@@ -209,7 +209,7 @@ enum FormationLoader {
         guard let version = TomlRead.int(header, "version") else {
             return .failed("[formation] requires an integer version")
         }
-        guard version == 1 else {
+        guard (1...2).contains(version) else {
             return .failed("unsupported schema version \(version)")
         }
         guard let description = TomlRead.str(header, "description"), !description.isEmpty else {
@@ -627,7 +627,7 @@ enum EditorValidation {
         if !isKebabCase(formation.name) {
             errors.append("Name must be lowercase kebab-case (e.g. review-fanout)")
         }
-        if formation.version != 1 {
+        if !(1...2).contains(formation.version) {
             errors.append("Schema version must be 1")
         }
         if formation.description.trimmingCharacters(in: .whitespaces).isEmpty {

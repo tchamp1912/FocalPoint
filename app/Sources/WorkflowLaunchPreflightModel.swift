@@ -16,7 +16,7 @@ private struct WorkflowAgentTypeProfile {
               case .success(let root) = TomlParser.parse(text),
               case .table(let typeTable)? = root["type"],
               case .string(let declaredName)? = typeTable["name"], declaredName == typeName,
-              case .int(let version)? = typeTable["version"], version == 1,
+              case .int(let version)? = typeTable["version"], (1...2).contains(version),
               case .table(let providerTable)? = root["provider"],
               case .array(let preferred)? = providerTable["prefer"] else { return nil }
 

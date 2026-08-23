@@ -587,7 +587,7 @@ final class WorkflowLauncherModel: ObservableObject {
         guard case .int(let version)? = formation["version"] else {
             return invalid("[formation] requires an integer version")
         }
-        guard version == 1 else {
+        guard (1...2).contains(version) else {
             return invalid("unsupported schema version \(version)")
         }
         guard case .string(let description)? = formation["description"], !description.isEmpty else {
