@@ -1754,10 +1754,14 @@ fn launch_orchestrated_session(
         let _ = std::fs::remove_file(&receipt);
         return Err(error);
     }
-    // Opening a terminal is transport progress, not launch success.  The
-    // dispatch path waits for Cursor's receipt-bound registration before it
-    // ever returns `status: launched` to the caller.
-    receipt_value["status"] = Value::String("awaiting-registration".into());
+    // Cursor needs a second, receipt-bound registration handshake. Claude and
+    // Codex retain their existing terminal-open launch acknowledgement.
+    let launch_status = if provider == "cursor" {
+        "awaiting-registration"
+    } else {
+        "launched"
+    };
+    receipt_value["status"] = Value::String(launch_status.into());
     let receipt_update = receipt.with_extension(format!("json.{}.tmp", std::process::id()));
     if let Ok(data) = serde_json::to_vec_pretty(&receipt_value) {
         if std::fs::write(&receipt_update, data).is_ok() {
@@ -1784,7 +1788,7 @@ fn launch_orchestrated_session(
         "workflow_gate": workflow_gate,
         "workflow_fanout": workflow_fanout,
         "terminal_bundle_id": terminal_bundle_id,
-        "status": "awaiting-registration",
+        "status": launch_status,
     }))
 }
 
