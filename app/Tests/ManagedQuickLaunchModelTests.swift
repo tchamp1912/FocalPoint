@@ -35,7 +35,16 @@ enum ManagedQuickLaunchModelTests {
         let missingModel = ManagedQuickLaunchRules.validate(draft, directoryExists: { _ in true })
         precondition(missingModel.contains { $0.field == .model }, "an explicit model is required")
 
+        draft.model = "auto"
+        let automaticModel = ManagedQuickLaunchRules.validate(draft, directoryExists: { _ in true })
+        precondition(automaticModel.contains { $0.field == .model }, "automatic models must fail before launch")
+
         draft.model = "gpt-5.6-sol"
+        draft.agentType = "default"
+        let defaultAgent = ManagedQuickLaunchRules.validate(draft, directoryExists: { _ in true })
+        precondition(defaultAgent.contains { $0.field == .agentType }, "default agent types must fail before launch")
+        draft.agentType = "implementer"
+
         draft.taskID = "contains spaces"
         let badID = ManagedQuickLaunchRules.validate(draft, directoryExists: { _ in true })
         precondition(badID.contains { $0.field == .taskID })

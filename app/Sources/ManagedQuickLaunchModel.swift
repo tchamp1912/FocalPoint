@@ -149,11 +149,15 @@ enum ManagedQuickLaunchRules {
         if !draft.cwd.hasPrefix("/") || !directoryExists(draft.cwd) {
             issues.append(.init(field: .cwd, message: "Choose an existing absolute project folder."))
         }
-        if !matches(draft.agentType, pattern: #"[a-z0-9][a-z0-9-]{0,63}"#) {
-            issues.append(.init(field: .agentType, message: "Agent type must be 1–64 lowercase letters, numbers, or dashes."))
+        let agentType = draft.agentType.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !matches(agentType, pattern: #"[a-z0-9][a-z0-9-]{0,63}"#)
+            || forbiddenAgentType(agentType) {
+            issues.append(.init(field: .agentType, message: "Choose a concrete agent type; auto, default, and general are not launchable."))
         }
-        if !matches(draft.model, pattern: #"[A-Za-z0-9][A-Za-z0-9._/@:-]{0,127}"#) {
-            issues.append(.init(field: .model, message: "Enter an explicit valid model ID; defaults and remembered selections are not used."))
+        let model = draft.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !matches(model, pattern: #"[A-Za-z0-9][A-Za-z0-9._/@:-]{0,127}"#)
+            || forbiddenModel(model) {
+            issues.append(.init(field: .model, message: "Enter a concrete model ID; auto and provider defaults are not launchable."))
         }
         let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
         if title.isEmpty || title.count > 120 || title.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) {
@@ -195,6 +199,20 @@ enum ManagedQuickLaunchRules {
 
     private static func matches(_ value: String, pattern: String) -> Bool {
         value.range(of: "^(?:\(pattern))$", options: .regularExpression) != nil
+    }
+
+    private static func forbiddenAgentType(_ value: String) -> Bool {
+        switch value.lowercased() {
+        case "auto", "default", "general": return true
+        default: return false
+        }
+    }
+
+    private static func forbiddenModel(_ value: String) -> Bool {
+        switch value.lowercased() {
+        case "auto", "default", "provider-default": return true
+        default: return false
+        }
     }
 }
 
