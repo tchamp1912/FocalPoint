@@ -1,0 +1,364 @@
+# FocalPoint model catalog (schema v1).
+#
+# This is the bundled model-version policy. Each selection is keyed by
+# provider, task complexity, and agent type. A user may copy this file to
+# ~/.config/focalpoint/model-catalog.toml and replace exact matching selections.
+# Missing keys never inherit a provider default and are not launchable.
+
+[catalog]
+version = 1
+
+# Semantic provider choice. These entries select a provider before the exact
+# model lookup above; user overlays may replace the same (complexity, agent
+# type) choice.
+[[resolution]]
+complexity = "focused"
+agent_type = "workflow-orchestrator"
+provider = "codex"
+
+[[resolution]]
+complexity = "substantial"
+agent_type = "workflow-orchestrator"
+provider = "codex"
+
+[[resolution]]
+complexity = "complex"
+agent_type = "workflow-orchestrator"
+provider = "claude"
+
+[[resolution]]
+complexity = "focused"
+agent_type = "codebase-scout"
+provider = "claude"
+
+[[resolution]]
+complexity = "substantial"
+agent_type = "codebase-scout"
+provider = "claude"
+
+[[resolution]]
+complexity = "complex"
+agent_type = "codebase-scout"
+provider = "claude"
+
+[[resolution]]
+complexity = "focused"
+agent_type = "planner"
+provider = "claude"
+
+[[resolution]]
+complexity = "substantial"
+agent_type = "planner"
+provider = "claude"
+
+[[resolution]]
+complexity = "complex"
+agent_type = "planner"
+provider = "claude"
+
+[[resolution]]
+complexity = "focused"
+agent_type = "threat-modeler"
+provider = "claude"
+
+[[resolution]]
+complexity = "substantial"
+agent_type = "threat-modeler"
+provider = "claude"
+
+[[resolution]]
+complexity = "complex"
+agent_type = "threat-modeler"
+provider = "claude"
+
+[[resolution]]
+complexity = "focused"
+agent_type = "synthesizer"
+provider = "claude"
+
+[[resolution]]
+complexity = "substantial"
+agent_type = "synthesizer"
+provider = "claude"
+
+[[resolution]]
+complexity = "complex"
+agent_type = "synthesizer"
+provider = "claude"
+
+[[resolution]]
+complexity = "focused"
+agent_type = "implementer"
+provider = "codex"
+
+[[resolution]]
+complexity = "substantial"
+agent_type = "implementer"
+provider = "codex"
+
+[[resolution]]
+complexity = "complex"
+agent_type = "implementer"
+provider = "codex"
+
+[[resolution]]
+complexity = "focused"
+agent_type = "correctness-reviewer"
+provider = "codex"
+
+[[resolution]]
+complexity = "substantial"
+agent_type = "correctness-reviewer"
+provider = "codex"
+
+[[resolution]]
+complexity = "complex"
+agent_type = "correctness-reviewer"
+provider = "codex"
+
+[[resolution]]
+complexity = "focused"
+agent_type = "perf-reviewer"
+provider = "codex"
+
+[[resolution]]
+complexity = "substantial"
+agent_type = "perf-reviewer"
+provider = "codex"
+
+[[resolution]]
+complexity = "complex"
+agent_type = "perf-reviewer"
+provider = "codex"
+
+[[resolution]]
+complexity = "focused"
+agent_type = "security-reviewer"
+provider = "codex"
+
+[[resolution]]
+complexity = "substantial"
+agent_type = "security-reviewer"
+provider = "codex"
+
+[[resolution]]
+complexity = "complex"
+agent_type = "security-reviewer"
+provider = "codex"
+
+[[resolution]]
+complexity = "focused"
+agent_type = "test-verifier"
+provider = "cursor"
+
+[[resolution]]
+complexity = "substantial"
+agent_type = "test-verifier"
+provider = "cursor"
+
+[[resolution]]
+complexity = "complex"
+agent_type = "test-verifier"
+provider = "cursor"
+
+# Orchestration
+[[selection]]
+provider = "codex"
+complexity = "focused"
+agent_type = "workflow-orchestrator"
+model = "gpt-5.6-terra"
+
+[[selection]]
+provider = "codex"
+complexity = "substantial"
+agent_type = "workflow-orchestrator"
+model = "gpt-5.6-sol"
+
+[[selection]]
+provider = "claude"
+complexity = "complex"
+agent_type = "workflow-orchestrator"
+model = "claude-opus-5"
+
+# Claude roles
+[[selection]]
+provider = "claude"
+complexity = "focused"
+agent_type = "codebase-scout"
+model = "claude-haiku-4-5"
+
+[[selection]]
+provider = "claude"
+complexity = "substantial"
+agent_type = "codebase-scout"
+model = "claude-sonnet-5"
+
+[[selection]]
+provider = "claude"
+complexity = "complex"
+agent_type = "codebase-scout"
+model = "claude-opus-5"
+
+[[selection]]
+provider = "claude"
+complexity = "focused"
+agent_type = "planner"
+model = "claude-haiku-4-5"
+
+[[selection]]
+provider = "claude"
+complexity = "substantial"
+agent_type = "planner"
+model = "claude-sonnet-5"
+
+[[selection]]
+provider = "claude"
+complexity = "complex"
+agent_type = "planner"
+model = "claude-opus-5"
+
+[[selection]]
+provider = "claude"
+complexity = "focused"
+agent_type = "threat-modeler"
+model = "claude-haiku-4-5"
+
+[[selection]]
+provider = "claude"
+complexity = "substantial"
+agent_type = "threat-modeler"
+model = "claude-sonnet-5"
+
+[[selection]]
+provider = "claude"
+complexity = "complex"
+agent_type = "threat-modeler"
+model = "claude-opus-5"
+
+[[selection]]
+provider = "claude"
+complexity = "focused"
+agent_type = "synthesizer"
+model = "claude-haiku-4-5"
+
+[[selection]]
+provider = "claude"
+complexity = "substantial"
+agent_type = "synthesizer"
+model = "claude-sonnet-5"
+
+[[selection]]
+provider = "claude"
+complexity = "complex"
+agent_type = "synthesizer"
+model = "claude-opus-5"
+
+[[selection]]
+provider = "claude"
+complexity = "focused"
+agent_type = "implementer"
+model = "claude-haiku-4-5"
+
+[[selection]]
+provider = "claude"
+complexity = "substantial"
+agent_type = "implementer"
+model = "claude-sonnet-5"
+
+[[selection]]
+provider = "claude"
+complexity = "complex"
+agent_type = "implementer"
+model = "claude-opus-5"
+
+# Codex roles
+[[selection]]
+provider = "codex"
+complexity = "focused"
+agent_type = "implementer"
+model = "gpt-5.6-terra"
+
+[[selection]]
+provider = "codex"
+complexity = "substantial"
+agent_type = "implementer"
+model = "gpt-5.6-terra"
+
+[[selection]]
+provider = "codex"
+complexity = "complex"
+agent_type = "implementer"
+model = "gpt-5.6-sol"
+
+[[selection]]
+provider = "codex"
+complexity = "focused"
+agent_type = "correctness-reviewer"
+model = "gpt-5.6-terra"
+
+[[selection]]
+provider = "codex"
+complexity = "substantial"
+agent_type = "correctness-reviewer"
+model = "gpt-5.6-terra"
+
+[[selection]]
+provider = "codex"
+complexity = "complex"
+agent_type = "correctness-reviewer"
+model = "gpt-5.6-sol"
+
+[[selection]]
+provider = "codex"
+complexity = "focused"
+agent_type = "perf-reviewer"
+model = "gpt-5.6-terra"
+
+[[selection]]
+provider = "codex"
+complexity = "substantial"
+agent_type = "perf-reviewer"
+model = "gpt-5.6-terra"
+
+[[selection]]
+provider = "codex"
+complexity = "complex"
+agent_type = "perf-reviewer"
+model = "gpt-5.6-sol"
+
+[[selection]]
+provider = "codex"
+complexity = "focused"
+agent_type = "security-reviewer"
+model = "gpt-5.6-terra"
+
+[[selection]]
+provider = "codex"
+complexity = "substantial"
+agent_type = "security-reviewer"
+model = "gpt-5.6-sol"
+
+[[selection]]
+provider = "codex"
+complexity = "complex"
+agent_type = "security-reviewer"
+model = "gpt-5.6-sol"
+
+# Cursor roles
+[[selection]]
+provider = "cursor"
+complexity = "focused"
+agent_type = "test-verifier"
+model = "composer-2.5"
+
+[[selection]]
+provider = "cursor"
+complexity = "substantial"
+agent_type = "test-verifier"
+model = "composer-2.5"
+
+[[selection]]
+provider = "cursor"
+complexity = "complex"
+agent_type = "test-verifier"
+model = "composer-2.5"

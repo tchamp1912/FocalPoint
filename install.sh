@@ -157,6 +157,7 @@ This will, all idempotently:
   - symlink focalpoint, focalpointd, and fpctl-agent into /opt/homebrew/bin
     (or ~/.local/bin as a fallback)
   - install ~/.config/focalpoint/config.toml (only if one isn't already there)
+  - install ~/.config/focalpoint/model-catalog.toml (only if one isn't already there)
   - install the managed-session launcher and a default private tmux config
     (the tmux config is only created if one isn't already there)
   - install the FocalPoint orchestrator skill for Codex and Claude Code
@@ -255,6 +256,15 @@ else
   cp "$DAEMON_DIR/config.example.toml" "$CONFIG_DIR/config.toml"
   CONFIG_STATUS="installed from config.example.toml"
   ok "$CONFIG_DIR/config.toml $CONFIG_STATUS"
+fi
+
+# Exact-key user override for the bundled model catalog. Existing local pins
+# are never replaced by an installer upgrade.
+if [ -f "$CONFIG_DIR/model-catalog.toml" ]; then
+  ok "$CONFIG_DIR/model-catalog.toml already present — left untouched"
+else
+  cp "$SCRIPT_DIR/packages/model-catalog.toml" "$CONFIG_DIR/model-catalog.toml"
+  ok "$CONFIG_DIR/model-catalog.toml installed from bundled catalog"
 fi
 
 # ---------------------------------------------------------------------------

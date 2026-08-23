@@ -16,6 +16,29 @@ references. The destination set is checked before copying and checked again
 immediately before each copy; any collision fails the request. The app never
 merges, replaces, or silently overwrites an installed package.
 
+## Model catalog and explicit resolution
+
+`packages/model-catalog.toml` is the bundled, versioned model policy. Every
+launch resolves the exact tuple `(provider, complexity, agent_type)` against
+it, yielding one concrete model ID. There is no provider-default fallback.
+
+The installer creates the user override at
+`~/.config/focalpoint/model-catalog.toml` (or
+`$XDG_CONFIG_HOME/focalpoint/model-catalog.toml`) only when absent. It is an
+exact-key overlay: a valid user `[[selection]]` replaces the bundled selection
+with the same provider, complexity, and agent type; all other bundled entries
+remain in effect. User entries cannot introduce duplicate keys, unknown
+providers/complexities, or `auto`, `default`, `general`, or
+`provider-default` values. Invalid user catalogs make resolution fail closed
+instead of falling back to an ambient provider model.
+
+Precedence is deterministic: a valid explicit user model in a launch form is
+used after validation; otherwise its selected provider/type/complexity resolves
+through the valid user overlay, then the bundled catalog. A missing key, an
+unknown value, or any default sentinel is a launch error. To upgrade a provider
+model, edit catalog/package data rather than runtime Swift or Rust control
+flow.
+
 ## Agent-type packages
 
 An agent type is a directory with exactly two required files:

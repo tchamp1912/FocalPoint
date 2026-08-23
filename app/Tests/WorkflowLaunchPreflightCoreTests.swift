@@ -16,14 +16,20 @@ enum WorkflowLaunchPreflightCoreTests {
             confirmationGateCount: 1
         )) == .complex)
 
+        let catalogURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("packages/model-catalog.toml")
+        guard case .success(let catalog) = ModelCatalog.load(bundledURL: catalogURL) else {
+            fatalError("bundled catalog must load")
+        }
         for complexity in WorkflowComplexity.allCases {
-            let recommendation = WorkflowLaunchRecommendations.orchestrator(for: complexity)
-            assert(!recommendation.1.isEmpty)
-            for provider in WorkflowLaunchProvider.allCases {
-                assert(!WorkflowLaunchRecommendations.model(
-                    for: provider, complexity: complexity
-                ).isEmpty)
-            }
+            guard case .success(let selection) = catalog.recommend(
+                complexity: complexity, agentType: "workflow-orchestrator"
+            ) else { fatalError("orchestrator must resolve") }
+            assert(!selection.model.isEmpty)
+        }
+        guard case .failure = catalog.resolve(provider: .cursor, complexity: .focused,
+                                               agentType: "planner") else {
+            fatalError("unknown catalog selection must fail closed")
         }
         assert(WorkflowLaunchRecommendations.fanoutLimit(
             ceiling: 9, complexity: .substantial

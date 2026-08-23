@@ -56,30 +56,6 @@ enum WorkflowLaunchRecommendations {
         return .focused
     }
 
-    /// A concrete recommendation, never an empty/provider-default sentinel.
-    static func orchestrator(for complexity: WorkflowComplexity) -> (WorkflowLaunchProvider, String) {
-        switch complexity {
-        case .focused: return (.codex, "gpt-5.6-terra")
-        case .substantial: return (.codex, "gpt-5.6-sol")
-        case .complex: return (.claude, "opus")
-        }
-    }
-
-    /// Used both when the user changes provider and when an agent type omits
-    /// its model. This prevents a launch from inheriting a last-used model.
-    static func model(for provider: WorkflowLaunchProvider,
-                      complexity: WorkflowComplexity) -> String {
-        switch (provider, complexity) {
-        case (.claude, .focused): return "haiku"
-        case (.claude, .substantial): return "sonnet"
-        case (.claude, .complex): return "opus"
-        case (.codex, .focused): return "gpt-5.6-terra"
-        case (.codex, .substantial), (.codex, .complex): return "gpt-5.6-sol"
-        case (.cursor, .focused): return "composer-1.5"
-        case (.cursor, .substantial), (.cursor, .complex): return "claude-4.5-sonnet"
-        }
-    }
-
     static func fanoutLimit(ceiling: Int, complexity: WorkflowComplexity) -> Int {
         switch complexity {
         case .focused: return min(ceiling, 2)

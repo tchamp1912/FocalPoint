@@ -23,6 +23,8 @@ except ModuleNotFoundError:
 
 
 ALLOWED_PROVIDERS = {"claude", "codex", "cursor"}
+COMPLEXITIES = {"focused", "substantial", "complex"}
+FORBIDDEN_SELECTIONS = {"auto", "default", "general", "provider-default"}
 
 # Fail-closed capability inventory. A provider must be present here and list
 # every requested field before an agent type with [enforced] can validate.
@@ -239,6 +241,77 @@ def validate_agent(manifest: Path, data: dict) -> list[str]:
     return v.errors
 
 
+def validate_catalog(manifest: Path, data: dict) -> list[str]:
+    v = Validation(manifest)
+    v.only_keys(data, {"catalog", "resolution", "selection"}, "root")
+    catalog = v.table(data, "catalog", "[catalog]")
+    if catalog is not None:
+        v.only_keys(catalog, {"version"}, "catalog")
+        if catalog.get("version") != 1:
+            v.error("catalog.version must be 1")
+
+    resolutions = data.get("resolution")
+    if not isinstance(resolutions, list) or not resolutions:
+        v.error("[[resolution]] must be a nonempty array of tables")
+    else:
+        seen_resolution: set[tuple[str, str]] = set()
+        for index, resolution in enumerate(resolutions):
+            label = f"resolution[{index}]"
+            if not isinstance(resolution, dict):
+                v.error(f"{label} must be a table")
+                continue
+            v.only_keys(resolution, {"provider", "complexity", "agent_type"}, label)
+            provider = v.nonempty_string(resolution, "provider", f"{label}.provider")
+            complexity = v.nonempty_string(resolution, "complexity", f"{label}.complexity")
+            agent_type = v.nonempty_string(resolution, "agent_type", f"{label}.agent_type")
+            if provider is not None and provider not in ALLOWED_PROVIDERS:
+                v.error(f"{label}.provider must be one of: {', '.join(sorted(ALLOWED_PROVIDERS))}")
+            if complexity is not None and complexity not in COMPLEXITIES:
+                v.error(f"{label}.complexity must be one of: {', '.join(sorted(COMPLEXITIES))}")
+            if agent_type is not None:
+                validate_name(v, agent_type, f"{label}.agent_type")
+            if complexity is not None and agent_type is not None:
+                key = (complexity, agent_type)
+                if key in seen_resolution:
+                    v.error(f"duplicate resolution for complexity={complexity!r}, agent_type={agent_type!r}")
+                seen_resolution.add(key)
+
+    selections = data.get("selection")
+    if not isinstance(selections, list) or not selections:
+        v.error("[[selection]] must be a nonempty array of tables")
+        return v.errors
+    seen: set[tuple[str, str, str]] = set()
+    for index, selection in enumerate(selections):
+        label = f"selection[{index}]"
+        if not isinstance(selection, dict):
+            v.error(f"{label} must be a table")
+            continue
+        v.only_keys(selection, {"provider", "complexity", "agent_type", "model"}, label)
+        provider = v.nonempty_string(selection, "provider", f"{label}.provider")
+        complexity = v.nonempty_string(selection, "complexity", f"{label}.complexity")
+        agent_type = v.nonempty_string(selection, "agent_type", f"{label}.agent_type")
+        model = v.nonempty_string(selection, "model", f"{label}.model")
+        if provider is not None and provider not in ALLOWED_PROVIDERS:
+            v.error(f"{label}.provider must be one of: {', '.join(sorted(ALLOWED_PROVIDERS))}")
+        if complexity is not None and complexity not in COMPLEXITIES:
+            v.error(f"{label}.complexity must be one of: {', '.join(sorted(COMPLEXITIES))}")
+        if agent_type is not None:
+            validate_name(v, agent_type, f"{label}.agent_type")
+            if agent_type.lower() in FORBIDDEN_SELECTIONS:
+                v.error(f"{label}.agent_type must be concrete")
+        if model is not None:
+            if model.lower() in FORBIDDEN_SELECTIONS:
+                v.error(f"{label}.model must be concrete")
+            elif not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/@:-]{0,127}", model):
+                v.error(f"{label}.model has invalid characters")
+        if provider is not None and complexity is not None and agent_type is not None:
+            key = (provider, complexity, agent_type)
+            if key in seen:
+                v.error(f"duplicate selection for provider={provider!r}, complexity={complexity!r}, agent_type={agent_type!r}")
+            seen.add(key)
+    return v.errors
+
+
 def validate_formation(manifest: Path, data: dict) -> list[str]:
     v = Validation(manifest)
     v.only_keys(data, {"formation", "role", "phase", "escalate"}, "root")
@@ -350,20 +423,23 @@ def validate_formation(manifest: Path, data: dict) -> list[str]:
 
 def discover(target: Path) -> list[Path]:
     if target.is_file():
-        if target.name not in {"type.toml", "formation.toml"}:
-            raise ValueError("manifest file must be named type.toml or formation.toml")
+        if target.name not in {"type.toml", "formation.toml", "model-catalog.toml"}:
+            raise ValueError("manifest file must be named type.toml, formation.toml, or model-catalog.toml")
         return [target]
     if not target.is_dir():
         raise ValueError("path does not exist or is not a directory")
 
+    # A directory may carry one repository-level model catalog plus many
+    # package directories. Only type/formation manifests make *this*
+    # directory a package; catalog discovery remains recursive.
     direct = [target / "type.toml", target / "formation.toml"]
     present = [path for path in direct if path.is_file()]
     if len(present) > 1:
-        raise ValueError("package cannot contain both type.toml and formation.toml")
+        raise ValueError("package cannot contain multiple package manifests")
     if present:
         return present
 
-    return sorted([*target.rglob("type.toml"), *target.rglob("formation.toml")])
+    return sorted([*target.rglob("type.toml"), *target.rglob("formation.toml"), *target.rglob("model-catalog.toml")])
 
 
 def main() -> int:
@@ -400,8 +476,10 @@ def main() -> int:
 
         if manifest.name == "type.toml":
             errors = validate_agent(manifest, data)
-        else:
+        elif manifest.name == "formation.toml":
             errors = validate_formation(manifest, data)
+        else:
+            errors = validate_catalog(manifest, data)
 
         if errors:
             failures += 1

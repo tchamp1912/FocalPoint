@@ -6,7 +6,6 @@ import Combine
 
 private struct WorkflowAgentTypeProfile {
     let providers: [WorkflowLaunchProvider]
-    let model: String?
 
     static func load(typeName: String, agentsDirectory: URL) -> WorkflowAgentTypeProfile? {
         guard !typeName.contains("/"), typeName != ".", typeName != ".." else { return nil }
@@ -25,12 +24,7 @@ private struct WorkflowAgentTypeProfile {
             return WorkflowLaunchProvider(rawValue: raw)
         }
         guard providers.count == preferred.count, !providers.isEmpty else { return nil }
-        let model: String?
-        if let value = providerTable["model"] {
-            guard case .string(let raw) = value, !raw.isEmpty else { return nil }
-            model = raw
-        } else { model = nil }
-        return WorkflowAgentTypeProfile(providers: providers, model: model)
+        return WorkflowAgentTypeProfile(providers: providers)
     }
 }
 
@@ -48,6 +42,8 @@ final class WorkflowLaunchPreflightModel: ObservableObject {
     @Published var isReviewingConfirmation = false
 
     let unresolvedTypes: [String]
+    let modelCatalog: ModelCatalog?
+    let catalogIssue: String?
 
     init(package: FormationPackage, suggestedDirectory: URL?) {
         self.package = package
@@ -55,9 +51,23 @@ final class WorkflowLaunchPreflightModel: ObservableObject {
         self.projectDirectory = nil // Selection must always be an explicit human gesture.
         let complexity = WorkflowLaunchRecommendations.complexity(for: package.complexitySignals)
         self.complexity = complexity
-        let orchestrator = WorkflowLaunchRecommendations.orchestrator(for: complexity)
-        self.orchestratorProvider = orchestrator.0
-        self.orchestratorModel = orchestrator.1
+        let bundledURL = WorkflowLauncherModel.bundledCatalogDirectory?
+            .appendingPathComponent("model-catalog.toml")
+        let catalogLoad = bundledURL.map { ModelCatalog.load(bundledURL: $0, userOverrideURL: ModelCatalog.userOverrideURL()) }
+        if case .success(let catalog)? = catalogLoad {
+            modelCatalog = catalog
+            catalogIssue = nil
+        } else {
+            modelCatalog = nil
+            if case .failure(let message)? = catalogLoad { catalogIssue = message }
+            else { catalogIssue = "Bundled model catalog resources are unavailable." }
+        }
+        let orchestrator = modelCatalog.flatMap { catalog -> ModelCatalogSelection? in
+            if case .success(let selection) = catalog.recommend(complexity: complexity, agentType: "workflow-orchestrator") { return selection }
+            return nil
+        }
+        self.orchestratorProvider = orchestrator?.provider ?? .codex
+        self.orchestratorModel = orchestrator?.model ?? ""
 
         var unresolved: [String] = []
         self.roleAssignments = package.allRoles.map { role in
@@ -65,12 +75,13 @@ final class WorkflowLaunchPreflightModel: ObservableObject {
                 typeName: role.type, agentsDirectory: WorkflowLauncherModel.agentsDirectory
             )
             if profile == nil { unresolved.append(role.type) }
-            let provider = profile?.providers.first ?? orchestrator.0
-            let model = profile?.model
-                ?? WorkflowLaunchRecommendations.model(for: provider, complexity: complexity)
-            let source = profile?.model == nil
-                ? "Recommended for \(complexity.title.lowercased()) complexity"
-                : "Declared by agent type"
+            let selection = modelCatalog.flatMap { catalog -> ModelCatalogSelection? in
+                if case .success(let selection) = catalog.recommend(complexity: complexity, agentType: role.type) { return selection }
+                return nil
+            }
+            let provider = selection?.provider ?? profile?.providers.first ?? orchestrator?.provider ?? .codex
+            let model = selection?.model ?? ""
+            let source = "Resolved by model catalog for \(complexity.title.lowercased()) complexity"
             let gate = role.phaseName.flatMap { phaseName in
                 package.phases.first(where: { $0.name == phaseName })?.gate
             } ?? .authorized
@@ -98,6 +109,7 @@ final class WorkflowLaunchPreflightModel: ObservableObject {
             fanoutLimit: fanoutLimit,
             fanoutCeiling: package.fanoutCeiling,
             unresolvedTypes: unresolvedTypes
+                + (catalogIssue.map { ["Model catalog: \($0)"] } ?? [])
         )
     }
 
@@ -105,16 +117,14 @@ final class WorkflowLaunchPreflightModel: ObservableObject {
 
     func setOrchestratorProvider(_ provider: WorkflowLaunchProvider) {
         orchestratorProvider = provider
-        orchestratorModel = WorkflowLaunchRecommendations.model(for: provider, complexity: complexity)
+        orchestratorModel = resolvedModel(provider: provider, agentType: "workflow-orchestrator") ?? ""
         isReviewingConfirmation = false
     }
 
     func setRoleProvider(_ provider: WorkflowLaunchProvider, at index: Int) {
         guard roleAssignments.indices.contains(index) else { return }
         roleAssignments[index].provider = provider
-        roleAssignments[index].model = WorkflowLaunchRecommendations.model(
-            for: provider, complexity: complexity
-        )
+        roleAssignments[index].model = resolvedModel(provider: provider, agentType: roleAssignments[index].typeName) ?? ""
         isReviewingConfirmation = false
     }
 
@@ -132,5 +142,11 @@ final class WorkflowLaunchPreflightModel: ObservableObject {
                 return assignment
             }
         )
+    }
+
+    private func resolvedModel(provider: WorkflowLaunchProvider, agentType: String) -> String? {
+        guard let modelCatalog,
+              case .success(let model) = modelCatalog.resolve(provider: provider, complexity: complexity, agentType: agentType) else { return nil }
+        return model
     }
 }
