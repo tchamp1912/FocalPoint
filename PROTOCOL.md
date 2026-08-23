@@ -123,6 +123,12 @@ Requests:
  "task": "Implement and test the assigned task.", "task_id": "stable-task-id",
  "title": "Parser implementation",
  "role": "worker", "manager_task_id": "project-orchestrator", "channel_id": "ch-1"}
+{"cmd": "launch-session", "agent_type": "workflow-orchestrator", "provider": "codex", "model": "gpt-5.6-sol", "cwd": "/prepared/path",
+ "task": "Run the reviewed formation.", "task_id": "workflow-run-1", "role": "orchestrator",
+ "workflow_id": "risk-review", "workflow_run_id": "workflow-run-1",
+ "workflow_phase": "orchestration", "workflow_gate": "authorized", "workflow_fanout": false,
+ "workflow_assignments": [{"assignment_id":"review:reviewer:0", "phase":"review", "agent_type":"reviewer", "provider":"codex", "model":"gpt-5.6-sol", "gate":"confirm", "fanout":false, "fanout_limit":1}]}
+{"cmd": "approve-workflow-transition", "workflow_run_id": "workflow-run-1", "workflow_phase": "review"}
 {"cmd": "launch-session", "provider": "cursor", "cursor_mode": "headless", "cwd": "/prepared/path",
  "task": "Implement and test the assigned task.", "task_id": "cursor-task"}
 {"cmd": "channel-create", "task_id": "project-orchestrator"}
@@ -472,12 +478,32 @@ Every managed launch must send concrete `agent_type`, `provider`, `model`,
 `cwd`, and `task_id` values. The daemon rejects omitted selections and the
 sentinels `auto`, `default`, `general`, and `provider-default`; callers must
 resolve task complexity, capability, risk, and provider headroom before the
-launch reaches the daemon. Optional workflow observation fields are
-`workflow_id`, `workflow_run_id`, `workflow_phase`, `workflow_gate`, and
-`workflow_fanout`. A `confirm` gate requires
-`transition_confirmation: "user-confirmed"`; fan-out with `auto` is always
-rejected. These fields expose launches through `list-workflow-runs`; the daemon
-does not advance phases or answer gates.
+launch reaches the daemon.
+
+Workflow launches are daemon-authorized rather than prompt-authorized. The
+initial `role: "orchestrator"` launch carries a bounded (1–128 entries)
+`workflow_assignments` array. Every entry has an `assignment_id`, `phase`,
+concrete `agent_type`, `provider`, and `model`, its `gate`, `fanout` identity, and a
+`fanout_limit` in 1–64. The daemon validates the full manifest and persists it,
+with zeroed consumption counts, in the workflow run's launch receipt. It does
+not derive authorization from task text, labels, focused sessions, or client UI
+state.
+
+A managed worker claiming the run must send all workflow identity fields plus
+`workflow_assignment`, and its `manager_task_id` must equal
+`workflow_run_id`. The daemon loads the initial orchestrator receipt and
+requires exact phase, gate, agent type, provider, and model equality before it
+atomically consumes one launch from that assignment. Unknown assignments,
+mismatches, non-fanout replays, and exhausted fan-out assignments fail closed.
+Fan-out with `auto` remains invalid.
+
+`approve-workflow-transition` is the app's human-action command. It records a
+single pending approval bound to one existing run and confirm-gated phase. The
+next matching worker launch consumes it; it cannot be replayed. A later worker
+requires a fresh human approval. `transition_confirmation` is never accepted,
+including the old `"user-confirmed"` token, and `fpctl-agent` intentionally
+exposes no approval command. These fields remain observable through
+`list-workflow-runs`; the daemon does not sequence phases.
 
 `read-session-transcript`, legacy `stop-orchestrated-session`, and the preferred
 `stop-managed-session` require the session

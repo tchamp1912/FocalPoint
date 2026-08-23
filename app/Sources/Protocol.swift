@@ -155,25 +155,23 @@ enum WorkflowGate: String, Codable {
     case authorized, confirm, auto
 }
 
-/// Readable workflow annotations carried by normal managed session metadata.
-/// The app may observe and focus these gates; it never answers them.
+/// Workflow worker claim carried by a managed launch. The daemon checks every
+/// field against the initial orchestrator's persisted assignment ledger.
 struct WorkflowLaunchContext: Equatable {
     var workflowID: String
     var runID: String
     var phase: String
     var gate: WorkflowGate
     var fanout: Bool
-    /// Only a direct human action may mint this value. Confirm-gated launches
-    /// without it fail closed in the daemon; fan-out + auto always fails.
-    var transitionConfirmed: Bool = false
+    var assignmentID: String
 
     var requestFields: [String: Any] {
-        var value: [String: Any] = [
+        let value: [String: Any] = [
             "workflow_id": workflowID, "workflow_run_id": runID,
             "workflow_phase": phase, "workflow_gate": gate.rawValue,
             "workflow_fanout": fanout,
+            "workflow_assignment": assignmentID,
         ]
-        if transitionConfirmed { value["transition_confirmation"] = "user-confirmed" }
         return value
     }
 }
@@ -193,6 +191,7 @@ struct WorkflowRunSession: Identifiable, Equatable {
     var provider: String?
     var model: String?
     var phase: String?
+    var assignmentID: String?
     var gate: WorkflowGate?
     var fanout: Bool
     var state: AgentState

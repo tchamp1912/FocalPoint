@@ -23,7 +23,7 @@ use crate::protocol::{
 use crate::session::{Attachment, Effect, Registry, Session, SessionHealth, TerminalEndpoint};
 use crate::styles::{Style, StyleTable};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -32,6 +32,22 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+const WORKFLOW_ASSIGNMENT_MAX: usize = 128;
+const WORKFLOW_FANOUT_MAX: u16 = 64;
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowAssignmentAuthorization {
+    assignment_id: String,
+    phase: String,
+    agent_type: String,
+    provider: String,
+    model: String,
+    gate: String,
+    fanout: bool,
+    fanout_limit: u16,
+}
 
 /// Socket requests defined by PROTOCOL.md §3 and the daemon-side CLI
 /// extensions in §4.  Keep this as the single Rust representation of the
@@ -171,7 +187,13 @@ pub enum Request {
         workflow_phase: Option<String>,
         workflow_gate: Option<String>,
         workflow_fanout: Option<bool>,
+        workflow_assignment: Option<String>,
+        workflow_assignments: Option<Vec<WorkflowAssignmentAuthorization>>,
         transition_confirmation: Option<String>,
+    },
+    ApproveWorkflowTransition {
+        workflow_run_id: String,
+        workflow_phase: String,
     },
     ResumeSession {
         provider: String,
@@ -936,6 +958,7 @@ fn correlate_pending_managed_launch(
         "workflow_phase",
         "workflow_gate",
         "workflow_fanout",
+        "workflow_assignment",
     ] {
         if let Some(value) = receipt.get(key).filter(|value| !value.is_null()).cloned() {
             let target = match key {
@@ -1125,6 +1148,14 @@ fn valid_roadmap_id(id: &str, max: usize) -> bool {
 }
 
 #[cfg(unix)]
+fn valid_workflow_assignment_id(id: &str) -> bool {
+    let mut chars = id.chars();
+    matches!(chars.next(), Some(ch) if ch.is_ascii_alphanumeric())
+        && id.len() <= 128
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-' | ':'))
+}
+
+#[cfg(unix)]
 fn required_launch_selection<'a>(
     agent_type: Option<&'a str>,
     model: Option<&'a str>,
@@ -1159,21 +1190,84 @@ fn required_launch_selection<'a>(
     Ok((agent_type, model))
 }
 
-/// Validate optional workflow annotations without turning the daemon into a
-/// workflow engine. The orchestrator remains authoritative for sequencing;
-/// these fields make its already-authorized launches observable. Confirm
-/// gates fail closed and fan-out can never claim the automatic gate.
+fn validate_workflow_assignment_manifest(
+    assignments: &[WorkflowAssignmentAuthorization],
+) -> Result<(), String> {
+    if assignments.is_empty() || assignments.len() > WORKFLOW_ASSIGNMENT_MAX {
+        return Err(format!(
+            "workflow_assignments must contain 1-{WORKFLOW_ASSIGNMENT_MAX} entries"
+        ));
+    }
+    let mut ids = std::collections::HashSet::new();
+    let mut phase_gates: HashMap<&str, &str> = HashMap::new();
+    for assignment in assignments {
+        if !valid_workflow_assignment_id(&assignment.assignment_id)
+            || !valid_roadmap_id(&assignment.phase, 128)
+        {
+            return Err("workflow assignment ids and phases must use letters, digits, dots, underscores, or dashes".into());
+        }
+        if !ids.insert(assignment.assignment_id.as_str()) {
+            return Err(format!(
+                "duplicate workflow assignment id: {}",
+                assignment.assignment_id
+            ));
+        }
+        required_launch_selection(Some(&assignment.agent_type), Some(&assignment.model))?;
+        if !matches!(assignment.provider.as_str(), "claude" | "codex" | "cursor") {
+            return Err("workflow assignment provider must be 'claude', 'codex', or 'cursor'".into());
+        }
+        if !matches!(assignment.gate.as_str(), "authorized" | "confirm" | "auto") {
+            return Err("workflow assignment gate must be 'authorized', 'confirm', or 'auto'".into());
+        }
+        if !(1..=WORKFLOW_FANOUT_MAX).contains(&assignment.fanout_limit) {
+            return Err(format!(
+                "workflow assignment fanout_limit must be 1-{WORKFLOW_FANOUT_MAX}"
+            ));
+        }
+        if !assignment.fanout && assignment.fanout_limit != 1 {
+            return Err("non-fanout workflow assignments must have fanout_limit 1".into());
+        }
+        if assignment.fanout && assignment.gate == "auto" {
+            return Err("fan-out workflow assignments cannot use the automatic gate".into());
+        }
+        if let Some(existing) = phase_gates.insert(&assignment.phase, &assignment.gate) {
+            if existing != assignment.gate {
+                return Err(format!(
+                    "workflow phase {} has inconsistent gates",
+                    assignment.phase
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Validate workflow fields before any process or ledger mutation. The
+/// structured manifest is accepted only on the run's initial orchestrator;
+/// workers must claim exactly one assignment. A caller-supplied confirmation
+/// token is never authority.
 #[cfg(unix)]
 fn validate_workflow_launch_metadata(
+    role: &str,
     workflow_id: Option<&str>,
     run_id: Option<&str>,
     phase: Option<&str>,
     gate: Option<&str>,
     fanout: bool,
+    assignment: Option<&str>,
+    assignments: Option<&[WorkflowAssignmentAuthorization]>,
     confirmation: Option<&str>,
 ) -> Result<(), String> {
-    let any =
-        workflow_id.is_some() || run_id.is_some() || phase.is_some() || gate.is_some() || fanout;
+    if confirmation.is_some() {
+        return Err("transition_confirmation is not accepted; a human must approve the run and phase through the daemon".into());
+    }
+    let any = workflow_id.is_some()
+        || run_id.is_some()
+        || phase.is_some()
+        || gate.is_some()
+        || fanout
+        || assignment.is_some()
+        || assignments.is_some();
     if !any {
         return Ok(());
     }
@@ -1196,12 +1290,379 @@ fn validate_workflow_launch_metadata(
     if fanout && gate == "auto" {
         return Err("fan-out workflow phases cannot use the automatic gate".into());
     }
-    if gate == "confirm" && confirmation != Some("user-confirmed") {
-        return Err(
-            "confirm-gated workflow phases require transition_confirmation='user-confirmed'".into(),
-        );
+    match role {
+        "orchestrator" => {
+            if assignment.is_some() {
+                return Err("a workflow orchestrator cannot claim a worker assignment".into());
+            }
+            let assignments = assignments.ok_or(
+                "the initial workflow orchestrator launch requires workflow_assignments",
+            )?;
+            validate_workflow_assignment_manifest(assignments)?;
+            if phase != "orchestration" || gate != "authorized" || fanout {
+                return Err("the initial workflow orchestrator must use phase 'orchestration', gate 'authorized', and non-fanout launch metadata".into());
+            }
+        }
+        "worker" => {
+            if assignments.is_some() {
+                return Err("workflow_assignments are valid only on the initial orchestrator launch".into());
+            }
+            let assignment = assignment.ok_or(
+                "a managed workflow worker launch requires workflow_assignment",
+            )?;
+            if !valid_workflow_assignment_id(assignment) {
+                return Err("workflow_assignment must use letters, digits, dots, underscores, or dashes".into());
+            }
+        }
+        _ => return Err("role must be 'orchestrator' or 'worker'".into()),
     }
     Ok(())
+}
+
+#[cfg(unix)]
+fn workflow_receipt_path(run_id: &str) -> PathBuf {
+    crate::paths::daemon_state_dir()
+        .join("launches")
+        .join(format!("{run_id}.json"))
+}
+
+#[cfg(unix)]
+fn manager_workflow_run_id(manager_task_id: &str) -> Option<String> {
+    let receipt: Value = serde_json::from_slice(
+        &std::fs::read(workflow_receipt_path(manager_task_id)).ok()?,
+    )
+    .ok()?;
+    (receipt.get("task_id").and_then(Value::as_str) == Some(manager_task_id)
+        && receipt.get("role").and_then(Value::as_str) == Some("orchestrator")
+        && receipt.get("workflow_assignments").and_then(Value::as_array).is_some())
+    .then(|| {
+        receipt
+            .get("workflow_run_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    })
+}
+
+#[cfg(unix)]
+fn write_json_atomic(path: &Path, value: &Value) -> Result<(), String> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let temporary = path.with_extension(format!("json.{}.tmp", std::process::id()));
+    let result = (|| -> Result<(), String> {
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .open(&temporary)
+            .map_err(|e| format!("cannot create receipt update: {e}"))?;
+        serde_json::to_writer_pretty(&mut file, value)
+            .map_err(|e| format!("cannot encode receipt update: {e}"))?;
+        writeln!(file).map_err(|e| format!("cannot write receipt update: {e}"))?;
+        file.sync_all()
+            .map_err(|e| format!("cannot sync receipt update: {e}"))?;
+        std::fs::rename(&temporary, path)
+            .map_err(|e| format!("cannot publish receipt update: {e}"))?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
+}
+
+#[cfg(unix)]
+fn workflow_ledger_value(assignments: &[WorkflowAssignmentAuthorization]) -> Value {
+    Value::Array(
+        assignments
+            .iter()
+            .map(|assignment| {
+                let mut value = serde_json::to_value(assignment).expect("assignment serializes");
+                value["launches_consumed"] = json!(0);
+                value
+            })
+            .collect(),
+    )
+}
+
+#[cfg(unix)]
+fn receipt_workflow_manifest_matches(
+    receipt: &Value,
+    requested: Option<&[WorkflowAssignmentAuthorization]>,
+) -> bool {
+    match (receipt.get("workflow_assignments"), requested) {
+        (None | Some(Value::Null), None) => true,
+        (Some(Value::Array(stored)), Some(requested)) if stored.len() == requested.len() => stored
+            .iter()
+            .zip(requested)
+            .all(|(stored, requested)| {
+                serde_json::to_value(requested).is_ok_and(|requested| {
+                    requested.as_object().is_some_and(|fields| {
+                        fields
+                            .iter()
+                            .all(|(key, value)| stored.get(key) == Some(value))
+                    })
+                })
+            }),
+        _ => false,
+    }
+}
+
+#[cfg(unix)]
+#[derive(Debug)]
+struct WorkflowLedgerClaim {
+    run_id: String,
+    assignment_id: String,
+    task_id: String,
+    approval_id: Option<String>,
+}
+
+#[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
+fn consume_workflow_assignment(
+    workflow_id: &str,
+    run_id: &str,
+    phase: &str,
+    gate: &str,
+    fanout: bool,
+    assignment_id: &str,
+    agent_type: &str,
+    provider: &str,
+    model: &str,
+    manager_task_id: Option<&str>,
+    task_id: &str,
+) -> Result<WorkflowLedgerClaim, String> {
+    let path = workflow_receipt_path(run_id);
+    consume_workflow_assignment_at(
+        &path,
+        workflow_id,
+        run_id,
+        phase,
+        gate,
+        fanout,
+        assignment_id,
+        agent_type,
+        provider,
+        model,
+        manager_task_id,
+        task_id,
+    )
+}
+
+#[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
+fn consume_workflow_assignment_at(
+    path: &Path,
+    workflow_id: &str,
+    run_id: &str,
+    phase: &str,
+    gate: &str,
+    fanout: bool,
+    assignment_id: &str,
+    agent_type: &str,
+    provider: &str,
+    model: &str,
+    manager_task_id: Option<&str>,
+    task_id: &str,
+) -> Result<WorkflowLedgerClaim, String> {
+    if manager_task_id != Some(run_id) {
+        return Err("a workflow worker's manager_task_id must match workflow_run_id".into());
+    }
+    let mut receipt: Value = serde_json::from_slice(
+        &std::fs::read(path).map_err(|_| "unknown workflow run")?,
+    )
+    .map_err(|_| "invalid workflow run receipt")?;
+    if receipt.get("task_id").and_then(Value::as_str) != Some(run_id)
+        || receipt.get("workflow_run_id").and_then(Value::as_str) != Some(run_id)
+        || receipt.get("workflow_id").and_then(Value::as_str) != Some(workflow_id)
+        || receipt.get("role").and_then(Value::as_str) != Some("orchestrator")
+    {
+        return Err("workflow run receipt does not authorize this worker launch".into());
+    }
+    let entries = receipt
+        .get_mut("workflow_assignments")
+        .and_then(Value::as_array_mut)
+        .ok_or("workflow run has no persisted assignment ledger")?;
+    let entry = entries
+        .iter_mut()
+        .find(|entry| entry.get("assignment_id").and_then(Value::as_str) == Some(assignment_id))
+        .ok_or("unknown workflow assignment")?;
+    let expected = [
+        ("phase", phase),
+        ("gate", gate),
+        ("agent_type", agent_type),
+        ("provider", provider),
+        ("model", model),
+    ];
+    let mismatches = expected
+        .into_iter()
+        .filter(|(field, value)| entry.get(*field).and_then(Value::as_str) != Some(*value))
+        .map(|(field, _)| field)
+        .collect::<Vec<_>>();
+    if !mismatches.is_empty() {
+        return Err(format!(
+            "workflow assignment does not authorize requested {}",
+            mismatches.join(", ")
+        ));
+    }
+    let limit = entry
+        .get("fanout_limit")
+        .and_then(Value::as_u64)
+        .ok_or("invalid workflow assignment fanout limit")?;
+    if entry.get("fanout").and_then(Value::as_bool) != Some(fanout) {
+        return Err("workflow_fanout does not match the assignment fanout authorization".into());
+    }
+    let consumed = entry
+        .get("launches_consumed")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    if consumed >= limit {
+        return Err("workflow assignment launch limit is exhausted".into());
+    }
+    entry["launches_consumed"] = json!(consumed + 1);
+
+    let approval_id = if gate == "confirm" {
+        let approval = receipt
+            .get_mut("workflow_approvals")
+            .and_then(Value::as_object_mut)
+            .and_then(|approvals| approvals.get_mut(phase))
+            .and_then(Value::as_object_mut)
+            .ok_or("confirm-gated workflow launch has no daemon-recorded human approval")?;
+        if approval.get("consumed_by").is_some_and(|value| !value.is_null()) {
+            return Err("workflow phase approval was already consumed".into());
+        }
+        let approval_id = approval
+            .get("approval_id")
+            .and_then(Value::as_str)
+            .ok_or("invalid workflow phase approval")?
+            .to_string();
+        approval.insert("consumed_by".into(), json!(task_id));
+        approval.insert("consumed_at_unix_ms".into(), json!(unix_ms_now()));
+        Some(approval_id)
+    } else {
+        None
+    };
+    write_json_atomic(path, &receipt)?;
+    Ok(WorkflowLedgerClaim {
+        run_id: run_id.into(),
+        assignment_id: assignment_id.into(),
+        task_id: task_id.into(),
+        approval_id,
+    })
+}
+
+#[cfg(unix)]
+fn rollback_workflow_assignment(claim: &WorkflowLedgerClaim) {
+    let path = workflow_receipt_path(&claim.run_id);
+    let Ok(data) = std::fs::read(&path) else { return };
+    let Ok(mut receipt) = serde_json::from_slice::<Value>(&data) else {
+        return;
+    };
+    if let Some(entry) = receipt
+        .get_mut("workflow_assignments")
+        .and_then(Value::as_array_mut)
+        .and_then(|entries| {
+            entries.iter_mut().find(|entry| {
+                entry.get("assignment_id").and_then(Value::as_str)
+                    == Some(claim.assignment_id.as_str())
+            })
+        })
+    {
+        let consumed = entry
+            .get("launches_consumed")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        entry["launches_consumed"] = json!(consumed.saturating_sub(1));
+    }
+    if let Some(approval_id) = &claim.approval_id {
+        if let Some(approval) = receipt
+            .get_mut("workflow_approvals")
+            .and_then(Value::as_object_mut)
+            .and_then(|approvals| approvals.values_mut().find(|approval| {
+                approval.get("approval_id").and_then(Value::as_str)
+                    == Some(approval_id.as_str())
+                    && approval.get("consumed_by").and_then(Value::as_str)
+                        == Some(claim.task_id.as_str())
+            }))
+            .and_then(Value::as_object_mut)
+        {
+            approval.insert("consumed_by".into(), Value::Null);
+            approval.remove("consumed_at_unix_ms");
+        }
+    }
+    let _ = write_json_atomic(&path, &receipt);
+}
+
+#[cfg(unix)]
+fn approve_workflow_transition(run_id: &str, phase: &str) -> Result<Value, String> {
+    if !valid_roadmap_id(run_id, 128) || !valid_roadmap_id(phase, 128) {
+        return Err("workflow run and phase ids are invalid".into());
+    }
+    let path = workflow_receipt_path(run_id);
+    approve_workflow_transition_at(&path, run_id, phase)
+}
+
+#[cfg(unix)]
+fn approve_workflow_transition_at(path: &Path, run_id: &str, phase: &str) -> Result<Value, String> {
+    let mut receipt: Value = serde_json::from_slice(
+        &std::fs::read(path).map_err(|_| "unknown workflow run")?,
+    )
+    .map_err(|_| "invalid workflow run receipt")?;
+    if receipt.get("task_id").and_then(Value::as_str) != Some(run_id)
+        || receipt.get("workflow_run_id").and_then(Value::as_str) != Some(run_id)
+        || receipt.get("role").and_then(Value::as_str) != Some("orchestrator")
+    {
+        return Err("workflow run receipt is not an initial orchestrator launch".into());
+    }
+    let assignments = receipt
+        .get("workflow_assignments")
+        .and_then(Value::as_array)
+        .ok_or("workflow run has no persisted assignment ledger")?;
+    let confirm_phase = assignments.iter().any(|entry| {
+        entry.get("phase").and_then(Value::as_str) == Some(phase)
+            && entry.get("gate").and_then(Value::as_str) == Some("confirm")
+    });
+    if !confirm_phase {
+        return Err("workflow phase is unknown or is not confirm-gated".into());
+    }
+    let has_capacity = assignments.iter().any(|entry| {
+        entry.get("phase").and_then(Value::as_str) == Some(phase)
+            && entry.get("gate").and_then(Value::as_str) == Some("confirm")
+            && entry.get("launches_consumed").and_then(Value::as_u64).unwrap_or(0)
+                < entry.get("fanout_limit").and_then(Value::as_u64).unwrap_or(0)
+    });
+    if !has_capacity {
+        return Err("workflow phase assignment launch limits are exhausted".into());
+    }
+    let approvals = receipt
+        .as_object_mut()
+        .expect("receipt is an object")
+        .entry("workflow_approvals")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or("invalid workflow approval ledger")?;
+    if approvals.get(phase).is_some_and(|approval| {
+        approval
+            .get("consumed_by")
+            .is_some_and(|value| value.is_null())
+    }) {
+        return Err("workflow phase already has an unconsumed approval".into());
+    }
+    let approval_id = new_relaunch_id();
+    approvals.insert(
+        phase.into(),
+        json!({
+            "approval_id": approval_id,
+            "approved_at_unix_ms": unix_ms_now(),
+            "consumed_by": null
+        }),
+    );
+    write_json_atomic(path, &receipt)?;
+    Ok(json!({
+        "ok": true,
+        "workflow_run_id": run_id,
+        "workflow_phase": phase,
+        "approval_id": approval_id
+    }))
 }
 
 #[cfg(unix)]
@@ -1487,6 +1948,8 @@ fn launch_orchestrated_session(
     workflow_phase: Option<&str>,
     workflow_gate: Option<&str>,
     workflow_fanout: bool,
+    workflow_assignment: Option<&str>,
+    workflow_assignments: Option<&[WorkflowAssignmentAuthorization]>,
 ) -> Result<serde_json::Value, String> {
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
@@ -1622,6 +2085,9 @@ fn launch_orchestrated_session(
         "workflow_phase": workflow_phase,
         "workflow_gate": workflow_gate,
         "workflow_fanout": workflow_fanout,
+        "workflow_assignment": workflow_assignment,
+        "workflow_assignments": workflow_assignments.map(workflow_ledger_value),
+        "workflow_approvals": workflow_assignments.map(|_| json!({})),
         "accepted_at_unix_ms": unix_ms_now(),
         "status": "opening",
     });
@@ -1678,6 +2144,7 @@ fn launch_orchestrated_session(
         ("FOCALPOINT_WORKFLOW_RUN_ID", workflow_run_id),
         ("FOCALPOINT_WORKFLOW_PHASE", workflow_phase),
         ("FOCALPOINT_WORKFLOW_GATE", workflow_gate),
+        ("FOCALPOINT_WORKFLOW_ASSIGNMENT", workflow_assignment),
     ]
     .into_iter()
     .filter_map(|(key, value)| value.map(|value| format!("export {key}={}\n", shell_quote(value))))
@@ -1787,6 +2254,7 @@ fn launch_orchestrated_session(
         "workflow_phase": workflow_phase,
         "workflow_gate": workflow_gate,
         "workflow_fanout": workflow_fanout,
+        "workflow_assignment": workflow_assignment,
         "terminal_bundle_id": terminal_bundle_id,
         "status": launch_status,
     }))
@@ -4196,7 +4664,8 @@ fn dispatch(
                 "explicit_launch_identity": true,
                 "confirmed_stop": true,
                 "workflow_observation": true,
-                "workflow_gate_approval": false,
+                "workflow_assignment_ledger": true,
+                "workflow_gate_approval": true,
                 "history_storage": "client",
                 "diagnostics": true,
                 "triage_metadata": true
@@ -4259,6 +4728,7 @@ fn dispatch(
                         "model": session.meta.get("model"),
                         "phase": session.meta.get("workflow_phase"),
                         "gate": session.meta.get("workflow_gate"),
+                        "assignment": session.meta.get("workflow_assignment"),
                         "fanout": session.meta.get("workflow_fanout").and_then(Value::as_bool).unwrap_or(false),
                         "state": session.state.name(),
                         "connected": connected
@@ -4915,6 +5385,8 @@ fn dispatch(
             workflow_phase,
             workflow_gate,
             workflow_fanout,
+            workflow_assignment,
+            workflow_assignments,
             transition_confirmation,
         } => {
             let (agent_type, selected_model) =
@@ -4922,22 +5394,72 @@ fn dispatch(
                     Ok(selection) => selection,
                     Err(message) => return err(&message),
                 };
+            let role = role.as_deref().unwrap_or("worker");
+            if role == "worker" {
+                if let Some(manager) = manager_task_id.as_deref() {
+                    if let Some(run_id) = manager_workflow_run_id(manager) {
+                        if workflow_run_id.as_deref() != Some(run_id.as_str()) {
+                            return err("workers managed by a workflow orchestrator must claim that workflow run and an authorized assignment");
+                        }
+                    }
+                }
+            }
             if let Err(message) = validate_workflow_launch_metadata(
+                role,
                 workflow_id.as_deref(),
                 workflow_run_id.as_deref(),
                 workflow_phase.as_deref(),
                 workflow_gate.as_deref(),
                 workflow_fanout.unwrap_or(false),
+                workflow_assignment.as_deref(),
+                workflow_assignments.as_deref(),
                 transition_confirmation.as_deref(),
             ) {
                 return err(&message);
             }
-            let role = role.as_deref().unwrap_or("worker");
             let title = match orchestrator_session_title(title.as_deref(), &task_id) {
                 Ok(title) => title,
                 Err(message) => return err(&message),
             };
-            let slot = {
+            let receipt_path = crate::paths::daemon_state_dir()
+                .join("launches")
+                .join(format!("{task_id}.json"));
+            if let Ok(data) = std::fs::read(&receipt_path) {
+                let Ok(mut receipt) = serde_json::from_slice::<Value>(&data) else {
+                    return err("managed task id has an invalid launch receipt");
+                };
+                let exact_strings = [
+                    ("provider", Some(provider.as_str())),
+                    ("model", Some(selected_model)),
+                    ("agent_type", Some(agent_type)),
+                    ("cwd", Some(cwd.as_str())),
+                    ("role", Some(role)),
+                    ("manager_task_id", manager_task_id.as_deref()),
+                    ("channel_id", channel_id.as_deref()),
+                    ("workflow_id", workflow_id.as_deref()),
+                    ("workflow_run_id", workflow_run_id.as_deref()),
+                    ("workflow_phase", workflow_phase.as_deref()),
+                    ("workflow_gate", workflow_gate.as_deref()),
+                    ("workflow_assignment", workflow_assignment.as_deref()),
+                ];
+                let mismatch = exact_strings.into_iter().any(|(field, requested)| {
+                    let stored = receipt.get(field).filter(|value| !value.is_null()).and_then(Value::as_str);
+                    stored != requested
+                }) || receipt.get("workflow_fanout").and_then(Value::as_bool)
+                    != Some(workflow_fanout.unwrap_or(false))
+                    || !receipt_workflow_manifest_matches(
+                        &receipt,
+                        workflow_assignments.as_deref(),
+                    );
+                if mismatch {
+                    return err(&format!(
+                        "managed task id {task_id} is already active with a different request; use a new task id"
+                    ));
+                }
+                receipt["ok"] = true.into();
+                return Dispatch::Reply(Response::Json(receipt));
+            }
+            let (slot, workflow_claim) = {
                 let _transition = ctx.transition.lock().unwrap();
                 let mut state = shared.lock().unwrap();
                 if let Err(message) = validate_orchestration_relationship(
@@ -4959,7 +5481,7 @@ fn dispatch(
                         return err("channel is not owned by that orchestrator task");
                     }
                 }
-                match state
+                let slot = match state
                     .registry
                     .reserve_managed_launch(&task_id, Instant::now())
                 {
@@ -4993,24 +5515,42 @@ fn dispatch(
                                 ("model", Some(selected_model)),
                                 ("agent_type", Some(agent_type)),
                                 ("cwd", Some(cwd.as_str())),
+                                ("role", Some(role)),
+                                ("manager_task_id", manager_task_id.as_deref()),
+                                ("channel_id", channel_id.as_deref()),
+                                ("workflow_id", workflow_id.as_deref()),
+                                ("workflow_run_id", workflow_run_id.as_deref()),
+                                ("workflow_phase", workflow_phase.as_deref()),
+                                ("workflow_gate", workflow_gate.as_deref()),
+                                ("workflow_assignment", workflow_assignment.as_deref()),
                             ]
                             .into_iter()
-                            .filter(|(field, requested)| match requested {
-                                // A field the caller left unset cannot
-                                // conflict; the stored value stands.
-                                None => false,
-                                Some(value) => receipt
+                            .filter(|(field, requested)| {
+                                receipt
                                     .get(*field)
+                                    .filter(|value| !value.is_null())
                                     .and_then(Value::as_str)
-                                    .is_some_and(|stored| stored != *value),
+                                    != *requested
                             })
                             .map(|(field, _)| field)
                             .collect::<Vec<_>>();
-                            if !mismatched.is_empty() {
+                            if !mismatched.is_empty()
+                                || receipt.get("workflow_fanout").and_then(Value::as_bool)
+                                    != Some(workflow_fanout.unwrap_or(false))
+                                || !receipt_workflow_manifest_matches(
+                                    &receipt,
+                                    workflow_assignments.as_deref(),
+                                )
+                            {
+                                let mismatched = if mismatched.is_empty() {
+                                    "workflow metadata".to_string()
+                                } else {
+                                    mismatched.join(", ")
+                                };
                                 return err(&format!(
                                     "managed task id {task_id} is already active with a different \
                                      request ({} differ); use a new task id",
-                                    mismatched.join(", ")
+                                    mismatched
                                 ));
                             }
                             receipt["ok"] = true.into();
@@ -5018,7 +5558,33 @@ fn dispatch(
                         }
                         return err(&message);
                     }
-                }
+                };
+                let claim = if role == "worker" && workflow_run_id.is_some() {
+                    match consume_workflow_assignment(
+                        workflow_id.as_deref().expect("validated workflow id"),
+                        workflow_run_id.as_deref().expect("validated workflow run"),
+                        workflow_phase.as_deref().expect("validated workflow phase"),
+                        workflow_gate.as_deref().expect("validated workflow gate"),
+                        workflow_fanout.unwrap_or(false),
+                        workflow_assignment
+                            .as_deref()
+                            .expect("validated workflow assignment"),
+                        agent_type,
+                        &provider,
+                        selected_model,
+                        manager_task_id.as_deref(),
+                        &task_id,
+                    ) {
+                        Ok(claim) => Some(claim),
+                        Err(message) => {
+                            state.registry.cancel_managed_launch(&task_id);
+                            return err(&message);
+                        }
+                    }
+                } else {
+                    None
+                };
+                (slot, claim)
             };
             eprintln!(
                 "[managed-launch] reserved task_id={} title={} slot={} provider={} role={} cwd={} terminal=new-window",
@@ -5044,6 +5610,8 @@ fn dispatch(
                 workflow_phase.as_deref(),
                 workflow_gate.as_deref(),
                 workflow_fanout.unwrap_or(false),
+                workflow_assignment.as_deref(),
+                workflow_assignments.as_deref(),
             ) {
                 Ok(mut response) => {
                     if provider == "cursor" {
@@ -5087,6 +5655,9 @@ fn dispatch(
                         .unwrap()
                         .registry
                         .cancel_managed_launch(&task_id);
+                    if let Some(claim) = &workflow_claim {
+                        rollback_workflow_assignment(claim);
+                    }
                     eprintln!(
                         "[managed-launch] failed task_id={} title={} slot={} provider={} error={}",
                         diagnostic_text(&task_id),
@@ -5098,6 +5669,16 @@ fn dispatch(
                     );
                     err(&message)
                 }
+            }
+        }
+        Request::ApproveWorkflowTransition {
+            workflow_run_id,
+            workflow_phase,
+        } => {
+            let _transition = ctx.transition.lock().unwrap();
+            match approve_workflow_transition(&workflow_run_id, &workflow_phase) {
+                Ok(response) => Dispatch::Reply(Response::Json(response)),
+                Err(message) => err(&message),
             }
         }
         Request::ResumeSession {
@@ -6234,47 +6815,163 @@ mod tests {
             Ok(("correctness-reviewer", "gpt-5.6-terra"))
         );
 
-        let explicit = serde_json::from_value::<Request>(json!({
+        let self_asserted = serde_json::from_value::<Request>(json!({
             "cmd":"launch-session", "agent_type":"reviewer", "provider":"codex",
             "model":"gpt-5.6-sol", "cwd":"/tmp", "task":"Review it",
             "task_id":"review-1", "workflow_id":"review",
             "workflow_run_id":"review-run-1", "workflow_phase":"review",
             "workflow_gate":"confirm", "transition_confirmation":"user-confirmed"
-        }));
-        assert!(explicit.is_ok());
+        })).expect("legacy field decodes for an actionable daemon rejection");
+        let Request::LaunchSession { transition_confirmation, .. } = self_asserted else {
+            panic!("launch request");
+        };
+        assert!(validate_workflow_launch_metadata(
+            "worker", Some("review"), Some("review-run-1"), Some("review"),
+            Some("confirm"), false, Some("reviewer"), None,
+            transition_confirmation.as_deref()
+        ).unwrap_err().contains("not accepted"));
     }
 
     #[cfg(unix)]
     #[test]
-    fn workflow_gate_validation_fails_closed() {
+    fn workflow_manifest_validation_fails_closed_and_accepts_exact_structure() {
+        let assignments = vec![WorkflowAssignmentAuthorization {
+            assignment_id: "review:reviewer:0".into(),
+            phase: "review".into(),
+            agent_type: "reviewer".into(),
+            provider: "codex".into(),
+            model: "gpt-5.6-sol".into(),
+            gate: "confirm".into(),
+            fanout: false,
+            fanout_limit: 1,
+        }];
         assert!(validate_workflow_launch_metadata(
-            Some("review"),
-            Some("run-1"),
-            Some("fanout"),
-            Some("auto"),
-            true,
-            None
-        )
-        .is_err());
-        assert!(validate_workflow_launch_metadata(
-            Some("review"),
-            Some("run-1"),
-            Some("review"),
-            Some("confirm"),
-            false,
-            None
-        )
-        .is_err());
-        assert!(validate_workflow_launch_metadata(
-            Some("review"),
-            Some("run-1"),
-            Some("review"),
-            Some("confirm"),
-            false,
-            Some("user-confirmed")
+            "orchestrator", Some("review"), Some("run-1"), Some("orchestration"),
+            Some("authorized"), false, None, Some(&assignments), None
         )
         .is_ok());
-        assert!(validate_workflow_launch_metadata(None, None, None, None, false, None).is_ok());
+        assert!(validate_workflow_launch_metadata(
+            "orchestrator", Some("review"), Some("run-1"), Some("orchestration"),
+            Some("authorized"), false, None, None, None
+        )
+        .is_err());
+        assert!(validate_workflow_launch_metadata(
+            "worker", Some("review"), Some("run-1"), Some("review"),
+            Some("confirm"), false, None, None, None
+        )
+        .is_err());
+        assert!(validate_workflow_launch_metadata(
+            "worker", None, None, None, None, false, None, None, None
+        ).is_ok());
+
+        let mut duplicate = assignments.clone();
+        duplicate.push(assignments[0].clone());
+        assert!(validate_workflow_assignment_manifest(&duplicate).is_err());
+        let mut implicit = assignments.clone();
+        implicit[0].model = "provider-default".into();
+        assert!(validate_workflow_assignment_manifest(&implicit).is_err());
+        let mut unsafe_fanout = assignments;
+        unsafe_fanout[0].gate = "auto".into();
+        unsafe_fanout[0].fanout = true;
+        unsafe_fanout[0].fanout_limit = 2;
+        assert!(validate_workflow_assignment_manifest(&unsafe_fanout).is_err());
+        let too_many = vec![workflow_test_assignment("authorized", 1); WORKFLOW_ASSIGNMENT_MAX + 1];
+        assert!(validate_workflow_assignment_manifest(&too_many).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workflow_receipt_replay_requires_the_exact_static_manifest() {
+        let requested = vec![workflow_test_assignment("authorized", 1)];
+        let receipt = json!({"workflow_assignments": workflow_ledger_value(&requested)});
+        assert!(receipt_workflow_manifest_matches(&receipt, Some(&requested)));
+        let mut changed = requested.clone();
+        changed[0].model = "different".into();
+        assert!(!receipt_workflow_manifest_matches(&receipt, Some(&changed)));
+        assert!(!receipt_workflow_manifest_matches(&receipt, None));
+    }
+
+    #[cfg(unix)]
+    fn workflow_test_receipt(assignments: &[WorkflowAssignmentAuthorization]) -> PathBuf {
+        let path = std::env::temp_dir().join(format!("focalpoint-workflow-test-{}.json", new_relaunch_id()));
+        std::fs::write(&path, serde_json::to_vec(&json!({
+            "task_id":"run-1", "workflow_run_id":"run-1", "workflow_id":"review",
+            "role":"orchestrator", "workflow_assignments": workflow_ledger_value(assignments),
+            "workflow_approvals": {}
+        })).unwrap()).unwrap();
+        path
+    }
+
+    #[cfg(unix)]
+    fn workflow_test_assignment(gate: &str, limit: u16) -> WorkflowAssignmentAuthorization {
+        WorkflowAssignmentAuthorization {
+            assignment_id: "review:reviewer:0".into(), phase: "review".into(),
+            agent_type: "reviewer".into(), provider: "codex".into(),
+            model: "gpt-5.6-sol".into(), gate: gate.into(), fanout_limit: limit,
+            fanout: limit > 1,
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workflow_ledger_accepts_exact_assignment_and_rejects_mismatches() {
+        let assignment = workflow_test_assignment("authorized", 1);
+        let path = workflow_test_receipt(&[assignment]);
+        let exact = consume_workflow_assignment_at(
+            &path, "review", "run-1", "review", "authorized", false,
+            "review:reviewer:0", "reviewer", "codex", "gpt-5.6-sol",
+            Some("run-1"), "worker-1"
+        );
+        assert!(exact.is_ok());
+        assert!(consume_workflow_assignment_at(
+            &path, "review", "run-1", "review", "authorized", false,
+            "review:reviewer:0", "reviewer", "codex", "gpt-5.6-sol",
+            Some("run-1"), "worker-replay"
+        ).unwrap_err().contains("exhausted"));
+        let _ = std::fs::remove_file(&path);
+
+        let cases = [
+            ("other", "review", "authorized", "reviewer", "codex", "gpt-5.6-sol", Some("run-1"), false),
+            ("review:reviewer:0", "other", "authorized", "reviewer", "codex", "gpt-5.6-sol", Some("run-1"), false),
+            ("review:reviewer:0", "review", "auto", "reviewer", "codex", "gpt-5.6-sol", Some("run-1"), false),
+            ("review:reviewer:0", "review", "authorized", "other", "codex", "gpt-5.6-sol", Some("run-1"), false),
+            ("review:reviewer:0", "review", "authorized", "reviewer", "claude", "gpt-5.6-sol", Some("run-1"), false),
+            ("review:reviewer:0", "review", "authorized", "reviewer", "codex", "other", Some("run-1"), false),
+            ("review:reviewer:0", "review", "authorized", "reviewer", "codex", "gpt-5.6-sol", Some("other"), false),
+            ("review:reviewer:0", "review", "authorized", "reviewer", "codex", "gpt-5.6-sol", Some("run-1"), true),
+        ];
+        for (id, phase, gate, agent_type, provider, model, manager, fanout) in cases {
+            let path = workflow_test_receipt(&[workflow_test_assignment("authorized", 1)]);
+            assert!(consume_workflow_assignment_at(
+                &path, "review", "run-1", phase, gate, fanout, id, agent_type,
+                provider, model, manager, "worker-x"
+            ).is_err());
+            let receipt: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            assert_eq!(receipt["workflow_assignments"][0]["launches_consumed"], json!(0));
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workflow_fanout_cap_and_one_shot_approval_are_daemon_owned() {
+        let path = workflow_test_receipt(&[workflow_test_assignment("confirm", 2)]);
+        let launch = |task: &str| consume_workflow_assignment_at(
+            &path, "review", "run-1", "review", "confirm", true,
+            "review:reviewer:0", "reviewer", "codex", "gpt-5.6-sol",
+            Some("run-1"), task
+        );
+        assert!(launch("worker-1").unwrap_err().contains("no daemon-recorded"));
+        approve_workflow_transition_at(&path, "run-1", "review").unwrap();
+        assert!(approve_workflow_transition_at(&path, "run-1", "review").is_err());
+        assert!(launch("worker-1").is_ok());
+        assert!(launch("worker-replay").unwrap_err().contains("already consumed"));
+        approve_workflow_transition_at(&path, "run-1", "review").unwrap();
+        assert!(launch("worker-2").is_ok());
+        assert!(approve_workflow_transition_at(&path, "run-1", "review")
+            .unwrap_err()
+            .contains("exhausted"));
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

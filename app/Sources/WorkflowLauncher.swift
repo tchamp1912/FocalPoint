@@ -904,6 +904,7 @@ final class WorkflowLauncherModel: ObservableObject {
             "workflow_phase": "orchestration",
             "workflow_gate": "authorized",
             "workflow_fanout": false,
+            "workflow_assignments": configuration.daemonAssignmentManifest,
         ]
         log("workflow launch requested package=\(boundedLogField(package.name)) task_id=\(boundedLogField(taskID)) provider=\(configuration.orchestratorProvider.rawValue) model=\(boundedLogField(configuration.orchestratorModel)) cwd=\(boundedLogField(targetCwd))")
 
@@ -962,8 +963,11 @@ final class WorkflowLauncherModel: ObservableObject {
     private static func orchestratorTask(for package: FormationPackage,
                                          configuration: WorkflowLaunchConfiguration) -> String {
         let assignments = configuration.roleAssignments.map { assignment in
-            let phase = assignment.phaseName.map { " phase=\($0)" } ?? ""
-            return "- \(assignment.roleName) [type=\(assignment.typeName)\(phase)]: provider=\(assignment.provider.rawValue), model=\(assignment.model)"
+            let phase = assignment.phaseName ?? "main"
+            let limit = assignment.fanoutMaximum.map {
+                min($0, configuration.fanoutLimit ?? $0)
+            } ?? 1
+            return "- assignment=\(assignment.id) \(assignment.roleName) [type=\(assignment.typeName), phase=\(phase), gate=\(assignment.gate.rawValue), limit=\(limit)]: provider=\(assignment.provider.rawValue), model=\(assignment.model)"
         }.joined(separator: "\n")
         let fanout = configuration.fanoutLimit.map {
             "The human set a dynamic fan-out limit of \($0), which may only reduce the manifest ceiling."
@@ -980,10 +984,10 @@ final class WorkflowLauncherModel: ObservableObject {
         You are this formation's orchestrator (launched role=orchestrator; your stable task id is in the launch preamble). Work the focalpoint-orchestrator skill end to end:
         1. Revalidate the manifest and agent types, then use the explicit provider/model assignments above; refuse if a provider cannot deliver a declared capability or enforcement constraint.
         2. Prepare each role's working directory, wait for your own attachment to verify, then create the crew channel.
-        3. Launch each role with fpctl-agent launch --role worker --manager-task-id <your task id> --channel <id>, and wait for verified attachments.
-        4. Honor every phase gate. The final preflight authorized only the formation and phases marked authorized; it did not pre-approve confirm gates. Never auto-approve, never silently retry, and on partial failure report to the human instead of stopping successful roles.
+        3. Launch each role with its exact --workflow-assignment id plus the recorded workflow run, phase, gate, type, provider, and model. Also pass --role worker --manager-task-id <your task id> --channel <id>, and wait for verified attachments. The daemon rejects every deviation and enforces each assignment's launch limit.
+        4. Honor every phase gate. The final preflight authorized only the formation and phases marked authorized; it did not pre-approve confirm gates. For a confirm gate, ask the human to approve that run and phase in the app, then retry without supplying any confirmation token. Never auto-approve, never silently retry, and on partial failure report to the human instead of stopping successful roles.
 
-        The daemon validates individual launch/channel/stop calls only; all expansion judgment is yours.
+        The daemon validates the persisted assignment ledger, approval consumption, and individual launch/channel/stop calls; sequencing judgment remains yours.
         """
     }
 

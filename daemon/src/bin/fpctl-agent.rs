@@ -84,9 +84,9 @@ enum AgentCommand {
         workflow_gate: Option<String>,
         #[arg(long, default_value_t = false)]
         workflow_fanout: bool,
-        /// Required by the daemon when `--workflow-gate confirm` is used.
+        /// Exact assignment id authorized by the workflow run's daemon ledger.
         #[arg(long)]
-        transition_confirmation: Option<String>,
+        workflow_assignment: Option<String>,
         /// Cursor only: headless streams structured lifecycle events; attachable
         /// opens Cursor's normal interactive terminal UI.
         #[arg(long, value_enum, default_value_t = CursorLaunchMode::Headless)]
@@ -429,7 +429,7 @@ fn run(command: AgentCommand) -> Result<(), String> {
             workflow_phase,
             workflow_gate,
             workflow_fanout,
-            transition_confirmation,
+            workflow_assignment,
             cursor_mode,
         } => request(json!({
             "cmd": "launch-session", "provider": provider.name(), "cwd": cwd,
@@ -439,7 +439,7 @@ fn run(command: AgentCommand) -> Result<(), String> {
             "workflow_id": workflow_id, "workflow_run_id": workflow_run_id,
             "workflow_phase": workflow_phase, "workflow_gate": workflow_gate,
             "workflow_fanout": workflow_fanout,
-            "transition_confirmation": transition_confirmation,
+            "workflow_assignment": workflow_assignment,
             "cursor_mode": matches!(provider, Provider::Cursor).then(|| cursor_mode.name()),
         }))?,
         AgentCommand::Channel { command } => {
@@ -526,6 +526,8 @@ mod tests {
             "inject",
             "accept",
             "reject",
+            "approve-workflow-transition",
+            "transition-confirmation",
             "end-session",
             "quit-session",
             "refresh",
@@ -571,6 +573,12 @@ mod tests {
             }
             _ => panic!("expected launch"),
         }
+        assert!(Cli::try_parse_from([
+            "fpctl-agent", "launch", "--provider", "codex", "--agent-type", "reviewer",
+            "--model", "gpt-5.6-sol", "--cwd", "/tmp", "--task", "Review it.",
+            "--task-id", "review-2", "--transition-confirmation", "user-confirmed"
+        ])
+        .is_err());
     }
 
     #[test]
@@ -623,8 +631,8 @@ mod tests {
             "review",
             "--workflow-gate",
             "confirm",
-            "--transition-confirmation",
-            "user-confirmed",
+            "--workflow-assignment",
+            "review:correctness-reviewer:0",
         ])
         .unwrap();
         match parsed.command {
@@ -632,11 +640,13 @@ mod tests {
                 agent_type,
                 model,
                 workflow_gate,
+                workflow_assignment,
                 ..
             } => {
                 assert_eq!(agent_type, "correctness-reviewer");
                 assert_eq!(model, "gpt-5.6-terra");
                 assert_eq!(workflow_gate.as_deref(), Some("confirm"));
+                assert_eq!(workflow_assignment.as_deref(), Some("review:correctness-reviewer:0"));
             }
             _ => panic!("expected launch"),
         }

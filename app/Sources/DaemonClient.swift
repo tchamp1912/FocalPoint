@@ -239,6 +239,25 @@ final class DaemonClient: @unchecked Sendable {
         request(spec.request, timeout: timeout)
     }
 
+    func capabilities(timeout: Double = 2) -> DaemonCapabilities? {
+        guard let value = request(["cmd": "get-capabilities"], timeout: timeout),
+              value["ok"] as? Bool == true,
+              let features = value["features"] as? [String: Any] else { return nil }
+        return DaemonCapabilities(
+            workflowAssignmentLedger: features["workflow_assignment_ledger"] as? Bool ?? false,
+            workflowGateApproval: features["workflow_gate_approval"] as? Bool ?? false
+        )
+    }
+
+    /// Called only after the app's human confirmation UI. This mints no
+    /// transferable token: the daemon records a single run+phase approval.
+    func approveWorkflowTransition(runID: String, phase: String,
+                                   timeout: Double = 3) -> [String: Any]? {
+        request(["cmd": "approve-workflow-transition",
+                 "workflow_run_id": runID, "workflow_phase": phase],
+                timeout: timeout)
+    }
+
     /// Destructive managed stop with both ownership and explicit confirmation.
     /// Callers should invoke this only from the completion handler of their
     /// own confirmation UI; there is intentionally no boolean/default escape.
@@ -280,6 +299,7 @@ final class DaemonClient: @unchecked Sendable {
                     agentType: session["agent_type"] as? String,
                     provider: session["provider"] as? String, model: session["model"] as? String,
                     phase: session["phase"] as? String,
+                    assignmentID: session["assignment"] as? String,
                     gate: (session["gate"] as? String).flatMap(WorkflowGate.init(rawValue:)),
                     fanout: session["fanout"] as? Bool ?? false,
                     state: state, connected: session["connected"] as? Bool ?? false)
@@ -287,6 +307,11 @@ final class DaemonClient: @unchecked Sendable {
             return WorkflowRunSummary(runID: runID, workflowID: workflowID, sessions: sessions)
         }
     }
+}
+
+struct DaemonCapabilities: Equatable {
+    let workflowAssignmentLedger: Bool
+    let workflowGateApproval: Bool
 }
 
 func log(_ msg: String) {

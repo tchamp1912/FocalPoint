@@ -152,6 +152,7 @@ final class AppModel: ObservableObject {
     /// daemon failures in shared state lets the originating surface explain a
     /// failed launch instead of silently closing or pretending it succeeded.
     @Published private(set) var roadmapActionError: String?
+    @Published private(set) var daemonCapabilities: DaemonCapabilities?
     private let maxSessionHistoryEntries = 200
     /// Explicit live-session promotions waiting for the daemon's
     /// `session-ended` event. A process cannot be adopted into tmux, so the
@@ -644,9 +645,11 @@ final class AppModel: ObservableObject {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let diagnostics = client.diagnostics()
             let runs = client.workflowRuns()
+            let capabilities = client.capabilities()
             Task { @MainActor [weak self] in
                 if let diagnostics { self?.daemonDiagnostics = diagnostics }
                 if let runs { self?.workflowRuns = runs }
+                if let capabilities { self?.daemonCapabilities = capabilities }
             }
         }
     }
@@ -689,6 +692,25 @@ final class AppModel: ObservableObject {
         quitSession(session, confirmedByUser: ())
     }
 
+    /// Human-confirmed workflow transition seam for the dashboard UI. The
+    /// daemon, not the caller, records the one-shot authorization.
+    func approveWorkflowTransition(runID: String, phase: String,
+                                   userConfirmed: Void,
+                                   completion: @escaping (String?) -> Void) {
+        let client = self.client
+        DispatchQueue.global(qos: .userInitiated).async {
+            let response = client.approveWorkflowTransition(runID: runID, phase: phase)
+            let error: String?
+            if response?["ok"] as? Bool == true {
+                error = nil
+            } else {
+                error = (response?["error"] as? String)
+                    ?? "Could not reach the FocalPoint daemon."
+            }
+            Task { @MainActor in completion(error) }
+        }
+    }
+
     private func setConnected(_ up: Bool) {
         let previous = connected
         connected = up
@@ -701,6 +723,7 @@ final class AppModel: ObservableObject {
             attentionOrder = []
             daemonDiagnostics = nil
             workflowRuns = []
+            daemonCapabilities = nil
             activeSnapshotGeneration = nil
         } else if !previous {
             refreshRoadmapState()

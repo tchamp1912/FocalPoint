@@ -44,12 +44,29 @@ enum WorkflowLaunchPreflightCoreTests {
             orchestratorModel: "gpt-5.6-sol",
             assignments: [WorkflowRoleAssignment(
                 id: "review", roleName: "Review", typeName: "reviewer",
-                phaseName: nil, fanoutMaximum: nil, provider: .codex,
+                phaseName: nil, gate: .authorized, fanoutMaximum: nil, provider: .codex,
                 model: "gpt-5.6-sol", sourceDescription: "test"
             )],
             fanoutLimit: 2, fanoutCeiling: 4, unresolvedTypes: []
         )
         assert(valid.isEmpty, "unexpected validation errors: \(valid)")
+
+        let assignment = WorkflowRoleAssignment(
+            id: "review:reviewer:0", roleName: "Review", typeName: "reviewer",
+            phaseName: "review", gate: .confirm, fanoutMaximum: 5, provider: .codex,
+            model: "gpt-5.6-sol", sourceDescription: "test"
+        )
+        let configuration = WorkflowLaunchConfiguration(
+            projectDirectory: URL(fileURLWithPath: NSTemporaryDirectory()),
+            complexity: .complex, orchestratorProvider: .codex,
+            orchestratorModel: "gpt-5.6-sol", fanoutLimit: 3,
+            roleAssignments: [assignment]
+        )
+        let manifest = configuration.daemonAssignmentManifest[0]
+        assert(manifest["assignment_id"] as? String == "review:reviewer:0")
+        assert(manifest["gate"] as? String == "confirm")
+        assert(manifest["fanout"] as? Bool == true)
+        assert(manifest["fanout_limit"] as? Int == 3)
         print("WorkflowLaunchPreflightCoreTests: passed")
     }
 }

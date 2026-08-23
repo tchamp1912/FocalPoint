@@ -128,6 +128,7 @@ struct WorkflowRoleAssignment: Identifiable, Equatable {
     let roleName: String
     let typeName: String
     let phaseName: String?
+    let gate: FormationGateSummary
     let fanoutMaximum: Int?
     var provider: WorkflowLaunchProvider
     var model: String
@@ -141,6 +142,24 @@ struct WorkflowLaunchConfiguration: Equatable {
     let orchestratorModel: String
     let fanoutLimit: Int?
     let roleAssignments: [WorkflowRoleAssignment]
+
+    var daemonAssignmentManifest: [[String: Any]] {
+        roleAssignments.map { assignment in
+            let limit = assignment.fanoutMaximum.map {
+                min($0, fanoutLimit ?? $0)
+            } ?? 1
+            return [
+                "assignment_id": assignment.id,
+                "phase": assignment.phaseName ?? "main",
+                "agent_type": assignment.typeName,
+                "provider": assignment.provider.rawValue,
+                "model": assignment.model,
+                "gate": assignment.gate.rawValue,
+                "fanout": assignment.fanoutMaximum != nil,
+                "fanout_limit": limit,
+            ]
+        }
+    }
 }
 
 enum WorkflowPreflightValidation {

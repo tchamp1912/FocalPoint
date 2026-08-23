@@ -71,9 +71,12 @@ final class WorkflowLaunchPreflightModel: ObservableObject {
             let source = profile?.model == nil
                 ? "Recommended for \(complexity.title.lowercased()) complexity"
                 : "Declared by agent type"
+            let gate = role.phaseName.flatMap { phaseName in
+                package.phases.first(where: { $0.name == phaseName })?.gate
+            } ?? .authorized
             return WorkflowRoleAssignment(
                 id: role.id, roleName: role.displayName, typeName: role.type,
-                phaseName: role.phaseName, fanoutMaximum: role.fanoutMaximum,
+                phaseName: role.phaseName, gate: gate, fanoutMaximum: role.fanoutMaximum,
                 provider: provider, model: model, sourceDescription: source
             )
         }
