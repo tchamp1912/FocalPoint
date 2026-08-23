@@ -9,6 +9,9 @@ struct WorkflowLaunchPreflightView: View {
     @StateObject private var preflight: WorkflowLaunchPreflightModel
     let daemonConnected: Bool
     let onLaunch: (WorkflowLaunchConfiguration) -> Void
+    @State private var planViewMode = PlanViewMode.list
+
+    private enum PlanViewMode { case list, graph }
 
     init(package: FormationPackage, suggestedDirectory: URL?, daemonConnected: Bool,
          onLaunch: @escaping (WorkflowLaunchConfiguration) -> Void) {
@@ -157,7 +160,17 @@ struct WorkflowLaunchPreflightView: View {
 
     private var formationPlan: some View {
         preflightSection("Roles, phases, and gates", systemImage: "point.3.connected.trianglepath.dotted") {
-            if preflight.package.phases.isEmpty {
+            Picker("Plan view", selection: $planViewMode) {
+                Text("List").tag(PlanViewMode.list)
+                Text("Graph").tag(PlanViewMode.graph)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            if planViewMode == .graph {
+                let graph = planGraph
+                WorkflowGraphView(graph: graph)
+                    .frame(height: min(max(graph.contentSize.height + 8, 160), 360))
+            } else if preflight.package.phases.isEmpty {
                 Text("Single authorized phase")
                     .font(.callout.weight(.medium))
                 ForEach(preflight.package.roles) { roleRow($0) }
@@ -184,6 +197,16 @@ struct WorkflowLaunchPreflightView: View {
                 }
             }
         }
+    }
+
+    /// The graph reflects the reviewed assignments live: changing a provider
+    /// or model above redraws the affected node's detail line.
+    private var planGraph: WorkflowGraph {
+        WorkflowGraphModel.make(input: WorkflowGraphInput(
+            package: preflight.package,
+            orchestratorDetail: "\(preflight.orchestratorProvider.title) · \(preflight.orchestratorModel)",
+            assignments: preflight.roleAssignments
+        ))
     }
 
     @ViewBuilder

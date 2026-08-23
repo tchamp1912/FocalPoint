@@ -264,6 +264,12 @@ private struct BundledFormationView: View {
                 Text("Installation requires confirmation and refuses every name collision; it never overwrites installed packages.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            EditorCard(title: "Graph",
+                       caption: "Phases, gates, and fan-out as the orchestrator will sequence them.") {
+                let graph = WorkflowGraphModel.make(input: WorkflowGraphInput(draft: formation))
+                WorkflowGraphView(graph: graph)
+                    .frame(height: min(max(graph.contentSize.height + 8, 140), 340))
+            }
             Button("Install bundled workflow…", action: install)
                 .buttonStyle(.borderedProminent)
             Spacer()
@@ -460,6 +466,7 @@ private struct FormationEditorView: View {
                                     warnings: diagnostics.warnings + formation.warnings)
                     packageCard
                     structureCard
+                    graphCard
                     if formation.phased {
                         phasesEditor
                     } else {
@@ -501,6 +508,17 @@ private struct FormationEditorView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+        }
+    }
+
+    /// Live graph of the current draft, including while the draft is
+    /// momentarily invalid (a dangling `after` mid-rename still draws).
+    private var graphCard: some View {
+        EditorCard(title: "Graph",
+                   caption: "Phases, gates, and fan-out as the orchestrator will sequence them. Provider and model are chosen later, at launch preflight.") {
+            let graph = WorkflowGraphModel.make(input: WorkflowGraphInput(draft: formation))
+            WorkflowGraphView(graph: graph)
+                .frame(height: min(max(graph.contentSize.height + 8, 140), 340))
         }
     }
 

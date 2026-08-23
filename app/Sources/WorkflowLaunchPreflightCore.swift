@@ -111,6 +111,10 @@ struct FormationRoleSummary: Identifiable, Equatable {
     let task: String?
     let phaseName: String?
     let fanoutMaximum: Int?
+    /// For a fan-out placeholder (`fanoutMaximum != nil`), the name of the
+    /// earlier role whose plan output names the slices. Structured so graph
+    /// views never have to parse it back out of the placeholder's name.
+    let fanoutSource: String?
 
     var displayName: String { fanoutMaximum == nil ? name : "\(name) (fan-out)" }
 }
