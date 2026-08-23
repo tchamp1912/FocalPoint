@@ -687,16 +687,19 @@ final class WorkflowLauncherModel: ObservableObject {
                     return invalid("duplicate phase name '\(phaseName)'")
                 }
                 let after: String?
-                if let afterValue = phase["after"] {
-                    guard case .string(let raw) = afterValue, earlierPhaseNames.contains(raw) else {
+                if phaseIndex == 0 {
+                    guard phase["after"] == nil else {
+                        return invalid("phase '\(phaseName)': after is invalid on the first phase")
+                    }
+                    after = nil
+                } else {
+                    guard case .string(let raw)? = phase["after"],
+                          !raw.isEmpty, earlierPhaseNames.contains(raw) else {
                         return invalid("phase '\(phaseName)': after must name an earlier phase")
                     }
                     after = raw
-                } else { after = nil }
-                let effectiveGateValue: TomlValue? = {
-                    if case .table(let fanout)? = phase["fanout"] { return fanout["gate"] ?? phase["gate"] }
-                    return phase["gate"]
-                }()
+                }
+                let effectiveGateValue = phase["gate"]
                 let gate: FormationGateSummary
                 if let gateValue = effectiveGateValue {
                     guard case .string(let raw) = gateValue,
@@ -704,8 +707,10 @@ final class WorkflowLauncherModel: ObservableObject {
                         return invalid("phase '\(phaseName)': gate must be authorized, confirm, or auto")
                     }
                     gate = parsed
+                } else if phase["fanout"] != nil {
+                    gate = .confirm
                 } else {
-                    gate = phase["fanout"] == nil ? .authorized : .confirm
+                    return invalid("phase '\(phaseName)': missing required gate")
                 }
                 var summaries: [FormationRoleSummary] = []
                 if let rolesValue = phase["role"] {
@@ -763,9 +768,8 @@ final class WorkflowLauncherModel: ObservableObject {
                     // prompt would leave an instruction to a language model as
                     // the only thing between a crafted manifest and
                     // plan-authored process creation.
-                    let gateValue = fanout["gate"] ?? phase["gate"]
-                    if case .string(let rawGate)? = gateValue, rawGate != "confirm" {
-                        return invalid("phase '\(phaseName)': fan-out requires gate = \"confirm\" (got \"\(rawGate)\")")
+                    if gate != .confirm {
+                        return invalid("phase '\(phaseName)': fan-out requires gate = \"confirm\" (got \"\(gate.rawValue)\")")
                     }
                     if fanoutCeiling == nil { fanoutCeiling = max }
                     summaries.append(FormationRoleSummary(

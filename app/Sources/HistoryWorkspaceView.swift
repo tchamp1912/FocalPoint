@@ -500,7 +500,11 @@ private struct HistoryLaunchSheet: View {
     private var draft: HistoryLaunchDraft? { store.launchDraft }
 
     private var availableProviders: [HistoryProvider] {
-        Array(Set(store.launchOptions.map(\.provider))).sorted { $0.rawValue < $1.rawValue }
+        if draft?.mode == .resume, let provider = draft?.record.provider {
+            return [provider]
+        }
+        return Array(Set(store.launchOptions.map(\.provider)))
+            .sorted { $0.rawValue < $1.rawValue }
     }
 
     private var modelsForProvider: [String] {

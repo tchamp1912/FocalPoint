@@ -214,25 +214,39 @@ enum LocalSetupDiagnostics {
         .init(id: .providers) {
             await Task.detached {
                 let providers = [
-                    ("Claude Code", ["claude"]),
-                    ("Codex", ["codex"]),
-                    ("Cursor", ["cursor-agent", "cursor"])
+                    ("Claude Code", [("claude", ["auth", "status", "--json"])]),
+                    ("Codex", [("codex", ["login", "status"])]),
+                    ("Cursor", [
+                        ("cursor-agent", ["status", "--format", "json"]),
+                        ("cursor", ["agent", "status", "--format", "json"])
+                    ])
                 ]
+                var installedCount = 0
+                var authenticatedCount = 0
                 let evidence = providers.map { name, commands -> SetupDiagnosticEvidence in
-                    let available = commands.contains { findExecutable($0) != nil }
-                    return .init(name, available ? "CLI available; account checked by provider on launch" : "CLI not found")
+                    guard let candidate = commands.compactMap({ command, arguments in
+                        findExecutable(command).map { ($0, arguments) }
+                    }).first else {
+                        return .init(name, "CLI not found")
+                    }
+                    installedCount += 1
+                    let authenticated = commandSucceeded(candidate.0.path, candidate.1, timeout: 4)
+                    if authenticated { authenticatedCount += 1 }
+                    return .init(name, authenticated
+                                 ? "CLI installed; authentication verified"
+                                 : "CLI installed; authentication not verified")
                 }
-                let available = evidence.filter { $0.value.hasPrefix("CLI available") }.count
                 return SetupDiagnosticResult(
                     id: .providers,
-                    status: available > 0 ? (available == providers.count ? .passed : .warning) : .failed,
-                    summary: available > 0
-                        ? "\(available) of \(providers.count) supported provider CLIs are available."
+                    status: authenticatedCount == providers.count ? .passed
+                        : (installedCount > 0 ? .warning : .failed),
+                    summary: installedCount > 0
+                        ? "Authentication verified for \(authenticatedCount) of \(providers.count) supported providers."
                         : "No supported provider CLI was found on PATH.",
                     evidence: evidence,
                     actions: [
                         .init(.openProviderSetupGuide, title: "Open provider setup guide",
-                              isPrimary: available == 0),
+                              isPrimary: authenticatedCount == 0),
                         .init(.recheck, title: "Recheck")
                     ])
             }.value
@@ -320,7 +334,8 @@ private func fileContainsMarker(_ url: URL, marker: String) -> Bool {
     return text.contains(marker)
 }
 
-private func commandSucceeded(_ executable: String, _ arguments: [String]) -> Bool {
+private func commandSucceeded(_ executable: String, _ arguments: [String],
+                              timeout: TimeInterval = 3) -> Bool {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: executable)
     process.arguments = arguments
@@ -328,7 +343,14 @@ private func commandSucceeded(_ executable: String, _ arguments: [String]) -> Bo
     process.standardError = FileHandle.nullDevice
     do {
         try process.run()
-        process.waitUntilExit()
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        guard !process.isRunning else {
+            process.terminate()
+            return false
+        }
         return process.terminationStatus == 0
     } catch {
         return false

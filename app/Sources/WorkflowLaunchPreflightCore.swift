@@ -112,7 +112,7 @@ struct FormationRoleSummary: Identifiable, Equatable {
     let phaseName: String?
     let fanoutMaximum: Int?
 
-    var displayName: String { fanoutMaximum == nil ? name : "(name) (fan-out)" }
+    var displayName: String { fanoutMaximum == nil ? name : "\(name) (fan-out)" }
 }
 
 struct FormationPhaseSummary: Identifiable, Equatable {

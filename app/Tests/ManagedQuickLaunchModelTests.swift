@@ -28,6 +28,7 @@ enum ManagedQuickLaunchModelTests {
         precondition(request.model == "gpt-5.6-sol")
         precondition(request.complexity == .simple)
         precondition(request.daemonPayload["model"] as? String == "gpt-5.6-sol")
+        precondition(request.daemonPayload["agent_type"] as? String == "implementer")
         precondition(request.daemonPayload["role"] as? String == "worker")
 
         draft.model = ""

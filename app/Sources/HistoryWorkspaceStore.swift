@@ -20,7 +20,7 @@ final class HistoryWorkspaceStore: ObservableObject {
     init(
         records: [HistoryRecord],
         projects: [HistoryProject]? = nil,
-        launchOptions: [HistoryLaunchOption] = HistoryWorkspaceSamples.launchOptions,
+        launchOptions: [HistoryLaunchOption] = [],
         actionHandler: @escaping (HistoryWorkspaceAction) -> Void = { _ in }
     ) {
         self.records = records
@@ -33,7 +33,8 @@ final class HistoryWorkspaceStore: ObservableObject {
     convenience init(sampleData: Bool = true) {
         self.init(
             records: sampleData ? HistoryWorkspaceSamples.records : [],
-            projects: sampleData ? HistoryWorkspaceSamples.projects : []
+            projects: sampleData ? HistoryWorkspaceSamples.projects : [],
+            launchOptions: sampleData ? HistoryWorkspaceSamples.launchOptions : []
         )
     }
 
@@ -153,11 +154,13 @@ struct HistoryLaunchDraft: Identifiable {
 
     var isComplete: Bool {
         project != nil && provider != nil
+            && (mode != .resume || provider == record.provider)
             && model?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 
     func request() -> HistoryLaunchRequest? {
         guard let project, let provider,
+              mode != .resume || provider == record.provider,
               let model = model?.trimmingCharacters(in: .whitespacesAndNewlines),
               !model.isEmpty
         else { return nil }

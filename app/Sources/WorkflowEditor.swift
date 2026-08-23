@@ -795,7 +795,7 @@ final class WorkflowEditorModel: ObservableObject {
     private var formationSnapshots: [String: EditableFormation] = [:]
     private var agentTypeSnapshots: [String: EditableAgentType] = [:]
 
-    static let knownProviders = ["claude", "codex", "cursor"]
+    nonisolated static let knownProviders = ["claude", "codex", "cursor"]
 
     nonisolated static var configRoot: URL {
         if let xdg = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"], !xdg.isEmpty {

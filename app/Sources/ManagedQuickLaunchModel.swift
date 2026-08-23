@@ -43,6 +43,7 @@ struct ManagedQuickLaunchRequest: Equatable, Identifiable {
             "cmd": "launch-session",
             "provider": provider.rawValue,
             "model": model,
+            "agent_type": agentType,
             "cwd": cwd,
             "task": task,
             "task_id": taskID,
