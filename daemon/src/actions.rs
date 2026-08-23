@@ -53,11 +53,15 @@ pub fn run_with_env_status(action: &Action, env: &[(&str, String)]) -> Result<()
             Ok(())
         }
     };
-    eprintln!(
-        "[focus-timing] hop=action result={} elapsed_ms={:.3}",
-        if outcome.is_ok() { "ok" } else { "error" },
-        started.elapsed().as_secs_f64() * 1000.0,
-    );
+    if env.iter().any(|(key, value)| {
+        *key == "FOCALPOINT_FOCUS_TIMING" && value == "1"
+    }) {
+        eprintln!(
+            "[focus-timing] hop=action result={} elapsed_ms={:.3}",
+            if outcome.is_ok() { "ok" } else { "error" },
+            started.elapsed().as_secs_f64() * 1000.0,
+        );
+    }
     outcome
 }
 
