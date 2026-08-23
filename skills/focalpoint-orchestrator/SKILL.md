@@ -62,6 +62,7 @@ fpctl-agent channel create
 # record the returned channel_id, e.g. ch-1
 fpctl-agent launch --provider codex --cwd /absolute/prepared/path \
   --model gpt-5.6-terra \
+  --agent-type implementer \
   --task 'Implement and test the assigned slice.' --task-id worker-id \
   --title 'Parser implementation' \
   --role worker --manager-task-id orchestrator-id --channel ch-1
@@ -90,6 +91,7 @@ work with a unique stable task id:
 ```sh
 fpctl-agent launch --provider codex --cwd /absolute/prepared/path \
   --model gpt-5.6-terra \
+  --agent-type implementer \
   --task 'Implement and test the assigned slice.' --task-id worker-id \
   --title 'Parser implementation' \
   --role worker --manager-task-id orchestrator-id
@@ -98,15 +100,22 @@ fpctl-agent launch --provider codex --cwd /absolute/prepared/path \
 Top-level work uses `--role orchestrator` and no manager. A worker's manager
 must be a live managed orchestrator. Every launch must pass a concrete
 `--model`; never omit it and never pass `default`, `provider-default`, or
-`auto`. Resolve the model before launch from the task's complexity, required
-capabilities, risk, and provider headroom. Use a lower-cost capable model for
-bounded scouting, routine implementation, and ordinary review; reserve the
-strongest reasoning models for broad architecture, security-sensitive work,
-hard debugging, and synthesis that genuinely needs them. Before launch,
+`auto`. Every launch must also pass a concrete `--agent-type`; never rely on
+`general`, a previous selection, or ambient provider state. Resolve both before
+launch from the task's complexity, required capabilities, risk, and provider
+headroom. Route across providers intentionally: Claude is a strong fit for
+planning, threat modeling, and synthesis; Cursor for IDE-grounded implementation
+and test verification; Codex for repository implementation, debugging, and code
+review. These are starting points, not hard exclusions. Use a lower-cost capable
+model for bounded scouting, routine implementation, and ordinary review; reserve
+the strongest reasoning models for broad architecture, security-sensitive work,
+hard debugging, and synthesis that genuinely needs them. Do not choose every
+worker from the orchestrator's own provider. Before launch,
 consult `status` usage: missing usage is unknown, not free capacity; prefer
 comparable providers with available reported headroom. Record the concrete
-model and a short selection rationale in the orchestration channel so the
-choice is auditable and cannot inherit ambient UI or provider state.
+agent type, provider, model, and a short selection rationale in the orchestration
+channel so the choice is auditable and cannot inherit ambient UI or provider
+state. If headroom forces a substitution, record that substitution explicitly.
 
 Always pass a short, descriptive `--title` that is unique within the current
 work group. The daemon atomically reserves the worker's numbered slot before
