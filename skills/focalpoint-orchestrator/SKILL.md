@@ -61,6 +61,7 @@ orchestrator creates and owns the channel; add a worker when launching it:
 fpctl-agent channel create
 # record the returned channel_id, e.g. ch-1
 fpctl-agent launch --provider codex --cwd /absolute/prepared/path \
+  --model gpt-5.6-terra \
   --task 'Implement and test the assigned slice.' --task-id worker-id \
   --title 'Parser implementation' \
   --role worker --manager-task-id orchestrator-id --channel ch-1
@@ -88,15 +89,24 @@ work with a unique stable task id:
 
 ```sh
 fpctl-agent launch --provider codex --cwd /absolute/prepared/path \
+  --model gpt-5.6-terra \
   --task 'Implement and test the assigned slice.' --task-id worker-id \
   --title 'Parser implementation' \
   --role worker --manager-task-id orchestrator-id
 ```
 
 Top-level work uses `--role orchestrator` and no manager. A worker's manager
-must be a live managed orchestrator. `--model` is optional. Before launch,
+must be a live managed orchestrator. Every launch must pass a concrete
+`--model`; never omit it and never pass `default`, `provider-default`, or
+`auto`. Resolve the model before launch from the task's complexity, required
+capabilities, risk, and provider headroom. Use a lower-cost capable model for
+bounded scouting, routine implementation, and ordinary review; reserve the
+strongest reasoning models for broad architecture, security-sensitive work,
+hard debugging, and synthesis that genuinely needs them. Before launch,
 consult `status` usage: missing usage is unknown, not free capacity; prefer
-comparable providers with available reported headroom.
+comparable providers with available reported headroom. Record the concrete
+model and a short selection rationale in the orchestration channel so the
+choice is auditable and cannot inherit ambient UI or provider state.
 
 Always pass a short, descriptive `--title` that is unique within the current
 work group. The daemon atomically reserves the worker's numbered slot before
