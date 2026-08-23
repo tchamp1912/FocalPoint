@@ -70,12 +70,15 @@ final class WorkflowLaunchPreflightModel: ObservableObject {
         self.orchestratorModel = orchestrator?.model ?? ""
 
         var unresolved: [String] = []
+        // Local capture: the closure below runs while `self` is still
+        // mid-initialization, so it must not reference self.modelCatalog.
+        let catalog = modelCatalog
         self.roleAssignments = package.allRoles.map { role in
             let profile = WorkflowAgentTypeProfile.load(
                 typeName: role.type, agentsDirectory: WorkflowLauncherModel.agentsDirectory
             )
             if profile == nil { unresolved.append(role.type) }
-            let selection = modelCatalog.flatMap { catalog -> ModelCatalogSelection? in
+            let selection = catalog.flatMap { catalog -> ModelCatalogSelection? in
                 if case .success(let selection) = catalog.recommend(complexity: complexity, agentType: role.type) { return selection }
                 return nil
             }
