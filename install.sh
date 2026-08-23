@@ -508,12 +508,16 @@ MCP_STATUS=()
 
 if command -v codex >/dev/null 2>&1; then
   if EXISTING_CODEX_MCP="$(codex mcp get focalpoint --json 2>/dev/null)"; then
-    EXISTING_CODEX_COMMAND="$(printf '%s' "$EXISTING_CODEX_MCP" | jq -r '.command // empty')"
-    EXISTING_CODEX_ARGS="$(printf '%s' "$EXISTING_CODEX_MCP" | jq -c '.args // []')"
-    EXISTING_CODEX_ENV="$(printf '%s' "$EXISTING_CODEX_MCP" | jq -c '.env // {}')"
-    if [ "$EXISTING_CODEX_COMMAND" = "$FOCALPOINT_MCP_BIN" ] \
+    EXISTING_CODEX_TRANSPORT="$(printf '%s' "$EXISTING_CODEX_MCP" | jq -r '.transport.type // empty')"
+    EXISTING_CODEX_COMMAND="$(printf '%s' "$EXISTING_CODEX_MCP" | jq -r '.transport.command // empty')"
+    EXISTING_CODEX_ARGS="$(printf '%s' "$EXISTING_CODEX_MCP" | jq -c '.transport.args // []')"
+    EXISTING_CODEX_ENV="$(printf '%s' "$EXISTING_CODEX_MCP" | jq -c '.transport.env // {}')"
+    EXISTING_CODEX_ENV_VARS="$(printf '%s' "$EXISTING_CODEX_MCP" | jq -c '.transport.env_vars // []')"
+    if [ "$EXISTING_CODEX_TRANSPORT" = "stdio" ] \
+       && [ "$EXISTING_CODEX_COMMAND" = "$FOCALPOINT_MCP_BIN" ] \
        && [ "$EXISTING_CODEX_ARGS" = "[]" ] \
-       && [ "$EXISTING_CODEX_ENV" = "{}" ]; then
+       && [ "$EXISTING_CODEX_ENV" = "{}" ] \
+       && [ "$EXISTING_CODEX_ENV_VARS" = "[]" ]; then
       MCP_STATUS+=("Codex current")
       ok "Codex MCP server already current"
     else
@@ -534,7 +538,10 @@ fi
 
 if command -v claude >/dev/null 2>&1; then
   if EXISTING_CLAUDE_MCP="$(claude mcp get focalpoint 2>/dev/null)"; then
-    if printf '%s' "$EXISTING_CLAUDE_MCP" | grep -Fq "$FOCALPOINT_MCP_BIN"; then
+    if printf '%s\n' "$EXISTING_CLAUDE_MCP" | grep -Fqx "  Type: stdio" \
+       && printf '%s\n' "$EXISTING_CLAUDE_MCP" | grep -Fqx "  Command: $FOCALPOINT_MCP_BIN" \
+       && printf '%s\n' "$EXISTING_CLAUDE_MCP" | grep -Eq '^  Args:[[:space:]]*$' \
+       && printf '%s\n' "$EXISTING_CLAUDE_MCP" | grep -Eq '^  Environment:[[:space:]]*$'; then
       MCP_STATUS+=("Claude current")
       ok "Claude MCP server already current"
     else
