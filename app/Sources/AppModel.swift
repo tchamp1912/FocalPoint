@@ -148,6 +148,10 @@ final class AppModel: ObservableObject {
     /// Older daemons simply leave these nil/empty.
     @Published private(set) var daemonDiagnostics: DaemonDiagnostics?
     @Published private(set) var workflowRuns: [WorkflowRunSummary] = []
+    /// A bounded, user-facing outcome for roadmap window actions.  Keeping
+    /// daemon failures in shared state lets the originating surface explain a
+    /// failed launch instead of silently closing or pretending it succeeded.
+    @Published private(set) var roadmapActionError: String?
     private let maxSessionHistoryEntries = 200
     /// Explicit live-session promotions waiting for the daemon's
     /// `session-ended` event. A process cannot be adopted into tmux, so the
@@ -645,6 +649,44 @@ final class AppModel: ObservableObject {
                 if let runs { self?.workflowRuns = runs }
             }
         }
+    }
+
+    /// Dispatches the complete quick-launch identity exactly as reviewed. No
+    /// field is inferred here: validation has already required concrete agent,
+    /// provider, model, cwd, title, and stable task id in the launch sheet.
+    func launchManagedQuickSession(_ request: ManagedQuickLaunchRequest) {
+        let spec = ManagedLaunchSpec(agentType: request.agentType,
+                                     provider: request.provider.rawValue,
+                                     model: request.model, cwd: request.cwd,
+                                     taskID: request.taskID, title: request.title,
+                                     task: request.task, role: "worker",
+                                     managerTaskID: nil, channelID: nil, workflow: nil)
+        roadmapActionError = nil
+        let client = self.client
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let response = client.launch(spec)
+            let failure: String?
+            if response?["ok"] as? Bool == true {
+                failure = nil
+            } else if let daemonError = response?["error"] as? String, !daemonError.isEmpty {
+                failure = daemonError
+            } else {
+                failure = "FocalPoint could not launch the managed session. Check that the daemon is running."
+            }
+            Task { @MainActor [weak self] in
+                self?.roadmapActionError = failure
+                if failure == nil { self?.refreshRoadmapState() }
+            }
+        }
+    }
+
+    func clearRoadmapActionError() { roadmapActionError = nil }
+
+    /// Used only after a surface has completed its own destructive
+    /// confirmation. It deliberately does not expose an unconfirmed stop.
+    func stopSessionAfterUserConfirmation(id: String) {
+        guard let session = sessions.first(where: { $0.id == id }) else { return }
+        quitSession(session, confirmedByUser: ())
     }
 
     private func setConnected(_ up: Bool) {

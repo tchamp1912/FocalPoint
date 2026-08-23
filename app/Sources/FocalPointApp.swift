@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeys: HotkeyManager!
     private var overlay: DesktopOverlayController!
     private var settingsWC: NSWindowController?
+    private lazy var roadmapWC = RoadmapWindowCoordinator(model: model)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -55,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         model.start()
         if model.hotkeysEnabled { hotkeys.register() }
+        SetupDiagnosticsWindowCoordinator.shared.presentFirstRunIfNeeded()
 
         log("FocalPoint launched (socket: \(focalpointSocketPath()))")
     }
@@ -68,7 +70,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func showSettings() {
         if settingsWC == nil {
-            let vc = NSHostingController(rootView: SettingsView(model: model))
+            let vc = NSHostingController(rootView: SettingsView(
+                model: model,
+                onOpenHistoryWorkspace: { [weak self] in self?.roadmapWC.showHistory() },
+                onOpenDiagnostics: { [weak self] in self?.roadmapWC.showDiagnostics() }
+            ))
             let window = NSWindow(contentViewController: vc)
             window.title = "FocalPoint Settings"
             window.styleMask = [.titled, .closable, .miniaturizable]
@@ -87,6 +93,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWC?.window?.center()
         settingsWC?.window?.makeKeyAndOrderFront(nil)
     }
+
+    func showQuickLaunch() { roadmapWC.showQuickLaunch() }
+    func showSessionTriage() { roadmapWC.showSessionTriage() }
+    func showWorkflowDashboard() { roadmapWC.showWorkflowDashboard() }
+    func showDiagnostics() { roadmapWC.showDiagnostics() }
+    func showHistoryWorkspace() { roadmapWC.showHistory() }
 }
 
 // MARK: - Menu-bar label (icon + attention badge)
@@ -123,7 +135,12 @@ struct FocalPointApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MenuContentView(model: model, onSettings: { appDelegate.showSettings() })
+            MenuContentView(model: model, onSettings: { appDelegate.showSettings() },
+                            onQuickLaunch: { appDelegate.showQuickLaunch() },
+                            onTriage: { appDelegate.showSessionTriage() },
+                            onWorkflowDashboard: { appDelegate.showWorkflowDashboard() },
+                            onDiagnostics: { appDelegate.showDiagnostics() },
+                            onHistory: { appDelegate.showHistoryWorkspace() })
         } label: {
             MenuBarLabel(model: model)
         }

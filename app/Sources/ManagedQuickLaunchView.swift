@@ -13,6 +13,7 @@ struct ManagedQuickLaunchActions {
 
 struct ManagedQuickLaunchView: View {
     let actions: ManagedQuickLaunchActions
+    var launchFailureMessage: String?
 
     @State private var draft: ManagedQuickLaunchDraft
     @State private var issues: [ManagedQuickLaunchValidationIssue] = []
@@ -24,8 +25,10 @@ struct ManagedQuickLaunchView: View {
     private let presetStore: ManagedQuickLaunchPresetStore
 
     init(initialCwd: String = "", actions: ManagedQuickLaunchActions,
+         launchFailureMessage: String? = nil,
          presetStore: ManagedQuickLaunchPresetStore = .init()) {
         self.actions = actions
+        self.launchFailureMessage = launchFailureMessage
         self.presetStore = presetStore
         var initial = ManagedQuickLaunchDraft()
         initial.cwd = initialCwd
@@ -37,6 +40,14 @@ struct ManagedQuickLaunchView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
+                if let launchFailureMessage {
+                    Label(launchFailureMessage, systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                }
                 taskSection
                 destinationSection
                 identitySection

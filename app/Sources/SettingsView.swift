@@ -29,6 +29,8 @@ enum SettingsSection: Hashable {
 
 struct SettingsView: View {
     @ObservedObject var model: AppModel
+    var onOpenHistoryWorkspace: () -> Void
+    var onOpenDiagnostics: () -> Void
     @State private var selection: SettingsSection? = .general
 
     var body: some View {
@@ -96,7 +98,8 @@ struct SettingsView: View {
                 case .integrations:
                     IntegrationsSettingsView(model: model)
                 case .history:
-                    SessionHistoryView(model: model)
+                    SessionHistoryView(model: model, onOpenHistoryWorkspace: onOpenHistoryWorkspace,
+                                       onOpenDiagnostics: onOpenDiagnostics)
                 case .general, .none:
                     GeneralSettingsView(model: model)
                 }
@@ -234,11 +237,19 @@ struct GeneralSettingsView: View {
 
 struct SessionHistoryView: View {
     @ObservedObject var model: AppModel
+    var onOpenHistoryWorkspace: () -> Void
+    var onOpenDiagnostics: () -> Void
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 Text("History").font(.title3).bold()
+
+                HStack {
+                    Button("Open History Workspace", action: onOpenHistoryWorkspace)
+                    Spacer()
+                    Button("Run Setup Diagnostics", action: onOpenDiagnostics)
+                }
 
                 if model.sessionHistory.isEmpty {
                     VStack(spacing: 6) {

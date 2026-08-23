@@ -221,6 +221,12 @@ struct WorkflowRunDashboardView: View {
                     }
                     .scrollIndicators(.hidden)
                 }
+            } else {
+                Divider()
+                Label("Phase and gate controls are unavailable because this daemon did not report a bound capability.",
+                      systemImage: "lock.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Divider()

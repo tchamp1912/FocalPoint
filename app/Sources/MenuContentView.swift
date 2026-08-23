@@ -11,6 +11,11 @@ import AppKit
 struct MenuContentView: View {
     @ObservedObject var model: AppModel
     var onSettings: () -> Void
+    var onQuickLaunch: () -> Void
+    var onTriage: () -> Void
+    var onWorkflowDashboard: () -> Void
+    var onDiagnostics: () -> Void
+    var onHistory: () -> Void
 
     /// Session currently being renamed inline, if any.
     @State private var renamingID: String?
@@ -615,6 +620,18 @@ struct MenuContentView: View {
             Button { onSettings() } label: {
                 Label("Settings", systemImage: "gearshape")
             }
+            Menu {
+                Button("Launch Managed Agent", action: onQuickLaunch)
+                Button("Session Triage", action: onTriage)
+                Button("Workflow Runs", action: onWorkflowDashboard)
+                Button("History Workspace", action: onHistory)
+                Divider()
+                Button("Setup Diagnostics", action: onDiagnostics)
+            } label: {
+                Image(systemName: "rectangle.grid.2x2")
+            }
+            .menuStyle(.borderlessButton)
+            .help("Open workspace")
             Spacer()
             Button { NSApp.terminate(nil) } label: {
                 Label("Quit", systemImage: "power")

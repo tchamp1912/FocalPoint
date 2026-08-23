@@ -65,6 +65,12 @@ final class SessionTriageViewModel: ObservableObject {
         filters.clear()
     }
 
+    /// Keeps a long-lived triage window connected to AppModel's authoritative
+    /// session stream without resetting the human's search, filters, or sort.
+    func replaceLiveSessions(_ sessions: [SessionInfo]) {
+        self.sessions = sessions.map { SessionTriageSession(session: $0, workflow: $0.workflowID ?? "Independent") }
+    }
+
     private func debounceSearch() {
         searchTask?.cancel()
         let pending = searchText

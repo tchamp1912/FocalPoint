@@ -134,6 +134,16 @@ final class HistoryWorkspaceStore: ObservableObject {
         selectedRecordIDs.formIntersection(Set(visibleRecords.map(\.id)))
     }
 
+    /// Replaces only daemon/app-owned records while preserving the workspace
+    /// controls a human has already set in this window.
+    func replaceRecords(_ records: [HistoryRecord]) {
+        self.records = records
+        selectedRecordIDs.formIntersection(Set(records.map(\.id)))
+        if let focusedRecordID, !records.contains(where: { $0.id == focusedRecordID }) {
+            self.focusedRecordID = records.sorted { $0.endedAt > $1.endedAt }.first?.id
+        }
+    }
+
     private static func distinctProjects(in records: [HistoryRecord]) -> [HistoryProject] {
         var seen = Set<String>()
         return records
