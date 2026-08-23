@@ -77,6 +77,13 @@ pub enum Request {
     QuitSession {
         session: String,
     },
+    /// Confirmation-bearing replacement for destructive managed stops.
+    /// The legacy ownership-gated verb remains accepted for older clients.
+    StopManagedSession {
+        session: String,
+        task_id: String,
+        confirmation: String,
+    },
     StopOrchestratedSession {
         session: String,
         task_id: String,
@@ -151,6 +158,7 @@ pub enum Request {
         provider: String,
         cwd: String,
         model: Option<String>,
+        agent_type: Option<String>,
         cursor_mode: Option<String>,
         task: String,
         task_id: String,
@@ -158,6 +166,12 @@ pub enum Request {
         role: Option<String>,
         manager_task_id: Option<String>,
         channel_id: Option<String>,
+        workflow_id: Option<String>,
+        workflow_run_id: Option<String>,
+        workflow_phase: Option<String>,
+        workflow_gate: Option<String>,
+        workflow_fanout: Option<bool>,
+        transition_confirmation: Option<String>,
     },
     ResumeSession {
         provider: String,
@@ -166,6 +180,9 @@ pub enum Request {
         title: Option<String>,
     },
     Ping,
+    GetCapabilities,
+    GetDiagnostics,
+    ListWorkflowRuns,
 }
 
 #[derive(Debug, Serialize)]
@@ -768,7 +785,19 @@ fn correlate_pending_managed_launch(
         candidate_servers.sort();
         candidate_servers.dedup();
         for server in candidate_servers {
-            let Ok(output) = Command::new(&tmux).args(["-L", &server, "list-panes", "-a", "-F", "#{session_name}|#{pane_id}|#{pane_tty}|#{pane_pid}|#{pane_current_command}"]).output() else { continue };
+            let Ok(output) = Command::new(&tmux)
+                .args([
+                    "-L",
+                    &server,
+                    "list-panes",
+                    "-a",
+                    "-F",
+                    "#{session_name}|#{pane_id}|#{pane_tty}|#{pane_pid}|#{pane_current_command}",
+                ])
+                .output()
+            else {
+                continue;
+            };
             if !output.status.success() {
                 continue;
             }
@@ -839,6 +868,14 @@ fn correlate_pending_managed_launch(
         "manager_task_id",
         "channel_id",
         "terminal_bundle_id",
+        "agent_type",
+        "provider",
+        "model",
+        "workflow_id",
+        "workflow_run_id",
+        "workflow_phase",
+        "workflow_gate",
+        "workflow_fanout",
     ] {
         if let Some(value) = receipt.get(key).filter(|value| !value.is_null()).cloned() {
             let target = match key {
@@ -1017,6 +1054,59 @@ fn valid_orchestrator_model_id(id: &str) -> bool {
         && id.len() <= 128
         && chars
             .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-' | '/' | ':' | '@'))
+}
+
+#[cfg(unix)]
+fn valid_roadmap_id(id: &str, max: usize) -> bool {
+    let mut chars = id.chars();
+    matches!(chars.next(), Some(ch) if ch.is_ascii_alphanumeric())
+        && id.len() <= max
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
+}
+
+/// Validate optional workflow annotations without turning the daemon into a
+/// workflow engine. The orchestrator remains authoritative for sequencing;
+/// these fields make its already-authorized launches observable. Confirm
+/// gates fail closed and fan-out can never claim the automatic gate.
+#[cfg(unix)]
+fn validate_workflow_launch_metadata(
+    workflow_id: Option<&str>,
+    run_id: Option<&str>,
+    phase: Option<&str>,
+    gate: Option<&str>,
+    fanout: bool,
+    confirmation: Option<&str>,
+) -> Result<(), String> {
+    let any =
+        workflow_id.is_some() || run_id.is_some() || phase.is_some() || gate.is_some() || fanout;
+    if !any {
+        return Ok(());
+    }
+    let (Some(workflow_id), Some(run_id), Some(phase), Some(gate)) =
+        (workflow_id, run_id, phase, gate)
+    else {
+        return Err("workflow launches require workflow_id, workflow_run_id, workflow_phase, and workflow_gate".into());
+    };
+    if !valid_roadmap_id(workflow_id, 128)
+        || !valid_roadmap_id(run_id, 128)
+        || !valid_roadmap_id(phase, 128)
+    {
+        return Err(
+            "workflow identifiers must use letters, digits, dots, underscores, or dashes".into(),
+        );
+    }
+    if !matches!(gate, "authorized" | "confirm" | "auto") {
+        return Err("workflow_gate must be 'authorized', 'confirm', or 'auto'".into());
+    }
+    if fanout && gate == "auto" {
+        return Err("fan-out workflow phases cannot use the automatic gate".into());
+    }
+    if gate == "confirm" && confirmation != Some("user-confirmed") {
+        return Err(
+            "confirm-gated workflow phases require transition_confirmation='user-confirmed'".into(),
+        );
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -1259,6 +1349,7 @@ fn close_exact_terminal_endpoint(endpoint: &TerminalEndpoint) -> Result<(), Stri
 fn launch_orchestrated_session(
     provider: &str,
     model: Option<&str>,
+    agent_type: &str,
     cursor_mode: Option<&str>,
     cwd: &str,
     task: &str,
@@ -1268,6 +1359,11 @@ fn launch_orchestrated_session(
     role: &str,
     manager_task_id: Option<&str>,
     channel_id: Option<&str>,
+    workflow_id: Option<&str>,
+    workflow_run_id: Option<&str>,
+    workflow_phase: Option<&str>,
+    workflow_gate: Option<&str>,
+    workflow_fanout: bool,
 ) -> Result<serde_json::Value, String> {
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
@@ -1282,6 +1378,11 @@ fn launch_orchestrated_session(
     }
     if model.is_some_and(|id| !valid_orchestrator_model_id(id)) {
         return Err("model must be 1-128 letters, digits, dots, underscores, dashes, slashes, colons, or @ signs".into());
+    }
+    if !valid_roadmap_id(agent_type, 128) {
+        return Err(
+            "agent_type must use 1-128 letters, digits, dots, underscores, or dashes".into(),
+        );
     }
     if task.trim().is_empty() || task.len() > 16_384 || task.contains('\0') {
         return Err("task must contain 1-16384 UTF-8 bytes".into());
@@ -1385,13 +1486,19 @@ fn launch_orchestrated_session(
         "title": title,
         "slot": slot,
         "provider": provider,
+        "agent_type": agent_type,
         "cursor_mode": (provider == "cursor").then_some(cursor_mode),
-        "model": model,
+        "model": model.unwrap_or("provider-default"),
         "cwd": cwd,
         "terminal_bundle_id": terminal_bundle_id.clone(),
         "role": role,
         "manager_task_id": manager_task_id,
         "channel_id": channel_id,
+        "workflow_id": workflow_id,
+        "workflow_run_id": workflow_run_id,
+        "workflow_phase": workflow_phase,
+        "workflow_gate": workflow_gate,
+        "workflow_fanout": workflow_fanout,
         "accepted_at_unix_ms": unix_ms_now(),
         "status": "opening",
     });
@@ -1442,6 +1549,16 @@ fn launch_orchestrated_session(
     let channel_export = channel_id
         .map(|id| format!("export FOCALPOINT_CHANNEL_ID={}\n", shell_quote(id)))
         .unwrap_or_default();
+    let roadmap_exports = [
+        ("FOCALPOINT_AGENT_TYPE", Some(agent_type)),
+        ("FOCALPOINT_WORKFLOW_ID", workflow_id),
+        ("FOCALPOINT_WORKFLOW_RUN_ID", workflow_run_id),
+        ("FOCALPOINT_WORKFLOW_PHASE", workflow_phase),
+        ("FOCALPOINT_WORKFLOW_GATE", workflow_gate),
+    ]
+    .into_iter()
+    .filter_map(|(key, value)| value.map(|value| format!("export {key}={}\n", shell_quote(value))))
+    .collect::<String>();
     let slot_export = slot
         .map(|slot| {
             format!(
@@ -1477,7 +1594,7 @@ fn launch_orchestrated_session(
         })
         .unwrap_or_default();
     let script = format!(
-        "#!/bin/zsh -l\nset -e\nrm -f -- {}\ncd -- {}\n{}export FOCALPOINT_LAUNCH_ID={}\nexport FOCALPOINT_ORCHESTRATOR_TASK_ID={}\nexport FOCALPOINT_ORCHESTRATION_ROLE={}\nexport FOCALPOINT_SESSION_TITLE={}\n{}{}{}exec {} {}\n",
+        "#!/bin/zsh -l\nset -e\nrm -f -- {}\ncd -- {}\n{}export FOCALPOINT_LAUNCH_ID={}\nexport FOCALPOINT_ORCHESTRATOR_TASK_ID={}\nexport FOCALPOINT_ORCHESTRATION_ROLE={}\nexport FOCALPOINT_SESSION_TITLE={}\n{}{}{}{}exec {} {}\n",
         shell_quote(&launcher.display().to_string()),
         shell_quote(&cwd.display().to_string()),
         path_export,
@@ -1488,6 +1605,7 @@ fn launch_orchestrated_session(
         slot_export,
         manager_export,
         channel_export,
+        roadmap_exports,
         shell_quote(&runner.display().to_string()),
         provider_command,
     );
@@ -1527,12 +1645,18 @@ fn launch_orchestrated_session(
         "title": title,
         "slot": slot,
         "provider": provider,
-        "model": model,
+        "agent_type": agent_type,
+        "model": model.unwrap_or("provider-default"),
         "cursor_mode": (provider == "cursor").then_some(cursor_mode),
         "cwd": cwd,
         "role": role,
         "manager_task_id": manager_task_id,
         "channel_id": channel_id,
+        "workflow_id": workflow_id,
+        "workflow_run_id": workflow_run_id,
+        "workflow_phase": workflow_phase,
+        "workflow_gate": workflow_gate,
+        "workflow_fanout": workflow_fanout,
         "terminal_bundle_id": terminal_bundle_id,
         "status": "launched",
     }))
@@ -2606,9 +2730,8 @@ fn session_from_json(v: &serde_json::Value, last_update: Instant, live: bool) ->
     // Represent them explicitly as unverified; Registry::restore immediately
     // releases their stale numbered slots while retaining slot history.
     // Tombstones stay detached with no attachment.
-    let migrated_unverified = live
-        && persisted_attachment.is_none()
-        && persisted_health != Some(SessionHealth::Detached);
+    let migrated_unverified =
+        live && persisted_attachment.is_none() && persisted_health != Some(SessionHealth::Detached);
     let attachment = persisted_attachment.or_else(|| {
         migrated_unverified.then(|| Attachment::Unverified {
             id: format!(
@@ -2621,10 +2744,10 @@ fn session_from_json(v: &serde_json::Value, last_update: Instant, live: bool) ->
         })
     });
     let health = persisted_health.unwrap_or(if attachment.is_some() {
-            SessionHealth::Suspect
-        } else {
-            SessionHealth::Unknown
-        });
+        SessionHealth::Suspect
+    } else {
+        SessionHealth::Unknown
+    });
     Some(Session {
         id,
         kind: v.get("kind").and_then(|x| x.as_str()).map(str::to_string),
@@ -3935,6 +4058,88 @@ fn dispatch(
                 sessions: arr,
             })
         }
+        Request::GetCapabilities => Dispatch::Reply(Response::Json(serde_json::json!({
+            "ok": true,
+            "protocol": {"major": crate::protocol::PROTO_MAJOR, "minor": crate::protocol::PROTO_MINOR},
+            "features": {
+                "managed_launch": true,
+                "explicit_launch_identity": true,
+                "confirmed_stop": true,
+                "workflow_observation": true,
+                "workflow_gate_approval": false,
+                "history_storage": "client",
+                "diagnostics": true,
+                "triage_metadata": true
+            }
+        }))),
+        Request::GetDiagnostics => {
+            let state = shared.lock().unwrap();
+            let live = state.registry.list();
+            let disconnected = state.registry.tombstones_snapshot();
+            let suspect = live
+                .iter()
+                .filter(|session| session.health != SessionHealth::Healthy)
+                .count();
+            Dispatch::Reply(Response::Json(serde_json::json!({
+                "ok": true,
+                "daemon": "reachable",
+                "device_present": state.device_present,
+                "live_sessions": live.len(),
+                "disconnected_sessions": disconnected.len(),
+                "sessions_needing_diagnostics": suspect,
+                "provider_usage_sources": state.usage.len(),
+                "open_channels": state.channels.channels.len(),
+                "checked_at_unix_ms": unix_ms_now()
+            })))
+        }
+        Request::ListWorkflowRuns => {
+            let state = shared.lock().unwrap();
+            let mut runs: serde_json::Map<String, Value> = serde_json::Map::new();
+            for (session, connected) in state
+                .registry
+                .list()
+                .into_iter()
+                .map(|session| (session, true))
+                .chain(
+                    state
+                        .registry
+                        .tombstones_snapshot()
+                        .into_iter()
+                        .map(|(_, session, _)| (session, false)),
+                )
+            {
+                let Some(run_id) = session.meta.get("workflow_run_id").and_then(Value::as_str)
+                else {
+                    continue;
+                };
+                let entry = runs.entry(run_id.to_string()).or_insert_with(|| {
+                    serde_json::json!({
+                        "run_id": run_id,
+                        "workflow_id": session.meta.get("workflow_id"),
+                        "sessions": []
+                    })
+                });
+                if let Some(sessions) = entry.get_mut("sessions").and_then(Value::as_array_mut) {
+                    sessions.push(serde_json::json!({
+                        "session": session.id,
+                        "task_id": session.meta.get("orchestrator_task_id"),
+                        "agent_type": session.meta.get("agent_type"),
+                        "provider": session.meta.get("provider").cloned()
+                            .or_else(|| session.kind.clone().map(Value::String)),
+                        "model": session.meta.get("model"),
+                        "phase": session.meta.get("workflow_phase"),
+                        "gate": session.meta.get("workflow_gate"),
+                        "fanout": session.meta.get("workflow_fanout").and_then(Value::as_bool).unwrap_or(false),
+                        "state": session.state.name(),
+                        "connected": connected
+                    }));
+                }
+            }
+            Dispatch::Reply(Response::Json(serde_json::json!({
+                "ok": true,
+                "runs": runs.into_values().collect::<Vec<_>>()
+            })))
+        }
         Request::SetUsage { provider, usage } => {
             let _transition = ctx.transition.lock().unwrap();
             let snapshot = {
@@ -4064,6 +4269,28 @@ fn dispatch(
                 }
             }
             ok()
+        }
+        Request::StopManagedSession {
+            session: id,
+            task_id,
+            confirmation,
+        } => {
+            if confirmation != "user-confirmed" {
+                return err("stop-managed-session requires confirmation='user-confirmed'");
+            }
+            let session = match orchestrated_session_target(
+                &shared.lock().unwrap().registry,
+                &id,
+                &task_id,
+            ) {
+                Ok(session) => session,
+                Err(message) => return err(&message),
+            };
+            gracefully_end_session(&id, session.pid(), ctx, host_tx);
+            Dispatch::Reply(Response::Json(serde_json::json!({
+                "ok": true, "session": id, "task_id": task_id,
+                "status": "stopping", "confirmation": "accepted"
+            })))
         }
         Request::StopOrchestratedSession {
             session: id,
@@ -4505,6 +4732,7 @@ fn dispatch(
             provider,
             cwd,
             model,
+            agent_type,
             cursor_mode,
             task,
             task_id,
@@ -4512,7 +4740,28 @@ fn dispatch(
             role,
             manager_task_id,
             channel_id,
+            workflow_id,
+            workflow_run_id,
+            workflow_phase,
+            workflow_gate,
+            workflow_fanout,
+            transition_confirmation,
         } => {
+            // Additive defaults keep older launch clients working while every
+            // new receipt/session exposes an explicit selection.
+            let agent_type = agent_type.as_deref().unwrap_or("general");
+            let selected_model = model.as_deref().unwrap_or("provider-default");
+            let provider_model = (selected_model != "provider-default").then_some(selected_model);
+            if let Err(message) = validate_workflow_launch_metadata(
+                workflow_id.as_deref(),
+                workflow_run_id.as_deref(),
+                workflow_phase.as_deref(),
+                workflow_gate.as_deref(),
+                workflow_fanout.unwrap_or(false),
+                transition_confirmation.as_deref(),
+            ) {
+                return err(&message);
+            }
             let role = role.as_deref().unwrap_or("worker");
             let title = match orchestrator_session_title(title.as_deref(), &task_id) {
                 Ok(title) => title,
@@ -4551,8 +4800,8 @@ fn dispatch(
                                 .join("launches")
                                 .join(format!("{task_id}.json")),
                         )
-                            .ok()
-                            .and_then(|data| serde_json::from_slice::<Value>(&data).ok());
+                        .ok()
+                        .and_then(|data| serde_json::from_slice::<Value>(&data).ok());
                         if let Some(mut receipt) = existing {
                             // Replaying the stored receipt is what makes
                             // re-running a partially expanded formation safe.
@@ -4565,7 +4814,8 @@ fn dispatch(
                             // not just the task id.
                             let mismatched = [
                                 ("provider", Some(provider.as_str())),
-                                ("model", model.as_deref()),
+                                ("model", Some(selected_model)),
+                                ("agent_type", Some(agent_type)),
                                 ("cwd", Some(cwd.as_str())),
                             ]
                             .into_iter()
@@ -4602,7 +4852,8 @@ fn dispatch(
             );
             match launch_orchestrated_session(
                 &provider,
-                model.as_deref(),
+                provider_model,
+                agent_type,
                 cursor_mode.as_deref(),
                 &cwd,
                 &task,
@@ -4612,6 +4863,11 @@ fn dispatch(
                 role,
                 manager_task_id.as_deref(),
                 channel_id.as_deref(),
+                workflow_id.as_deref(),
+                workflow_run_id.as_deref(),
+                workflow_phase.as_deref(),
+                workflow_gate.as_deref(),
+                workflow_fanout.unwrap_or(false),
             ) {
                 Ok(response) => {
                     eprintln!(
@@ -5201,7 +5457,10 @@ mod tests {
 
     #[test]
     fn cursor_headless_kind_correlates_to_cursor_launch_receipt() {
-        assert_eq!(managed_launch_provider_kind(Some("cursor-cli")), Some("cursor"));
+        assert_eq!(
+            managed_launch_provider_kind(Some("cursor-cli")),
+            Some("cursor")
+        );
         assert_eq!(managed_launch_provider_kind(Some("cursor")), Some("cursor"));
         assert_eq!(managed_launch_provider_kind(Some("codex")), Some("codex"));
     }
@@ -5422,9 +5681,7 @@ mod tests {
 
     #[test]
     fn session_from_json_rejects_malformed_input() {
-        assert!(
-            session_from_json(&json!({"kind": "claude"}), Instant::now(), true).is_none()
-        );
+        assert!(session_from_json(&json!({"kind": "claude"}), Instant::now(), true).is_none());
         assert!(session_from_json(
             &json!({"session": "x", "state": "not-a-real-state"}),
             Instant::now(),
@@ -5593,11 +5850,16 @@ mod tests {
     #[test]
     fn focus_result_carries_exact_failure_diagnostics() {
         let value: Value = serde_json::from_str(&event_line(Event::FocusResult {
-            session: "slot-1".into(), slot: Some(1), attachment_id: Some("process:1:2:3:codex".into()),
-            strategy: "terminal-session-id".into(), result: "endpoint-missing".into(),
-            terminal_pid: Some(42), terminal_session_id: Some("unique-session".into()),
+            session: "slot-1".into(),
+            slot: Some(1),
+            attachment_id: Some("process:1:2:3:codex".into()),
+            strategy: "terminal-session-id".into(),
+            result: "endpoint-missing".into(),
+            terminal_pid: Some(42),
+            terminal_session_id: Some("unique-session".into()),
             reason: Some("no exact terminal endpoint".into()),
-        })).unwrap();
+        }))
+        .unwrap();
         assert_eq!(value["event"], "focus-result");
         assert_eq!(value["session"], "slot-1");
         assert_eq!(value["result"], "endpoint-missing");
@@ -5698,5 +5960,70 @@ mod tests {
         // missing fields
         assert!(parse_set_style(&json!({"state":"idle"})).is_err());
         assert!(parse_set_style(&json!({"rgb":[0,0,0],"pattern":"solid"})).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn legacy_and_explicit_launch_requests_both_decode() {
+        let legacy = serde_json::from_value::<Request>(json!({
+            "cmd":"launch-session", "provider":"codex", "cwd":"/tmp",
+            "task":"Inspect it", "task_id":"inspect-1"
+        }));
+        assert!(legacy.is_ok(), "additive launch fields must stay optional");
+
+        let explicit = serde_json::from_value::<Request>(json!({
+            "cmd":"launch-session", "agent_type":"reviewer", "provider":"codex",
+            "model":"gpt-5.6-sol", "cwd":"/tmp", "task":"Review it",
+            "task_id":"review-1", "workflow_id":"review",
+            "workflow_run_id":"review-run-1", "workflow_phase":"review",
+            "workflow_gate":"confirm", "transition_confirmation":"user-confirmed"
+        }));
+        assert!(explicit.is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workflow_gate_validation_fails_closed() {
+        assert!(validate_workflow_launch_metadata(
+            Some("review"),
+            Some("run-1"),
+            Some("fanout"),
+            Some("auto"),
+            true,
+            None
+        )
+        .is_err());
+        assert!(validate_workflow_launch_metadata(
+            Some("review"),
+            Some("run-1"),
+            Some("review"),
+            Some("confirm"),
+            false,
+            None
+        )
+        .is_err());
+        assert!(validate_workflow_launch_metadata(
+            Some("review"),
+            Some("run-1"),
+            Some("review"),
+            Some("confirm"),
+            false,
+            Some("user-confirmed")
+        )
+        .is_ok());
+        assert!(validate_workflow_launch_metadata(None, None, None, None, false, None).is_ok());
+    }
+
+    #[test]
+    fn confirmed_stop_request_requires_confirmation_field_at_decode() {
+        assert!(serde_json::from_value::<Request>(json!({
+            "cmd":"stop-managed-session", "session":"s1", "task_id":"task-1"
+        }))
+        .is_err());
+        assert!(serde_json::from_value::<Request>(json!({
+            "cmd":"stop-managed-session", "session":"s1", "task_id":"task-1",
+            "confirmation":"user-confirmed"
+        }))
+        .is_ok());
     }
 }

@@ -59,6 +59,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         log("FocalPoint launched (socket: \(focalpointSocketPath()))")
     }
 
+    /// Refresh additive dashboard/diagnostic/workflow summaries when the user
+    /// returns to FocalPoint; the live subscribe stream remains authoritative
+    /// for session state itself.
+    func applicationDidBecomeActive(_ notification: Notification) {
+        model.refreshRoadmapState()
+    }
+
     func showSettings() {
         if settingsWC == nil {
             let vc = NSHostingController(rootView: SettingsView(model: model))

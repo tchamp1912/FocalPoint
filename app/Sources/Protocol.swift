@@ -119,6 +119,119 @@ enum SessionHealth: String, Codable {
     var display: String { rawValue.capitalized }
 }
 
+// MARK: - Roadmap architecture seams
+
+/// Explicit identity for every new managed launch. `provider-default` is a
+/// model selection, not an omitted value, so receipts and diagnostics can
+/// distinguish an intentional default from an old/partial caller.
+struct ManagedLaunchSpec: Equatable {
+    var agentType: String
+    var provider: String
+    var model: String
+    var cwd: String
+    var taskID: String
+    var title: String
+    var task: String
+    var role: String
+    var managerTaskID: String?
+    var channelID: String?
+    var workflow: WorkflowLaunchContext?
+
+    var request: [String: Any] {
+        var value: [String: Any] = [
+            "cmd": "launch-session", "agent_type": agentType,
+            "provider": provider, "model": model, "cwd": cwd,
+            "task_id": taskID, "title": title, "task": task, "role": role,
+        ]
+        if let managerTaskID { value["manager_task_id"] = managerTaskID }
+        if let channelID { value["channel_id"] = channelID }
+        if let workflow {
+            value.merge(workflow.requestFields) { _, new in new }
+        }
+        return value
+    }
+}
+
+enum WorkflowGate: String, Codable {
+    case authorized, confirm, auto
+}
+
+/// Readable workflow annotations carried by normal managed session metadata.
+/// The app may observe and focus these gates; it never answers them.
+struct WorkflowLaunchContext: Equatable {
+    var workflowID: String
+    var runID: String
+    var phase: String
+    var gate: WorkflowGate
+    var fanout: Bool
+    /// Only a direct human action may mint this value. Confirm-gated launches
+    /// without it fail closed in the daemon; fan-out + auto always fails.
+    var transitionConfirmed: Bool = false
+
+    var requestFields: [String: Any] {
+        var value: [String: Any] = [
+            "workflow_id": workflowID, "workflow_run_id": runID,
+            "workflow_phase": phase, "workflow_gate": gate.rawValue,
+            "workflow_fanout": fanout,
+        ]
+        if transitionConfirmed { value["transition_confirmation"] = "user-confirmed" }
+        return value
+    }
+}
+
+struct WorkflowRunSummary: Identifiable, Equatable {
+    var id: String { runID }
+    var runID: String
+    var workflowID: String
+    var sessions: [WorkflowRunSession]
+}
+
+struct WorkflowRunSession: Identifiable, Equatable {
+    var id: String { sessionID }
+    var sessionID: String
+    var taskID: String?
+    var agentType: String?
+    var provider: String?
+    var model: String?
+    var phase: String?
+    var gate: WorkflowGate?
+    var fanout: Bool
+    var state: AgentState
+    var connected: Bool
+}
+
+struct DaemonDiagnostics: Equatable {
+    var devicePresent: Bool
+    var liveSessions: Int
+    var disconnectedSessions: Int
+    var sessionsNeedingDiagnostics: Int
+    var providerUsageSources: Int
+    var openChannels: Int
+    var checkedAt: Date
+}
+
+enum TriageUrgency: String, Codable, CaseIterable {
+    case low, normal, high, critical
+}
+
+struct SessionTriageMetadata: Equatable {
+    var reason: String
+    var urgency: TriageUrgency
+    var summary: String?
+    var source: String?
+    var updatedAt: Date?
+}
+
+enum HistoryAction: String, CaseIterable {
+    case resume, rerun, pin, delete
+}
+
+struct HistoryActionEligibility: Equatable {
+    var action: HistoryAction
+    var allowed: Bool
+    var reason: String?
+}
+
 /// A well-known optional per-session stat an adapter may report via
 /// `set-state --meta key=value` (PROTOCOL.md §4). Every stat is opt-in on
 /// both ends: an adapter reports whatever it can, and the UI (Settings →
@@ -274,6 +387,14 @@ struct SessionInfo: Identifiable, Equatable {
     var orchestratorTaskID: String?
     var orchestrationRole: String?
     var managerTaskID: String?
+    var agentType: String?
+    var provider: String?
+    var workflowID: String?
+    var workflowRunID: String?
+    var workflowPhase: String?
+    var workflowGate: WorkflowGate?
+    var workflowFanout: Bool = false
+    var triage: SessionTriageMetadata?
 
     /// Single source of truth for managed-ness presentation.
     var isManaged: Bool { managed }

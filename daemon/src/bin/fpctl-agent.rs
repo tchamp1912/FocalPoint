@@ -49,9 +49,12 @@ enum AgentCommand {
     Launch {
         #[arg(long)]
         provider: Provider,
-        /// Provider model id or alias. Omit to use that provider's default.
-        #[arg(long)]
-        model: Option<String>,
+        /// Reusable agent type identity. Defaults explicitly to `general`.
+        #[arg(long, default_value = "general")]
+        agent_type: String,
+        /// Provider model id or alias. `provider-default` selects the provider default.
+        #[arg(long, default_value = "provider-default")]
+        model: String,
         #[arg(long)]
         cwd: PathBuf,
         #[arg(long)]
@@ -71,6 +74,19 @@ enum AgentCommand {
         /// Join the launched worker to this channel at its current tail.
         #[arg(long)]
         channel: Option<String>,
+        #[arg(long)]
+        workflow_id: Option<String>,
+        #[arg(long)]
+        workflow_run_id: Option<String>,
+        #[arg(long)]
+        workflow_phase: Option<String>,
+        #[arg(long)]
+        workflow_gate: Option<String>,
+        #[arg(long, default_value_t = false)]
+        workflow_fanout: bool,
+        /// Required by the daemon when `--workflow-gate confirm` is used.
+        #[arg(long)]
+        transition_confirmation: Option<String>,
         /// Cursor only: headless streams structured lifecycle events; attachable
         /// opens Cursor's normal interactive terminal UI.
         #[arg(long, value_enum, default_value_t = CursorLaunchMode::Headless)]
@@ -285,12 +301,27 @@ fn sanitized_sessions(response: &Value) -> Result<Value, String> {
                 "orchestrator_task_id",
                 "orchestration_role",
                 "manager_task_id",
+                "agent_type",
+                "provider",
+                "workflow_id",
+                "workflow_run_id",
+                "workflow_phase",
+                "workflow_gate",
+                "triage_reason",
+                "triage_urgency",
+                "triage_summary",
+                "triage_source",
             ] {
                 if let Some(value) = source.get(key).and_then(bounded_string) {
                     meta.insert(key.into(), value);
                 }
             }
-            for key in ["managed", "pid"] {
+            for key in [
+                "managed",
+                "pid",
+                "workflow_fanout",
+                "triage_updated_unix_ms",
+            ] {
                 if let Some(value) = source
                     .get(key)
                     .filter(|v| v.is_string() || v.is_number() || v.is_boolean())
@@ -384,6 +415,7 @@ fn run(command: AgentCommand) -> Result<(), String> {
         }))?,
         AgentCommand::Launch {
             provider,
+            agent_type,
             model,
             cwd,
             task,
@@ -392,12 +424,22 @@ fn run(command: AgentCommand) -> Result<(), String> {
             role,
             manager_task_id,
             channel,
+            workflow_id,
+            workflow_run_id,
+            workflow_phase,
+            workflow_gate,
+            workflow_fanout,
+            transition_confirmation,
             cursor_mode,
         } => request(json!({
             "cmd": "launch-session", "provider": provider.name(), "cwd": cwd,
-            "model": model, "task": task, "task_id": task_id,
+            "agent_type": agent_type, "model": model, "task": task, "task_id": task_id,
             "title": title,
             "role": role.name(), "manager_task_id": manager_task_id, "channel_id": channel,
+            "workflow_id": workflow_id, "workflow_run_id": workflow_run_id,
+            "workflow_phase": workflow_phase, "workflow_gate": workflow_gate,
+            "workflow_fanout": workflow_fanout,
+            "transition_confirmation": transition_confirmation,
             "cursor_mode": matches!(provider, Provider::Cursor).then(|| cursor_mode.name()),
         }))?,
         AgentCommand::Channel { command } => {
@@ -431,7 +473,8 @@ fn run(command: AgentCommand) -> Result<(), String> {
             }
         }
         AgentCommand::Stop { session, task_id } => request(json!({
-            "cmd": "stop-orchestrated-session", "session": session, "task_id": task_id,
+            "cmd": "stop-managed-session", "session": session, "task_id": task_id,
+            "confirmation": "user-confirmed",
         }))?,
         AgentCommand::Transcript {
             session,
@@ -519,10 +562,50 @@ mod tests {
                 manager_task_id,
                 ..
             } => {
-                assert_eq!(model.as_deref(), Some("sonnet"));
+                assert_eq!(model, "sonnet");
                 assert_eq!(title.as_deref(), Some("Inspection worker"));
                 assert!(matches!(role, OrchestrationRole::Worker));
                 assert!(manager_task_id.is_none());
+            }
+            _ => panic!("expected launch"),
+        }
+    }
+
+    #[test]
+    fn launch_defaults_are_explicit_and_workflow_fields_parse() {
+        let parsed = Cli::try_parse_from([
+            "fpctl-agent",
+            "launch",
+            "--provider",
+            "codex",
+            "--cwd",
+            "/tmp",
+            "--task",
+            "Review it.",
+            "--task-id",
+            "review-1",
+            "--workflow-id",
+            "review",
+            "--workflow-run-id",
+            "review-run-1",
+            "--workflow-phase",
+            "review",
+            "--workflow-gate",
+            "confirm",
+            "--transition-confirmation",
+            "user-confirmed",
+        ])
+        .unwrap();
+        match parsed.command {
+            AgentCommand::Launch {
+                agent_type,
+                model,
+                workflow_gate,
+                ..
+            } => {
+                assert_eq!(agent_type, "general");
+                assert_eq!(model, "provider-default");
+                assert_eq!(workflow_gate.as_deref(), Some("confirm"));
             }
             _ => panic!("expected launch"),
         }

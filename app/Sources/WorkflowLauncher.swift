@@ -891,6 +891,7 @@ final class WorkflowLauncherModel: ObservableObject {
         let taskID = Self.mintTaskID(for: package)
         let request: [String: Any] = [
             "cmd": "launch-session",
+            "agent_type": "workflow-orchestrator",
             "provider": configuration.orchestratorProvider.rawValue,
             "model": configuration.orchestratorModel,
             "cwd": targetCwd,
@@ -898,6 +899,11 @@ final class WorkflowLauncherModel: ObservableObject {
             "task_id": taskID,
             "title": "\(package.name) orchestrator",
             "role": "orchestrator",
+            "workflow_id": package.id,
+            "workflow_run_id": taskID,
+            "workflow_phase": "orchestration",
+            "workflow_gate": "authorized",
+            "workflow_fanout": false,
         ]
         log("workflow launch requested package=\(boundedLogField(package.name)) task_id=\(boundedLogField(taskID)) provider=\(configuration.orchestratorProvider.rawValue) model=\(boundedLogField(configuration.orchestratorModel)) cwd=\(boundedLogField(targetCwd))")
 

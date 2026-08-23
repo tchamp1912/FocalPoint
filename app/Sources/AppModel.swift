@@ -137,6 +137,17 @@ final class AppModel: ObservableObject {
             }
         }
     }
+    @Published private(set) var pinnedHistoryIDs: Set<String> = [] {
+        didSet {
+            if let data = try? JSONEncoder().encode(pinnedHistoryIDs) {
+                UserDefaults.standard.set(data, forKey: "pinnedHistoryIDs")
+            }
+        }
+    }
+    /// Additive state for dashboard/diagnostics and workflow-owned views.
+    /// Older daemons simply leave these nil/empty.
+    @Published private(set) var daemonDiagnostics: DaemonDiagnostics?
+    @Published private(set) var workflowRuns: [WorkflowRunSummary] = []
     private let maxSessionHistoryEntries = 200
     /// Explicit live-session promotions waiting for the daemon's
     /// `session-ended` event. A process cannot be adopted into tmux, so the
@@ -473,6 +484,10 @@ final class AppModel: ObservableObject {
            let decoded = try? JSONDecoder().decode([SessionHistoryEntry].self, from: data) {
             sessionHistory = decoded
         }
+        if let data = d.data(forKey: "pinnedHistoryIDs"),
+           let decoded = try? JSONDecoder().decode(Set<String>.self, from: data) {
+            pinnedHistoryIDs = decoded
+        }
     }
 
     // MARK: - Derived
@@ -619,6 +634,19 @@ final class AppModel: ObservableObject {
         claudeUsageMonitor?.start()
     }
 
+    func refreshRoadmapState() {
+        guard connected else { return }
+        let client = self.client
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let diagnostics = client.diagnostics()
+            let runs = client.workflowRuns()
+            Task { @MainActor [weak self] in
+                if let diagnostics { self?.daemonDiagnostics = diagnostics }
+                if let runs { self?.workflowRuns = runs }
+            }
+        }
+    }
+
     private func setConnected(_ up: Bool) {
         let previous = connected
         connected = up
@@ -629,7 +657,11 @@ final class AppModel: ObservableObject {
             aggregate = .idle
             usage = []
             attentionOrder = []
+            daemonDiagnostics = nil
+            workflowRuns = []
             activeSnapshotGeneration = nil
+        } else if !previous {
+            refreshRoadmapState()
         }
     }
 
@@ -666,6 +698,7 @@ final class AppModel: ObservableObject {
             }
             activeSnapshotGeneration = nil
             log("snapshot complete generation=\(generation) rows=\(sessions.count) usage=\(usage.count)")
+            refreshRoadmapState()
         case "state":
             if let s = e["state"] as? String, let st = AgentState(rawValue: s) {
                 aggregate = st
@@ -776,6 +809,14 @@ final class AppModel: ObservableObject {
         let orchestratorTaskID = meta?["orchestrator_task_id"] as? String
         let orchestrationRole = meta?["orchestration_role"] as? String
         let managerTaskID = meta?["manager_task_id"] as? String
+        let agentType = meta?["agent_type"] as? String
+        let provider = meta?["provider"] as? String ?? kind
+        let workflowID = meta?["workflow_id"] as? String
+        let workflowRunID = meta?["workflow_run_id"] as? String
+        let workflowPhase = meta?["workflow_phase"] as? String
+        let workflowGate = (meta?["workflow_gate"] as? String).flatMap(WorkflowGate.init(rawValue:))
+        let workflowFanout = meta?["workflow_fanout"] as? Bool ?? false
+        let triage = Self.parseTriage(meta)
         let stats = Self.parseStats(meta)
         // A live `session` event carries no `connected` key and means the
         // session is active — default true. `list-sessions` includes the flag
@@ -832,6 +873,14 @@ final class AppModel: ObservableObject {
             if let orchestratorTaskID { s.orchestratorTaskID = orchestratorTaskID }
             if let orchestrationRole { s.orchestrationRole = orchestrationRole }
             if let managerTaskID { s.managerTaskID = managerTaskID }
+            if let agentType { s.agentType = agentType }
+            s.provider = provider
+            if let workflowID { s.workflowID = workflowID }
+            if let workflowRunID { s.workflowRunID = workflowRunID }
+            if let workflowPhase { s.workflowPhase = workflowPhase }
+            if let workflowGate { s.workflowGate = workflowGate }
+            if meta?["workflow_fanout"] != nil { s.workflowFanout = workflowFanout }
+            if triage != nil || meta?["triage_reason"] != nil { s.triage = triage }
             if meta != nil { s.stats = stats }
             sessions[idx] = s
         } else {
@@ -852,6 +901,14 @@ final class AppModel: ObservableObject {
             s.orchestratorTaskID = orchestratorTaskID
             s.orchestrationRole = orchestrationRole
             s.managerTaskID = managerTaskID
+            s.agentType = agentType
+            s.provider = provider
+            s.workflowID = workflowID
+            s.workflowRunID = workflowRunID
+            s.workflowPhase = workflowPhase
+            s.workflowGate = workflowGate
+            s.workflowFanout = workflowFanout
+            s.triage = triage
             s.backlogged = backlogged
             sessions.append(s)
         }
@@ -1032,6 +1089,22 @@ final class AppModel: ObservableObject {
         return result
     }
 
+    static func parseTriage(_ meta: [String: Any]?) -> SessionTriageMetadata? {
+        guard let meta, let reason = meta["triage_reason"] as? String,
+              !reason.isEmpty, reason.count <= 128 else { return nil }
+        let urgency = (meta["triage_urgency"] as? String)
+            .flatMap(TriageUrgency.init(rawValue:)) ?? .normal
+        let bounded: (String, Int) -> String = { value, limit in String(value.prefix(limit)) }
+        let updatedAt = (meta["triage_updated_unix_ms"] as? NSNumber).map {
+            Date(timeIntervalSince1970: $0.doubleValue / 1000)
+        }
+        return SessionTriageMetadata(
+            reason: bounded(reason, 128), urgency: urgency,
+            summary: (meta["triage_summary"] as? String).map { bounded($0, 240) },
+            source: (meta["triage_source"] as? String).map { bounded($0, 64) },
+            updatedAt: updatedAt)
+    }
+
     /// Parses `meta.managed` (PROTOCOL.md §4: meta values may be string or
     /// number — there's no wire-level boolean) into a `Bool?`. Accepts a JSON
     /// boolean/`NSNumber`, or the strings adapters actually shell out (e.g.
@@ -1165,8 +1238,18 @@ final class AppModel: ObservableObject {
     /// identity never resolved). An older daemon that doesn't know
     /// `quit-session` simply ignores it — pair it with the visible "Remove
     /// Session" action, which always works.
-    func quitSession(_ s: SessionInfo) {
-        client.send(["cmd": "quit-session", "session": s.id])
+    func quitSession(_ s: SessionInfo, confirmedByUser: Void) {
+        if s.isManaged, let taskID = s.orchestratorTaskID {
+            let client = self.client
+            DispatchQueue.global(qos: .userInitiated).async {
+                _ = client.stopManagedSession(sessionID: s.id, taskID: taskID,
+                                              userConfirmed: ())
+            }
+        } else {
+            // Compatibility path for unmanaged/legacy rows. The Swift API
+            // still requires the caller to supply its completed confirmation.
+            client.send(["cmd": "quit-session", "session": s.id])
+        }
     }
 
     /// Manually swap two sessions' numbered-key slots — a user-initiated
@@ -1220,13 +1303,53 @@ final class AppModel: ObservableObject {
             cwd: s.cwd, finalState: s.state, startedAt: s.firstSeen, endedAt: Date(),
             statValues: Dictionary(uniqueKeysWithValues: s.stats.map { ($0.key.rawValue, $0.value) }))
         sessionHistory.insert(entry, at: 0)
-        if sessionHistory.count > maxSessionHistoryEntries {
-            sessionHistory.removeLast(sessionHistory.count - maxSessionHistoryEntries)
+        while sessionHistory.count > maxSessionHistoryEntries,
+              let index = sessionHistory.lastIndex(where: { !pinnedHistoryIDs.contains($0.id) }) {
+            sessionHistory.remove(at: index)
         }
     }
 
     func clearSessionHistory() {
-        sessionHistory.removeAll()
+        sessionHistory.removeAll { !pinnedHistoryIDs.contains($0.id) }
+    }
+
+    func setHistoryPinned(_ entry: SessionHistoryEntry, pinned: Bool) {
+        if pinned { pinnedHistoryIDs.insert(entry.id) }
+        else { pinnedHistoryIDs.remove(entry.id) }
+    }
+
+    func deleteHistoryEntry(_ entry: SessionHistoryEntry) {
+        pinnedHistoryIDs.remove(entry.id)
+        sessionHistory.removeAll { $0.id == entry.id }
+    }
+
+    func historyEligibility(_ action: HistoryAction,
+                            for entry: SessionHistoryEntry) -> HistoryActionEligibility {
+        switch action {
+        case .pin, .delete:
+            return HistoryActionEligibility(action: action, allowed: true, reason: nil)
+        case .resume:
+            if sessions.contains(where: { $0.id == entry.sessionID && $0.connected }) {
+                return HistoryActionEligibility(action: action, allowed: false,
+                                                reason: "This conversation is already live.")
+            }
+            guard ["claude", "codex"].contains(entry.kind) else {
+                return HistoryActionEligibility(action: action, allowed: false,
+                                                reason: "This provider cannot resume by session id.")
+            }
+            guard let cwd = entry.cwd, FileManager.default.fileExists(atPath: cwd) else {
+                return HistoryActionEligibility(action: action, allowed: false,
+                                                reason: "The original working directory is unavailable.")
+            }
+            return HistoryActionEligibility(action: action, allowed: true, reason: nil)
+        case .rerun:
+            // History intentionally stores no prompt/task body. Claiming an
+            // exact rerun would silently invent work, so keep this seam
+            // disabled until a future, explicitly-authorized task record is
+            // persisted.
+            return HistoryActionEligibility(action: action, allowed: false,
+                                            reason: "The original task is not retained, so it cannot be rerun safely.")
+        }
     }
 
     // MARK: - Quick actions (session cwd)
@@ -1551,6 +1674,7 @@ final class AppModel: ObservableObject {
     /// NSWorkspace. The resumed session re-registers with the daemon via its
     /// adapter hooks, so it reappears as a live session.
     func recoverSession(_ entry: SessionHistoryEntry) {
+        guard historyEligibility(.resume, for: entry).allowed else { return }
         launchManagedSession(entry)
     }
 

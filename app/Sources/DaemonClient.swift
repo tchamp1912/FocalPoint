@@ -232,6 +232,61 @@ final class DaemonClient: @unchecked Sendable {
             _ = self.request(obj, timeout: 1.0)
         }
     }
+
+    /// Typed managed-launch seam used by roadmap surfaces. The spec's request
+    /// always carries agent type, provider, model selection, cwd, and task id.
+    func launch(_ spec: ManagedLaunchSpec, timeout: Double = 5) -> [String: Any]? {
+        request(spec.request, timeout: timeout)
+    }
+
+    /// Destructive managed stop with both ownership and explicit confirmation.
+    /// Callers should invoke this only from the completion handler of their
+    /// own confirmation UI; there is intentionally no boolean/default escape.
+    func stopManagedSession(sessionID: String, taskID: String,
+                            userConfirmed: Void, timeout: Double = 3) -> [String: Any]? {
+        request(["cmd": "stop-managed-session", "session": sessionID,
+                 "task_id": taskID, "confirmation": "user-confirmed"],
+                timeout: timeout)
+    }
+
+    func diagnostics(timeout: Double = 2) -> DaemonDiagnostics? {
+        guard let value = request(["cmd": "get-diagnostics"], timeout: timeout),
+              value["ok"] as? Bool == true else { return nil }
+        return DaemonDiagnostics(
+            devicePresent: value["device_present"] as? Bool ?? false,
+            liveSessions: (value["live_sessions"] as? NSNumber)?.intValue ?? 0,
+            disconnectedSessions: (value["disconnected_sessions"] as? NSNumber)?.intValue ?? 0,
+            sessionsNeedingDiagnostics: (value["sessions_needing_diagnostics"] as? NSNumber)?.intValue ?? 0,
+            providerUsageSources: (value["provider_usage_sources"] as? NSNumber)?.intValue ?? 0,
+            openChannels: (value["open_channels"] as? NSNumber)?.intValue ?? 0,
+            checkedAt: ((value["checked_at_unix_ms"] as? NSNumber).map {
+                Date(timeIntervalSince1970: $0.doubleValue / 1000)
+            } ?? Date())
+        )
+    }
+
+    func workflowRuns(timeout: Double = 2) -> [WorkflowRunSummary]? {
+        guard let value = request(["cmd": "list-workflow-runs"], timeout: timeout),
+              value["ok"] as? Bool == true,
+              let rows = value["runs"] as? [[String: Any]] else { return nil }
+        return rows.compactMap { row in
+            guard let runID = row["run_id"] as? String,
+                  let workflowID = row["workflow_id"] as? String else { return nil }
+            let sessions = (row["sessions"] as? [[String: Any]] ?? []).compactMap { session -> WorkflowRunSession? in
+                guard let sessionID = session["session"] as? String else { return nil }
+                let state = (session["state"] as? String).flatMap(AgentState.init(rawValue:)) ?? .idle
+                return WorkflowRunSession(
+                    sessionID: sessionID, taskID: session["task_id"] as? String,
+                    agentType: session["agent_type"] as? String,
+                    provider: session["provider"] as? String, model: session["model"] as? String,
+                    phase: session["phase"] as? String,
+                    gate: (session["gate"] as? String).flatMap(WorkflowGate.init(rawValue:)),
+                    fanout: session["fanout"] as? Bool ?? false,
+                    state: state, connected: session["connected"] as? Bool ?? false)
+            }
+            return WorkflowRunSummary(runID: runID, workflowID: workflowID, sessions: sessions)
+        }
+    }
 }
 
 func log(_ msg: String) {

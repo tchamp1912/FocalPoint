@@ -14,6 +14,7 @@ struct MenuContentView: View {
 
     /// Session currently being renamed inline, if any.
     @State private var renamingID: String?
+    @State private var pendingStop: SessionInfo?
 
     /// Formation-package scanner + orchestrator launcher for the "Start
     /// Workflow" row (WorkflowLauncher.swift). Owned here rather than on
@@ -98,6 +99,23 @@ struct MenuContentView: View {
         }
         .frame(width: 340)
         .liquidGlass(.menuPanel, radius: panelRadius)
+        .confirmationDialog(
+            "End \(pendingStop?.title ?? "session")?",
+            isPresented: Binding(
+                get: { pendingStop != nil },
+                set: { if !$0 { pendingStop = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("End Session", role: .destructive) {
+                guard let session = pendingStop else { return }
+                pendingStop = nil
+                model.quitSession(session, confirmedByUser: ())
+            }
+            Button("Cancel", role: .cancel) { pendingStop = nil }
+        } message: {
+            Text("The agent process will be stopped gracefully. This cannot be undone from FocalPoint.")
+        }
     }
 
     /// Collapsible section header. Sessions and Usage both grow without
@@ -342,7 +360,7 @@ struct MenuContentView: View {
         // runs). "Remove Session" is non-destructive — it just
         // drops the row from FocalPoint and leaves the agent
         // running (also the way to clear a disconnected row).
-        Button("End Session", role: .destructive) { model.quitSession(s) }
+        Button("End Session", role: .destructive) { pendingStop = s }
         Button("Remove Session") { model.removeSession(s) }
     }
 

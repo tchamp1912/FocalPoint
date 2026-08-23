@@ -39,6 +39,7 @@ struct DesktopWidgetView: View {
 
     /// Session currently being renamed inline, if any.
     @State private var renamingID: String?
+    @State private var pendingStop: SessionInfo?
     /// True while the corner grip is mid-drag: the horizontal strip tracks
     /// the dragged width exactly (instead of hugging content below the cap)
     /// so the window and its SwiftUI root stay in lockstep.
@@ -66,6 +67,23 @@ struct DesktopWidgetView: View {
                      radius: Metrics.cardRadius)
         .overlay(alignment: .bottomTrailing) { resizeGrip }
         .contextMenu { widgetContextMenu }
+        .confirmationDialog(
+            "End \(pendingStop?.title ?? "session")?",
+            isPresented: Binding(
+                get: { pendingStop != nil },
+                set: { if !$0 { pendingStop = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("End Session", role: .destructive) {
+                guard let session = pendingStop else { return }
+                pendingStop = nil
+                model.quitSession(session, confirmedByUser: ())
+            }
+            Button("Cancel", role: .cancel) { pendingStop = nil }
+        } message: {
+            Text("The agent process will be stopped gracefully. This cannot be undone from FocalPoint.")
+        }
     }
 
     /// The little vertical-ticks affordance in the bottom-right corner.
@@ -388,7 +406,7 @@ struct DesktopWidgetView: View {
         Divider()
         // See MenuContentView: End Session quits the agent
         // process; Remove Session just drops the row.
-        Button("End Session", role: .destructive) { model.quitSession(s) }
+        Button("End Session", role: .destructive) { pendingStop = s }
         Button("Remove Session") { model.removeSession(s) }
     }
 

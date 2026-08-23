@@ -119,7 +119,7 @@ Requests:
 {"cmd": "focus-session", "session": "id"}
 {"cmd": "resume-session", "provider": "codex", "cwd": "/prepared/path",
  "session": "provider-session-id", "title": "Parser implementation"}
-{"cmd": "launch-session", "provider": "codex", "model": "gpt-5.6-sol", "cwd": "/prepared/path",
+{"cmd": "launch-session", "agent_type": "reviewer", "provider": "codex", "model": "gpt-5.6-sol", "cwd": "/prepared/path",
  "task": "Implement and test the assigned task.", "task_id": "stable-task-id",
  "title": "Parser implementation",
  "role": "worker", "manager_task_id": "project-orchestrator", "channel_id": "ch-1"}
@@ -133,6 +133,11 @@ Requests:
 {"cmd": "read-session-transcript", "session": "id", "task_id": "stable-task-id",
  "tail": 20, "search": null}
 {"cmd": "stop-orchestrated-session", "session": "id", "task_id": "stable-task-id"}
+{"cmd": "stop-managed-session", "session": "id", "task_id": "stable-task-id",
+ "confirmation": "user-confirmed"}
+{"cmd": "get-capabilities"}
+{"cmd": "get-diagnostics"}
+{"cmd": "list-workflow-runs"}
 {"cmd": "subscribe"}            // stream of event objects follows
 {"cmd": "inject", "kind": "key", "control": "accept", "action": "tap"}
 {"cmd": "inject", "kind": "dial", "delta": 1}
@@ -460,14 +465,28 @@ orchestrator cannot name a manager. The launcher propagates these as
 session's own `meta.orchestrator_task_id`, so clients can render multiple
 independent orchestration groups without inferring them from labels.
 
-`read-session-transcript` and `stop-orchestrated-session` require the session
+New managed callers send explicit `agent_type`, `provider`, `model`, `cwd`,
+and `task_id`. The literal model value `provider-default` intentionally selects
+the provider default. Older callers may omit the additive `agent_type`/`model`
+fields; the daemon records them as `general`/`provider-default` so receipts and
+session metadata remain typed. Optional workflow observation fields are
+`workflow_id`, `workflow_run_id`, `workflow_phase`, `workflow_gate`, and
+`workflow_fanout`. A `confirm` gate requires
+`transition_confirmation: "user-confirmed"`; fan-out with `auto` is always
+rejected. These fields expose launches through `list-workflow-runs`; the daemon
+does not advance phases or answer gates.
+
+`read-session-transcript`, legacy `stop-orchestrated-session`, and the preferred
+`stop-managed-session` require the session
 id and its matching stable orchestrator task id. The daemon also requires the
 session to be managed and Claude/Codex-owned. Transcript reads
 accept a tail of 1–8000 and an optional bounded case-insensitive search, return
 normalized user/assistant/tool messages, omit reasoning blocks and raw tool
 inputs, and resolve adapter-reported paths only within the provider's local
 transcript directory. Stop requests use the same graceful SIGINT-to-SIGTERM
-teardown as `quit-session`; they cannot target unrelated sessions.
+teardown as `quit-session`; they cannot target unrelated sessions. The preferred
+stop verb additionally requires the exact `confirmation: "user-confirmed"`
+field. The legacy verb remains for backwards compatibility.
 
 ### Inter-agent channels
 
