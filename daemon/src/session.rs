@@ -291,6 +291,8 @@ pub enum Attachment {
         id: String,
         launch_id: String,
         mux_server: String,
+        #[serde(default)]
+        mux_socket: Option<String>,
         mux_session: String,
         mux_pane: String,
         pane_tty: String,
@@ -382,6 +384,7 @@ fn attachment_from_meta(meta: &Map<String, Value>) -> Attachment {
                 id,
                 launch_id: launch_id.to_string(),
                 mux_server: server.to_string(),
+                mux_socket: text("mux_socket").map(str::to_string),
                 mux_session: session.to_string(),
                 mux_pane: pane.to_string(),
                 pane_tty: tty.to_string(),
@@ -1270,9 +1273,7 @@ impl Registry {
         let mut ordered: Vec<(String, Option<u8>)> = self
             .sessions
             .values()
-            .filter(|session| {
-                !session.is_backlogged() && session.has_authoritative_attachment()
-            })
+            .filter(|session| !session.is_backlogged() && session.has_authoritative_attachment())
             .map(|session| (session.id.clone(), session.slot))
             .collect();
         ordered.sort_by_key(|(id, slot)| (slot.is_none(), slot.unwrap_or(u8::MAX), id.clone()));
@@ -1313,7 +1314,9 @@ impl Registry {
             let session = self.sessions.get_mut(&id).expect("collected live session");
             session.slot = new_slot;
             if let Some(slot) = new_slot {
-                if session.slot_history.last().copied() != Some(slot) { session.slot_history.push(slot); }
+                if session.slot_history.last().copied() != Some(slot) {
+                    session.slot_history.push(slot);
+                }
             }
             effects.push(Effect::SessionUpsert {
                 id: session.id.clone(),
@@ -1359,7 +1362,9 @@ impl Registry {
             session.meta.remove(BACKLOGGED_META_KEY);
             session.slot = slot;
             if let Some(slot) = slot {
-                if session.slot_history.last().copied() != Some(slot) { session.slot_history.push(slot); }
+                if session.slot_history.last().copied() != Some(slot) {
+                    session.slot_history.push(slot);
+                }
             }
         }
 
@@ -1534,12 +1539,14 @@ impl Registry {
                             .filter(|value| (1..=12).contains(value))
                     })
                     .filter(|requested| {
-                        !self.sessions.values().any(|session| {
-                            session.id != id && session.slot == Some(*requested)
-                        }) && !self
-                            .managed_launch_reservations
+                        !self
+                            .sessions
                             .values()
-                            .any(|reservation| reservation.slot == Some(*requested))
+                            .any(|session| session.id != id && session.slot == Some(*requested))
+                            && !self
+                                .managed_launch_reservations
+                                .values()
+                                .any(|reservation| reservation.slot == Some(*requested))
                     });
                 if let Some(sess) = self.sessions.get_mut(id) {
                     // Update + merge.
@@ -1587,8 +1594,9 @@ impl Registry {
                     if needs_slot {
                         let _ = sess;
                         let slot = self.reclaim_slot(id, authorized_slot);
-                        if let Some(Effect::SessionUpsert { slot: effect_slot, .. }) =
-                            effects.last_mut()
+                        if let Some(Effect::SessionUpsert {
+                            slot: effect_slot, ..
+                        }) = effects.last_mut()
                         {
                             *effect_slot = slot;
                         }
@@ -1749,9 +1757,8 @@ impl Registry {
                             } else {
                                 SessionHealth::Unknown
                             };
-                            sess.health_reason = (!verified).then(|| {
-                                "awaiting authoritative process or tmux ownership".into()
-                            });
+                            sess.health_reason = (!verified)
+                                .then(|| "awaiting authoritative process or tmux ownership".into());
                             sess.last_verified = verified.then_some(now);
                             sess.failed_probes = 0;
                             sess.first_probe_failure = None;
@@ -1778,8 +1785,9 @@ impl Registry {
                         });
                         self.sessions.insert(id.to_string(), sess);
                         let slot = self.reclaim_slot(id, authorized_slot);
-                        if let Some(Effect::SessionUpsert { slot: effect_slot, .. }) =
-                            effects.last_mut()
+                        if let Some(Effect::SessionUpsert {
+                            slot: effect_slot, ..
+                        }) = effects.last_mut()
                         {
                             *effect_slot = slot;
                         }
@@ -1894,7 +1902,10 @@ impl Registry {
         if needs_slot {
             let _ = sess;
             let slot = self.reclaim_slot(id, None);
-            if let Some(Effect::SessionUpsert { slot: effect_slot, .. }) = effects.last_mut() {
+            if let Some(Effect::SessionUpsert {
+                slot: effect_slot, ..
+            }) = effects.last_mut()
+            {
                 *effect_slot = slot;
             }
         }
@@ -1995,7 +2006,7 @@ impl Registry {
     }
 
     /// Record one authoritative attachment probe. Ordinary disappearance is
-    /// debounced for thirty seconds; boot/PID-birth mismatches bypass the
+    /// debounced for the configured grace; boot/PID-birth mismatches bypass the
     /// debounce because they prove the stored attachment cannot be the same
     /// runtime. Detaching retains the durable record as a recoverable row.
     pub fn note_attachment_probe(
@@ -2004,6 +2015,7 @@ impl Registry {
         verified: bool,
         reason: Option<String>,
         immediate: bool,
+        grace: Duration,
         now: Instant,
     ) -> Vec<Effect> {
         let Some(session) = self.sessions.get_mut(id) else {
@@ -2031,8 +2043,7 @@ impl Registry {
         session.health = SessionHealth::Suspect;
         session.health_reason = reason.clone();
         let should_detach = immediate
-            || (session.failed_probes >= 2
-                && now.saturating_duration_since(first) >= Duration::from_secs(30));
+            || (session.failed_probes >= 2 && now.saturating_duration_since(first) >= grace);
         if should_detach {
             session.health = SessionHealth::Detached;
             session.attachment = None;
@@ -2149,11 +2160,15 @@ impl Registry {
             .ok_or_else(|| format!("unknown session or no slot: {id2:?}"))?;
         if let Some(s) = self.sessions.get_mut(id1) {
             s.slot = Some(slot2);
-            if s.slot_history.last().copied() != Some(slot2) { s.slot_history.push(slot2); }
+            if s.slot_history.last().copied() != Some(slot2) {
+                s.slot_history.push(slot2);
+            }
         }
         if let Some(s) = self.sessions.get_mut(id2) {
             s.slot = Some(slot1);
-            if s.slot_history.last().copied() != Some(slot1) { s.slot_history.push(slot1); }
+            if s.slot_history.last().copied() != Some(slot1) {
+                s.slot_history.push(slot1);
+            }
         }
         let effects = [id1, id2]
             .into_iter()
@@ -2215,7 +2230,9 @@ impl Registry {
         let old_slot = self.sessions.get(id).and_then(|s| s.slot);
         let session = self.sessions.get_mut(id).expect("validated live session");
         session.slot = Some(target);
-        if session.slot_history.last().copied() != Some(target) { session.slot_history.push(target); }
+        if session.slot_history.last().copied() != Some(target) {
+            session.slot_history.push(target);
+        }
         let mut effects = Vec::new();
         if let Some(old) = old_slot {
             effects.push(Effect::SlotCleared { slot: old });
@@ -2652,30 +2669,122 @@ mod tests {
         meta.insert("process_boot_time".into(), 7.into());
         meta.insert("process_start_time".into(), 11.into());
         meta.insert("provider_executable".into(), "/usr/local/bin/codex".into());
-        registry.set_state(Some("conversation"), State::Idle, Some("codex".into()), None, Some(meta), now);
-        let first = registry.note_attachment_probe("conversation", false, Some("process absent".into()), false, now);
-        assert!(first.iter().any(|effect| matches!(effect, Effect::SessionHealthChanged { health: SessionHealth::Suspect, .. })));
+        registry.set_state(
+            Some("conversation"),
+            State::Idle,
+            Some("codex".into()),
+            None,
+            Some(meta),
+            now,
+        );
+        let grace = Duration::from_secs(120);
+        let first = registry.note_attachment_probe(
+            "conversation",
+            false,
+            Some("process absent".into()),
+            false,
+            grace,
+            now,
+        );
+        assert!(first.iter().any(|effect| matches!(
+            effect,
+            Effect::SessionHealthChanged {
+                health: SessionHealth::Suspect,
+                ..
+            }
+        )));
         assert_eq!(registry.list().len(), 1);
-        let later = now + Duration::from_secs(30);
-        let second = registry.note_attachment_probe("conversation", false, Some("process absent".into()), false, later);
-        assert!(second.iter().any(|effect| matches!(effect, Effect::SessionDisconnected { .. })));
+        let later = now + grace;
+        let second = registry.note_attachment_probe(
+            "conversation",
+            false,
+            Some("process absent".into()),
+            false,
+            grace,
+            later,
+        );
+        assert!(second
+            .iter()
+            .any(|effect| matches!(effect, Effect::SessionDisconnected { .. })));
         assert!(registry.list().is_empty());
-        let retained = registry.session_or_tombstone("conversation").expect("durable record retained");
+        let retained = registry
+            .session_or_tombstone("conversation")
+            .expect("durable record retained");
         assert_eq!(retained.health, SessionHealth::Detached);
         assert!(retained.attachment.is_none());
+    }
+
+    #[test]
+    fn matching_adapter_activity_restarts_attachment_failure_grace() {
+        let mut registry = Registry::new(None);
+        let now = Instant::now();
+        let grace = Duration::from_secs(120);
+        let mut meta = Map::new();
+        meta.insert("pid".into(), 101.into());
+        meta.insert("process_boot_time".into(), 7.into());
+        meta.insert("process_start_time".into(), 11.into());
+        meta.insert("provider_executable".into(), "/usr/local/bin/codex".into());
+        registry.set_state(
+            Some("conversation"),
+            State::Thinking,
+            Some("codex".into()),
+            None,
+            Some(meta.clone()),
+            now,
+        );
+        registry.note_attachment_probe(
+            "conversation",
+            false,
+            Some("temporary miss".into()),
+            false,
+            grace,
+            now,
+        );
+
+        let activity = now + Duration::from_secs(90);
+        registry.set_state(
+            Some("conversation"),
+            State::Running,
+            Some("codex".into()),
+            None,
+            Some(meta),
+            activity,
+        );
+        let after_old_deadline = now + grace + Duration::from_secs(1);
+        let effects = registry.note_attachment_probe(
+            "conversation",
+            false,
+            Some("temporary miss".into()),
+            false,
+            grace,
+            after_old_deadline,
+        );
+        assert!(!effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::SessionDisconnected { .. })));
+        assert_eq!(registry.list().len(), 1);
     }
 
     #[test]
     fn unverified_activity_is_slotless_and_disconnects_at_configured_timeout() {
         let mut registry = Registry::new(None);
         let now = Instant::now();
-        registry.set_state(Some("generic"), State::Thinking, Some("generic".into()), None, None, now);
+        registry.set_state(
+            Some("generic"),
+            State::Thinking,
+            Some("generic".into()),
+            None,
+            None,
+            now,
+        );
         assert_eq!(registry.list()[0].slot, None);
         let effects = registry.expire_unverified_attachments(
             now + Duration::from_secs(300),
             Some(Duration::from_secs(300)),
         );
-        assert!(effects.iter().any(|effect| matches!(effect, Effect::SessionDisconnected { slot: None, .. })));
+        assert!(effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::SessionDisconnected { slot: None, .. })));
         let retained = registry.session_or_tombstone("generic").unwrap();
         assert_eq!(retained.health, SessionHealth::Unknown);
     }
@@ -2692,10 +2801,8 @@ mod tests {
             None,
             now,
         );
-        let effects = registry.expire_unverified_attachments(
-            now + Duration::from_secs(24 * 60 * 60),
-            None,
-        );
+        let effects =
+            registry.expire_unverified_attachments(now + Duration::from_secs(24 * 60 * 60), None);
         assert!(effects.is_empty());
         assert_eq!(registry.list()[0].slot, None);
     }

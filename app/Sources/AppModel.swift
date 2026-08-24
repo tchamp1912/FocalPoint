@@ -1429,7 +1429,8 @@ final class AppModel: ObservableObject {
         guard let s = sessions.first(where: { $0.id == id }) else { return }
         let entry = SessionHistoryEntry(
             id: UUID().uuidString, sessionID: s.id, title: s.title, kind: s.kind,
-            cwd: s.cwd, finalState: s.state, startedAt: s.firstSeen, endedAt: Date(),
+            cwd: s.cwd, model: s.model, finalState: s.state,
+            startedAt: s.firstSeen, endedAt: Date(),
             statValues: Dictionary(uniqueKeysWithValues: s.stats.map { ($0.key.rawValue, $0.value) }))
         sessionHistory.insert(entry, at: 0)
         while sessionHistory.count > maxSessionHistoryEntries,

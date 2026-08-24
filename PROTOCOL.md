@@ -758,6 +758,7 @@ ccw  = "echo effort-down"
 # The session is exposed via FOCALPOINT_SESSION_* env vars.
 focus = { type = "shell", run = "~/.config/focalpoint/adapters/focus-session.sh" }
 unverified_ttl_minutes = 0 # optional adapter-heartbeat timeout; 0/omitted = off
+attachment_probe_grace_seconds = 120 # continuous authoritative-probe failure before disconnect
 tombstone_ttl_minutes = 30   # how long a sweep-reaped session stays recoverable (0 = never)
 
 [channel]

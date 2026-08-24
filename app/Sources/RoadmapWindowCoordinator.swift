@@ -195,7 +195,7 @@ enum RoadmapPresentation {
             let path = entry.cwd ?? ""
             return HistoryRecord(
                 id: entry.id, title: entry.title, summary: entry.finalState.display,
-                provider: provider, model: "Not retained", state: historyState(entry.finalState),
+                provider: provider, model: entry.model ?? "Provider session", state: historyState(entry.finalState),
                 project: .init(id: path.isEmpty ? "unknown" : path,
                                name: path.isEmpty ? "Original project unavailable" : URL(fileURLWithPath: path).lastPathComponent,
                                path: path), workflow: nil,

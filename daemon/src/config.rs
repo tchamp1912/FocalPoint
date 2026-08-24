@@ -56,6 +56,12 @@ pub struct SessionConfig {
     /// managed tmux pane cannot be authoritatively verified. Absent/0 => off.
     #[serde(default)]
     pub unverified_ttl_minutes: Option<u64>,
+    /// How long an authoritative process/tmux probe must fail continuously
+    /// before the session is detached. Adapter activity resets this window.
+    /// Absent => 120 seconds. Definitive boot/PID-birth mismatches still
+    /// detach immediately because they prove the runtime identity changed.
+    #[serde(default)]
+    pub attachment_probe_grace_seconds: Option<u64>,
     /// How long a session reaped by a sweep (not an explicit end-session)
     /// stays recoverable — see `session::Registry::find_recovery_candidate`.
     /// Absent => 30; `0` => never (a session "left through a reboot" stays
@@ -75,7 +81,9 @@ pub struct ChannelConfig {
 }
 
 impl ChannelConfig {
-    pub fn wake_managed(&self) -> bool { self.wake_managed.unwrap_or(true) }
+    pub fn wake_managed(&self) -> bool {
+        self.wake_managed.unwrap_or(true)
+    }
 }
 
 impl SessionConfig {
@@ -95,6 +103,11 @@ impl SessionConfig {
             0 => None,
             m => Some(std::time::Duration::from_secs(m * 60)),
         }
+    }
+
+    /// Effective grace for transient authoritative-attachment probe misses.
+    pub fn attachment_probe_grace(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.attachment_probe_grace_seconds.unwrap_or(120))
     }
 
     /// Effective tombstone TTL: `None` means "never expire".
@@ -355,11 +368,24 @@ ttl_minutes = 30
     #[test]
     fn unverified_ttl_defaults_to_off() {
         assert_eq!(Config::default().session.unverified_ttl(), None);
-        let cfg = Config::from_toml("[session]\nunverified_ttl_minutes = 5\n")
-            .expect("parse");
+        let cfg = Config::from_toml("[session]\nunverified_ttl_minutes = 5\n").expect("parse");
         assert_eq!(
             cfg.session.unverified_ttl(),
             Some(std::time::Duration::from_secs(5 * 60))
+        );
+    }
+
+    #[test]
+    fn attachment_probe_grace_defaults_to_two_minutes_and_is_configurable() {
+        assert_eq!(
+            Config::default().session.attachment_probe_grace(),
+            std::time::Duration::from_secs(120)
+        );
+        let cfg =
+            Config::from_toml("[session]\nattachment_probe_grace_seconds = 300\n").expect("parse");
+        assert_eq!(
+            cfg.session.attachment_probe_grace(),
+            std::time::Duration::from_secs(300)
         );
     }
 

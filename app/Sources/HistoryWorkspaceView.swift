@@ -459,7 +459,7 @@ private struct HistoryLaunchSheet: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(draft?.mode.displayName ?? "Launch") “\(draft?.record.title ?? "Run")”")
                     .font(.title3.bold())
-                Text("Choose every launch setting. FocalPoint will not reuse the record’s provider or model automatically.")
+                Text("Review the recorded launch settings before starting a new run.")
                     .font(.subheadline).foregroundStyle(.secondary)
             }
 
@@ -488,7 +488,7 @@ private struct HistoryLaunchSheet: View {
             .formStyle(.grouped)
 
             HStack {
-                Text("All three choices are required.")
+                Text("The previous project, provider, and model are preselected.")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Cancel") { store.cancelLaunch() }

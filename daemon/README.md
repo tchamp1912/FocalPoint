@@ -227,6 +227,11 @@ without authoritative ownership can opt into an inactivity disconnect with
 default render styles (see Render styles above); the daemon rewrites them in
 place on `set-style`.
 
+Authoritative process/tmux checks tolerate a continuous failure window before
+disconnecting. `attachment_probe_grace_seconds` defaults to `120`; matching
+adapter activity or a successful probe resets the window. Definitive system
+boot or PID-birth mismatches still detach immediately.
+
 ## Test
 
 ```sh

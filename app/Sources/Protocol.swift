@@ -488,6 +488,9 @@ struct SessionHistoryEntry: Identifiable, Codable, Equatable {
     var title: String
     var kind: String
     var cwd: String?
+    /// Last concrete model reported by the provider. Resume itself delegates
+    /// model/context restoration to the provider's exact session token.
+    var model: String? = nil
     var finalState: AgentState
     var startedAt: Date
     var endedAt: Date

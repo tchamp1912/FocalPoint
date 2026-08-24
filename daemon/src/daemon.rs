@@ -640,6 +640,10 @@ fn launch_managed_resume(prepared: &ManagedResumeLaunch) -> Result<(), String> {
         .arg("new-session")
         .arg("-d")
         .arg("-e")
+        .arg("FOCALPOINT_MANAGED=1")
+        .arg("-e")
+        .arg(format!("FOCALPOINT_TMUX_SERVER={}", prepared.tmux_server))
+        .arg("-e")
         .arg(format!("FOCALPOINT_RELAUNCH_ID={}", prepared.launch_id))
         .arg("-e")
         .arg(format!(
@@ -1220,10 +1224,14 @@ fn validate_workflow_assignment_manifest(
         }
         required_launch_selection(Some(&assignment.agent_type), Some(&assignment.model))?;
         if !matches!(assignment.provider.as_str(), "claude" | "codex" | "cursor") {
-            return Err("workflow assignment provider must be 'claude', 'codex', or 'cursor'".into());
+            return Err(
+                "workflow assignment provider must be 'claude', 'codex', or 'cursor'".into(),
+            );
         }
         if !matches!(assignment.gate.as_str(), "authorized" | "confirm" | "auto") {
-            return Err("workflow assignment gate must be 'authorized', 'confirm', or 'auto'".into());
+            return Err(
+                "workflow assignment gate must be 'authorized', 'confirm', or 'auto'".into(),
+            );
         }
         if !(1..=WORKFLOW_FANOUT_MAX).contains(&assignment.fanout_limit) {
             return Err(format!(
@@ -1301,9 +1309,8 @@ fn validate_workflow_launch_metadata(
             if assignment.is_some() {
                 return Err("a workflow orchestrator cannot claim a worker assignment".into());
             }
-            let assignments = assignments.ok_or(
-                "the initial workflow orchestrator launch requires workflow_assignments",
-            )?;
+            let assignments = assignments
+                .ok_or("the initial workflow orchestrator launch requires workflow_assignments")?;
             validate_workflow_assignment_manifest(assignments)?;
             if phase != "orchestration" || gate != "authorized" || fanout {
                 return Err("the initial workflow orchestrator must use phase 'orchestration', gate 'authorized', and non-fanout launch metadata".into());
@@ -1311,13 +1318,17 @@ fn validate_workflow_launch_metadata(
         }
         "worker" => {
             if assignments.is_some() {
-                return Err("workflow_assignments are valid only on the initial orchestrator launch".into());
+                return Err(
+                    "workflow_assignments are valid only on the initial orchestrator launch".into(),
+                );
             }
-            let assignment = assignment.ok_or(
-                "a managed workflow worker launch requires workflow_assignment",
-            )?;
+            let assignment = assignment
+                .ok_or("a managed workflow worker launch requires workflow_assignment")?;
             if !valid_workflow_assignment_id(assignment) {
-                return Err("workflow_assignment must use letters, digits, dots, underscores, or dashes".into());
+                return Err(
+                    "workflow_assignment must use letters, digits, dots, underscores, or dashes"
+                        .into(),
+                );
             }
         }
         _ => return Err("role must be 'orchestrator' or 'worker'".into()),
@@ -1334,13 +1345,15 @@ fn workflow_receipt_path(run_id: &str) -> PathBuf {
 
 #[cfg(unix)]
 fn manager_workflow_run_id(manager_task_id: &str) -> Option<String> {
-    let receipt: Value = serde_json::from_slice(
-        &std::fs::read(workflow_receipt_path(manager_task_id)).ok()?,
-    )
-    .ok()?;
+    let receipt: Value =
+        serde_json::from_slice(&std::fs::read(workflow_receipt_path(manager_task_id)).ok()?)
+            .ok()?;
     (receipt.get("task_id").and_then(Value::as_str) == Some(manager_task_id)
         && receipt.get("role").and_then(Value::as_str) == Some("orchestrator")
-        && receipt.get("workflow_assignments").and_then(Value::as_array).is_some())
+        && receipt
+            .get("workflow_assignments")
+            .and_then(Value::as_array)
+            .is_some())
     .then(|| {
         receipt
             .get("workflow_run_id")
@@ -1397,10 +1410,8 @@ fn receipt_workflow_manifest_matches(
 ) -> bool {
     match (receipt.get("workflow_assignments"), requested) {
         (None | Some(Value::Null), None) => true,
-        (Some(Value::Array(stored)), Some(requested)) if stored.len() == requested.len() => stored
-            .iter()
-            .zip(requested)
-            .all(|(stored, requested)| {
+        (Some(Value::Array(stored)), Some(requested)) if stored.len() == requested.len() => {
+            stored.iter().zip(requested).all(|(stored, requested)| {
                 serde_json::to_value(requested).is_ok_and(|requested| {
                     requested.as_object().is_some_and(|fields| {
                         fields
@@ -1408,7 +1419,8 @@ fn receipt_workflow_manifest_matches(
                             .all(|(key, value)| stored.get(key) == Some(value))
                     })
                 })
-            }),
+            })
+        }
         _ => false,
     }
 }
@@ -1473,10 +1485,9 @@ fn consume_workflow_assignment_at(
     if manager_task_id != Some(run_id) {
         return Err("a workflow worker's manager_task_id must match workflow_run_id".into());
     }
-    let mut receipt: Value = serde_json::from_slice(
-        &std::fs::read(path).map_err(|_| "unknown workflow run")?,
-    )
-    .map_err(|_| "invalid workflow run receipt")?;
+    let mut receipt: Value =
+        serde_json::from_slice(&std::fs::read(path).map_err(|_| "unknown workflow run")?)
+            .map_err(|_| "invalid workflow run receipt")?;
     if receipt.get("task_id").and_then(Value::as_str) != Some(run_id)
         || receipt.get("workflow_run_id").and_then(Value::as_str) != Some(run_id)
         || receipt.get("workflow_id").and_then(Value::as_str) != Some(workflow_id)
@@ -1533,7 +1544,10 @@ fn consume_workflow_assignment_at(
             .and_then(|approvals| approvals.get_mut(phase))
             .and_then(Value::as_object_mut)
             .ok_or("confirm-gated workflow launch has no daemon-recorded human approval")?;
-        if approval.get("consumed_by").is_some_and(|value| !value.is_null()) {
+        if approval
+            .get("consumed_by")
+            .is_some_and(|value| !value.is_null())
+        {
             return Err("workflow phase approval was already consumed".into());
         }
         let approval_id = approval
@@ -1559,7 +1573,9 @@ fn consume_workflow_assignment_at(
 #[cfg(unix)]
 fn rollback_workflow_assignment(claim: &WorkflowLedgerClaim) {
     let path = workflow_receipt_path(&claim.run_id);
-    let Ok(data) = std::fs::read(&path) else { return };
+    let Ok(data) = std::fs::read(&path) else {
+        return;
+    };
     let Ok(mut receipt) = serde_json::from_slice::<Value>(&data) else {
         return;
     };
@@ -1583,12 +1599,14 @@ fn rollback_workflow_assignment(claim: &WorkflowLedgerClaim) {
         if let Some(approval) = receipt
             .get_mut("workflow_approvals")
             .and_then(Value::as_object_mut)
-            .and_then(|approvals| approvals.values_mut().find(|approval| {
-                approval.get("approval_id").and_then(Value::as_str)
-                    == Some(approval_id.as_str())
-                    && approval.get("consumed_by").and_then(Value::as_str)
-                        == Some(claim.task_id.as_str())
-            }))
+            .and_then(|approvals| {
+                approvals.values_mut().find(|approval| {
+                    approval.get("approval_id").and_then(Value::as_str)
+                        == Some(approval_id.as_str())
+                        && approval.get("consumed_by").and_then(Value::as_str)
+                            == Some(claim.task_id.as_str())
+                })
+            })
             .and_then(Value::as_object_mut)
         {
             approval.insert("consumed_by".into(), Value::Null);
@@ -1609,10 +1627,9 @@ fn approve_workflow_transition(run_id: &str, phase: &str) -> Result<Value, Strin
 
 #[cfg(unix)]
 fn approve_workflow_transition_at(path: &Path, run_id: &str, phase: &str) -> Result<Value, String> {
-    let mut receipt: Value = serde_json::from_slice(
-        &std::fs::read(path).map_err(|_| "unknown workflow run")?,
-    )
-    .map_err(|_| "invalid workflow run receipt")?;
+    let mut receipt: Value =
+        serde_json::from_slice(&std::fs::read(path).map_err(|_| "unknown workflow run")?)
+            .map_err(|_| "invalid workflow run receipt")?;
     if receipt.get("task_id").and_then(Value::as_str) != Some(run_id)
         || receipt.get("workflow_run_id").and_then(Value::as_str) != Some(run_id)
         || receipt.get("role").and_then(Value::as_str) != Some("orchestrator")
@@ -1633,8 +1650,14 @@ fn approve_workflow_transition_at(path: &Path, run_id: &str, phase: &str) -> Res
     let has_capacity = assignments.iter().any(|entry| {
         entry.get("phase").and_then(Value::as_str) == Some(phase)
             && entry.get("gate").and_then(Value::as_str) == Some("confirm")
-            && entry.get("launches_consumed").and_then(Value::as_u64).unwrap_or(0)
-                < entry.get("fanout_limit").and_then(Value::as_u64).unwrap_or(0)
+            && entry
+                .get("launches_consumed")
+                .and_then(Value::as_u64)
+                .unwrap_or(0)
+                < entry
+                    .get("fanout_limit")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0)
     });
     if !has_capacity {
         return Err("workflow phase assignment launch limits are exhausted".into());
@@ -2312,16 +2335,13 @@ fn resume_managed_session(
             }
         })
         .collect();
-    let receipt = receipts.join(format!("{provider}-{key}.json"));
-    if receipt.exists() {
-        let mut existing: Value =
-            serde_json::from_slice(&std::fs::read(&receipt).map_err(|e| e.to_string())?)
-                .map_err(|e| e.to_string())?;
-        existing["ok"] = true.into();
-        return Ok(existing);
-    }
     let terminal_bundle_id = preferred_terminal_bundle_id();
     let launch_id = new_relaunch_id();
+    // A resume click is a new user-authorized attempt. Keying receipts only
+    // by provider/session made the first receipt permanent: every later click
+    // returned the old `launched` JSON without starting a process. Keep each
+    // attempt collision-free and auditable instead.
+    let receipt = receipts.join(format!("{provider}-{key}-{launch_id}.json"));
     let mut value = serde_json::json!({"ok":true,"launch_id":launch_id,"provider":provider,"session":session,
         "title":title,"cwd":cwd,"terminal_bundle_id":terminal_bundle_id,"status":"opening"});
     let mut file = OpenOptions::new()
@@ -2356,8 +2376,12 @@ fn resume_managed_session(
             shell_quote(session)
         )
     };
-    let script = format!("#!/bin/zsh -l\nset -e\nrm -f -- {}\ncd -- {}\nexport FOCALPOINT_LAUNCH_ID={}\nexport FOCALPOINT_RESUME_SESSION_ID={}\nexec {} {}\n",
-        shell_quote(&launcher.display().to_string()), shell_quote(&cwd.display().to_string()), shell_quote(&launch_id), shell_quote(session),
+    let title_export = title
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("export FOCALPOINT_SESSION_TITLE={}\n", shell_quote(value)))
+        .unwrap_or_default();
+    let script = format!("#!/bin/zsh -l\nset -e\nrm -f -- {}\ncd -- {}\nexport FOCALPOINT_LAUNCH_ID={}\nexport FOCALPOINT_RESUME_SESSION_ID={}\n{}exec {} {}\n",
+        shell_quote(&launcher.display().to_string()), shell_quote(&cwd.display().to_string()), shell_quote(&launch_id), shell_quote(session), title_export,
         shell_quote(&runner.display().to_string()), provider_command);
     let temporary = launcher.with_extension(format!("command.{}.tmp", std::process::id()));
     let mut launcher_file = OpenOptions::new()
@@ -2848,7 +2872,10 @@ fn post_managed_channel_lifecycle(
     } else {
         match state {
             State::Done => ("progress", format!("{title} completed.{assignment}")),
-            State::Error => ("blocker", format!("{title} entered an error state.{assignment}")),
+            State::Error => (
+                "blocker",
+                format!("{title} entered an error state.{assignment}"),
+            ),
             State::Approval => (
                 "question",
                 format!("{title} is waiting for approval.{assignment}"),
@@ -2877,13 +2904,7 @@ fn post_managed_channel_lifecycle(
     } else {
         channel.owner_session.clone()
     };
-    channel.post(
-        "focalpoint".into(),
-        to,
-        kind.into(),
-        body,
-        unix_ms_now(),
-    );
+    channel.post("focalpoint".into(), to, kind.into(), body, unix_ms_now());
 }
 
 #[cfg(unix)]
@@ -3354,6 +3375,7 @@ fn public_meta(meta: &Map<String, Value>) -> Map<String, Value> {
                 && key.as_str() != crate::session::BACKLOGGED_META_KEY
                 && !key.starts_with("terminal_")
                 && key.as_str() != "mux_client_tty"
+                && key.as_str() != "mux_socket"
                 && !matches!(
                     key.as_str(),
                     "attachment_registration"
@@ -3749,7 +3771,7 @@ fn load_snapshot(
 /// while the daemon was down is still recoverable via the pooled matcher —
 /// consistent with every other non-explicit disappearance.
 #[cfg(unix)]
-fn reconcile_on_startup(shared: &Mutex<Shared>) {
+fn reconcile_on_startup(shared: &Mutex<Shared>, attachment_probe_grace: Duration) {
     let now = Instant::now();
     let sessions = shared.lock().unwrap().registry.list();
     let probes = probe_runtime_attachments(&sessions);
@@ -3758,14 +3780,21 @@ fn reconcile_on_startup(shared: &Mutex<Shared>) {
         // Startup must reconcile before clients can observe the snapshot. A
         // definitive mismatch detaches immediately; a transient miss begins
         // the normal debounce and remains suspect.
-        s.registry
-            .note_attachment_probe(&id, verified, reason, immediate, now);
+        s.registry.note_attachment_probe(
+            &id,
+            verified,
+            reason,
+            immediate,
+            attachment_probe_grace,
+            now,
+        );
     }
 }
 
 #[cfg(unix)]
 fn probe_runtime_attachments(sessions: &[Session]) -> Vec<(String, bool, Option<String>, bool)> {
-    let mut managed: HashMap<String, Vec<(String, String, String, String)>> = HashMap::new();
+    let mut managed: HashMap<(String, Option<String>), Vec<(String, String, String, String)>> =
+        HashMap::new();
     let mut results = Vec::new();
     for session in sessions {
         match session.attachment.as_ref() {
@@ -3808,10 +3837,14 @@ fn probe_runtime_attachments(sessions: &[Session]) -> Vec<(String, bool, Option<
                     ));
                     continue;
                 }
-                let executable_matches = process
+                // macOS can temporarily withhold an executable path from a
+                // launchd process (notably on managed/corporate laptops).
+                // Absence is inconclusive; only a concrete different path
+                // proves this PID fingerprint belongs to another runtime.
+                if process
                     .exe()
-                    .is_some_and(|path| path.to_string_lossy() == executable.as_str());
-                if !executable_matches {
+                    .is_some_and(|path| path.to_string_lossy() != executable.as_str())
+                {
                     results.push((
                         session.id.clone(),
                         false,
@@ -3821,7 +3854,12 @@ fn probe_runtime_attachments(sessions: &[Session]) -> Vec<(String, bool, Option<
                     continue;
                 }
                 if let Some(expected_tty) = pane_tty {
-                    if crate::identity::tty_for_pid(*pid).as_deref() != Some(expected_tty.as_str())
+                    // The same permission boundary can make `ps` return no
+                    // tty. Treat that as inconclusive after the exact
+                    // boot/PID-birth checks above; only a concrete mismatch
+                    // counts as a failed ownership probe.
+                    if crate::identity::tty_for_pid(*pid)
+                        .is_some_and(|observed| observed != *expected_tty)
                     {
                         results.push((
                             session.id.clone(),
@@ -3836,27 +3874,35 @@ fn probe_runtime_attachments(sessions: &[Session]) -> Vec<(String, bool, Option<
             }
             Some(Attachment::Managed {
                 mux_server,
+                mux_socket,
                 mux_session,
                 mux_pane,
                 pane_tty,
                 ..
             }) => {
-                managed.entry(mux_server.clone()).or_default().push((
-                    session.id.clone(),
-                    mux_session.clone(),
-                    mux_pane.clone(),
-                    pane_tty.clone(),
-                ));
+                managed
+                    .entry((mux_server.clone(), mux_socket.clone()))
+                    .or_default()
+                    .push((
+                        session.id.clone(),
+                        mux_session.clone(),
+                        mux_pane.clone(),
+                        pane_tty.clone(),
+                    ));
             }
             Some(Attachment::Unverified { .. }) | None => {}
         }
     }
-    for (server, expected) in managed {
+    for ((server, socket), expected) in managed {
         let output = executable_named("tmux").and_then(|tmux| {
-            Command::new(tmux)
+            let mut command = Command::new(tmux);
+            if let Some(socket) = socket.as_deref().filter(|value| !value.is_empty()) {
+                command.args(["-S", socket]);
+            } else {
+                command.args(["-L", &server]);
+            }
+            command
                 .args([
-                    "-L",
-                    &server,
                     "list-panes",
                     "-a",
                     "-F",
@@ -4374,6 +4420,7 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
     reconcile_opening_launch_receipts();
     let tombstone_ttl = config.session.tombstone_ttl();
     let unverified_ttl = config.session.unverified_ttl();
+    let attachment_probe_grace = config.session.attachment_probe_grace();
     // Restore sessions/tombstones/usage from the last run (Part 4) instead
     // of always starting fresh — a daemon restart shouldn't blank
     // `focalpoint sessions`/`focalpoint usage` until adapters naturally
@@ -4392,7 +4439,7 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
     // can see the restored state: a session that actually died while the
     // daemon was down must not resurrect as a zombie, just become a
     // recoverable tombstone like any other non-explicit disappearance.
-    reconcile_on_startup(&shared);
+    reconcile_on_startup(&shared, attachment_probe_grace);
     let (evt_tx, _keep) = tokio::sync::broadcast::channel::<String>(256);
     let (host_tx, host_rx) = tokio::sync::mpsc::unbounded_channel::<HostCmd>();
 
@@ -4456,7 +4503,7 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
 
     // Attachment health is probed independently of adapter activity. Process
     // fingerprints and private tmux ownership are authoritative; ordinary
-    // failures require two observations spanning thirty seconds.
+    // failures require two observations spanning the configured grace.
     {
         let ctx = ctx.clone();
         let host_tx = host_tx.clone();
@@ -4473,9 +4520,14 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
                     let mut effects: Vec<Effect> = probes
                         .into_iter()
                         .flat_map(|(id, ok, reason, immediate)| {
-                            shared
-                                .registry
-                                .note_attachment_probe(&id, ok, reason, immediate, now)
+                            shared.registry.note_attachment_probe(
+                                &id,
+                                ok,
+                                reason,
+                                immediate,
+                                attachment_probe_grace,
+                                now,
+                            )
                         })
                         .collect();
                     effects.extend(
@@ -6227,7 +6279,10 @@ mod tests {
     #[test]
     fn managed_workflow_channel_binds_owner_and_authorized_worker() {
         let mut channels = crate::channel::Channels::default();
-        let channel_id = channels.create_pending("run-orchestrator".into()).id.clone();
+        let channel_id = channels
+            .create_pending("run-orchestrator".into())
+            .id
+            .clone();
         let channel = channels.channels.get_mut(&channel_id).unwrap();
 
         let owner = Map::from_iter([
@@ -6807,7 +6862,13 @@ mod tests {
             "tail": 25, "ack": true
         }))
         .expect("typed channel read decodes");
-        assert!(matches!(request, Request::ChannelRead { ack: Some(true), .. }));
+        assert!(matches!(
+            request,
+            Request::ChannelRead {
+                ack: Some(true),
+                ..
+            }
+        ));
 
         let request: Request = serde_json::from_value(json!({
             "cmd": "channel-ack", "task_id": "worker", "channel": "ch-1",
@@ -7164,15 +7225,28 @@ mod tests {
             "task_id":"review-1", "workflow_id":"review",
             "workflow_run_id":"review-run-1", "workflow_phase":"review",
             "workflow_gate":"confirm", "transition_confirmation":"user-confirmed"
-        })).expect("legacy field decodes for an actionable daemon rejection");
-        let Request::LaunchSession { transition_confirmation, .. } = self_asserted else {
+        }))
+        .expect("legacy field decodes for an actionable daemon rejection");
+        let Request::LaunchSession {
+            transition_confirmation,
+            ..
+        } = self_asserted
+        else {
             panic!("launch request");
         };
         assert!(validate_workflow_launch_metadata(
-            "worker", Some("review"), Some("review-run-1"), Some("review"),
-            Some("confirm"), false, Some("reviewer"), None,
+            "worker",
+            Some("review"),
+            Some("review-run-1"),
+            Some("review"),
+            Some("confirm"),
+            false,
+            Some("reviewer"),
+            None,
             transition_confirmation.as_deref()
-        ).unwrap_err().contains("not accepted"));
+        )
+        .unwrap_err()
+        .contains("not accepted"));
     }
 
     #[cfg(unix)]
@@ -7189,23 +7263,45 @@ mod tests {
             fanout_limit: 1,
         }];
         assert!(validate_workflow_launch_metadata(
-            "orchestrator", Some("review"), Some("run-1"), Some("orchestration"),
-            Some("authorized"), false, None, Some(&assignments), None
+            "orchestrator",
+            Some("review"),
+            Some("run-1"),
+            Some("orchestration"),
+            Some("authorized"),
+            false,
+            None,
+            Some(&assignments),
+            None
         )
         .is_ok());
         assert!(validate_workflow_launch_metadata(
-            "orchestrator", Some("review"), Some("run-1"), Some("orchestration"),
-            Some("authorized"), false, None, None, None
+            "orchestrator",
+            Some("review"),
+            Some("run-1"),
+            Some("orchestration"),
+            Some("authorized"),
+            false,
+            None,
+            None,
+            None
         )
         .is_err());
         assert!(validate_workflow_launch_metadata(
-            "worker", Some("review"), Some("run-1"), Some("review"),
-            Some("confirm"), false, None, None, None
+            "worker",
+            Some("review"),
+            Some("run-1"),
+            Some("review"),
+            Some("confirm"),
+            false,
+            None,
+            None,
+            None
         )
         .is_err());
         assert!(validate_workflow_launch_metadata(
             "worker", None, None, None, None, false, None, None, None
-        ).is_ok());
+        )
+        .is_ok());
 
         let mut duplicate = assignments.clone();
         duplicate.push(assignments[0].clone());
@@ -7227,7 +7323,10 @@ mod tests {
     fn workflow_receipt_replay_requires_the_exact_static_manifest() {
         let requested = vec![workflow_test_assignment("authorized", 1)];
         let receipt = json!({"workflow_assignments": workflow_ledger_value(&requested)});
-        assert!(receipt_workflow_manifest_matches(&receipt, Some(&requested)));
+        assert!(receipt_workflow_manifest_matches(
+            &receipt,
+            Some(&requested)
+        ));
         let mut changed = requested.clone();
         changed[0].model = "different".into();
         assert!(!receipt_workflow_manifest_matches(&receipt, Some(&changed)));
@@ -7236,21 +7335,33 @@ mod tests {
 
     #[cfg(unix)]
     fn workflow_test_receipt(assignments: &[WorkflowAssignmentAuthorization]) -> PathBuf {
-        let path = std::env::temp_dir().join(format!("focalpoint-workflow-test-{}.json", new_relaunch_id()));
-        std::fs::write(&path, serde_json::to_vec(&json!({
-            "task_id":"run-1", "workflow_run_id":"run-1", "workflow_id":"review",
-            "role":"orchestrator", "workflow_assignments": workflow_ledger_value(assignments),
-            "workflow_approvals": {}
-        })).unwrap()).unwrap();
+        let path = std::env::temp_dir().join(format!(
+            "focalpoint-workflow-test-{}.json",
+            new_relaunch_id()
+        ));
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&json!({
+                "task_id":"run-1", "workflow_run_id":"run-1", "workflow_id":"review",
+                "role":"orchestrator", "workflow_assignments": workflow_ledger_value(assignments),
+                "workflow_approvals": {}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
         path
     }
 
     #[cfg(unix)]
     fn workflow_test_assignment(gate: &str, limit: u16) -> WorkflowAssignmentAuthorization {
         WorkflowAssignmentAuthorization {
-            assignment_id: "review:reviewer:0".into(), phase: "review".into(),
-            agent_type: "reviewer".into(), provider: "codex".into(),
-            model: "gpt-5.6-sol".into(), gate: gate.into(), fanout_limit: limit,
+            assignment_id: "review:reviewer:0".into(),
+            phase: "review".into(),
+            agent_type: "reviewer".into(),
+            provider: "codex".into(),
+            model: "gpt-5.6-sol".into(),
+            gate: gate.into(),
+            fanout_limit: limit,
             fanout: limit > 1,
         }
     }
@@ -7261,36 +7372,132 @@ mod tests {
         let assignment = workflow_test_assignment("authorized", 1);
         let path = workflow_test_receipt(&[assignment]);
         let exact = consume_workflow_assignment_at(
-            &path, "review", "run-1", "review", "authorized", false,
-            "review:reviewer:0", "reviewer", "codex", "gpt-5.6-sol",
-            Some("run-1"), "worker-1"
+            &path,
+            "review",
+            "run-1",
+            "review",
+            "authorized",
+            false,
+            "review:reviewer:0",
+            "reviewer",
+            "codex",
+            "gpt-5.6-sol",
+            Some("run-1"),
+            "worker-1",
         );
         assert!(exact.is_ok());
         assert!(consume_workflow_assignment_at(
-            &path, "review", "run-1", "review", "authorized", false,
-            "review:reviewer:0", "reviewer", "codex", "gpt-5.6-sol",
-            Some("run-1"), "worker-replay"
-        ).unwrap_err().contains("exhausted"));
+            &path,
+            "review",
+            "run-1",
+            "review",
+            "authorized",
+            false,
+            "review:reviewer:0",
+            "reviewer",
+            "codex",
+            "gpt-5.6-sol",
+            Some("run-1"),
+            "worker-replay"
+        )
+        .unwrap_err()
+        .contains("exhausted"));
         let _ = std::fs::remove_file(&path);
 
         let cases = [
-            ("other", "review", "authorized", "reviewer", "codex", "gpt-5.6-sol", Some("run-1"), false),
-            ("review:reviewer:0", "other", "authorized", "reviewer", "codex", "gpt-5.6-sol", Some("run-1"), false),
-            ("review:reviewer:0", "review", "auto", "reviewer", "codex", "gpt-5.6-sol", Some("run-1"), false),
-            ("review:reviewer:0", "review", "authorized", "other", "codex", "gpt-5.6-sol", Some("run-1"), false),
-            ("review:reviewer:0", "review", "authorized", "reviewer", "claude", "gpt-5.6-sol", Some("run-1"), false),
-            ("review:reviewer:0", "review", "authorized", "reviewer", "codex", "other", Some("run-1"), false),
-            ("review:reviewer:0", "review", "authorized", "reviewer", "codex", "gpt-5.6-sol", Some("other"), false),
-            ("review:reviewer:0", "review", "authorized", "reviewer", "codex", "gpt-5.6-sol", Some("run-1"), true),
+            (
+                "other",
+                "review",
+                "authorized",
+                "reviewer",
+                "codex",
+                "gpt-5.6-sol",
+                Some("run-1"),
+                false,
+            ),
+            (
+                "review:reviewer:0",
+                "other",
+                "authorized",
+                "reviewer",
+                "codex",
+                "gpt-5.6-sol",
+                Some("run-1"),
+                false,
+            ),
+            (
+                "review:reviewer:0",
+                "review",
+                "auto",
+                "reviewer",
+                "codex",
+                "gpt-5.6-sol",
+                Some("run-1"),
+                false,
+            ),
+            (
+                "review:reviewer:0",
+                "review",
+                "authorized",
+                "other",
+                "codex",
+                "gpt-5.6-sol",
+                Some("run-1"),
+                false,
+            ),
+            (
+                "review:reviewer:0",
+                "review",
+                "authorized",
+                "reviewer",
+                "claude",
+                "gpt-5.6-sol",
+                Some("run-1"),
+                false,
+            ),
+            (
+                "review:reviewer:0",
+                "review",
+                "authorized",
+                "reviewer",
+                "codex",
+                "other",
+                Some("run-1"),
+                false,
+            ),
+            (
+                "review:reviewer:0",
+                "review",
+                "authorized",
+                "reviewer",
+                "codex",
+                "gpt-5.6-sol",
+                Some("other"),
+                false,
+            ),
+            (
+                "review:reviewer:0",
+                "review",
+                "authorized",
+                "reviewer",
+                "codex",
+                "gpt-5.6-sol",
+                Some("run-1"),
+                true,
+            ),
         ];
         for (id, phase, gate, agent_type, provider, model, manager, fanout) in cases {
             let path = workflow_test_receipt(&[workflow_test_assignment("authorized", 1)]);
             assert!(consume_workflow_assignment_at(
-                &path, "review", "run-1", phase, gate, fanout, id, agent_type,
-                provider, model, manager, "worker-x"
-            ).is_err());
+                &path, "review", "run-1", phase, gate, fanout, id, agent_type, provider, model,
+                manager, "worker-x"
+            )
+            .is_err());
             let receipt: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-            assert_eq!(receipt["workflow_assignments"][0]["launches_consumed"], json!(0));
+            assert_eq!(
+                receipt["workflow_assignments"][0]["launches_consumed"],
+                json!(0)
+            );
             let _ = std::fs::remove_file(path);
         }
     }
@@ -7299,16 +7506,31 @@ mod tests {
     #[test]
     fn workflow_fanout_cap_and_one_shot_approval_are_daemon_owned() {
         let path = workflow_test_receipt(&[workflow_test_assignment("confirm", 2)]);
-        let launch = |task: &str| consume_workflow_assignment_at(
-            &path, "review", "run-1", "review", "confirm", true,
-            "review:reviewer:0", "reviewer", "codex", "gpt-5.6-sol",
-            Some("run-1"), task
-        );
-        assert!(launch("worker-1").unwrap_err().contains("no daemon-recorded"));
+        let launch = |task: &str| {
+            consume_workflow_assignment_at(
+                &path,
+                "review",
+                "run-1",
+                "review",
+                "confirm",
+                true,
+                "review:reviewer:0",
+                "reviewer",
+                "codex",
+                "gpt-5.6-sol",
+                Some("run-1"),
+                task,
+            )
+        };
+        assert!(launch("worker-1")
+            .unwrap_err()
+            .contains("no daemon-recorded"));
         approve_workflow_transition_at(&path, "run-1", "review").unwrap();
         assert!(approve_workflow_transition_at(&path, "run-1", "review").is_err());
         assert!(launch("worker-1").is_ok());
-        assert!(launch("worker-replay").unwrap_err().contains("already consumed"));
+        assert!(launch("worker-replay")
+            .unwrap_err()
+            .contains("already consumed"));
         approve_workflow_transition_at(&path, "run-1", "review").unwrap();
         assert!(launch("worker-2").is_ok());
         assert!(approve_workflow_transition_at(&path, "run-1", "review")

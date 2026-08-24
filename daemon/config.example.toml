@@ -63,6 +63,9 @@ ccw  = "echo effort-down"
 [session]
 focus = { type = "shell", run = "~/.config/focalpoint/adapters/focus-session.sh" }
 unverified_ttl_minutes = 0
+# Require a process/tmux ownership check to fail continuously this long before
+# disconnecting. Tool/lifecycle activity resets the window. Default: 120.
+attachment_probe_grace_seconds = 120
 
 # ---------------------------------------------------------------------------
 # [styles.<state>] — per-state render styles (PROTOCOL.md §3 Styles).

@@ -109,9 +109,33 @@ final class HistoryWorkspaceStore: ObservableObject {
         let eligible = mode == .resume ? record.isResumeEligible : record.isRerunEligible
         guard eligible else { return }
 
-        // Intentionally do not initialize any choice from the source record or
-        // a previous launch. Every launch requires fresh, explicit intent.
-        launchDraft = HistoryLaunchDraft(record: record, mode: mode)
+        // Resume is identity-preserving, not a new launch decision. The
+        // provider's resume token owns the conversation/model context and the
+        // original project/provider are already recorded, so asking the user
+        // to re-submit those values is both redundant and misleading.
+        if mode == .resume {
+            actionHandler(.launch(HistoryLaunchRequest(
+                sourceRecordID: record.id,
+                mode: .resume,
+                project: record.project,
+                provider: record.provider,
+                model: record.model,
+                resumeToken: record.resumeToken,
+                sourcePrompt: nil
+            )))
+            return
+        }
+
+        // A rerun creates a new conversation, but starts from the recorded
+        // conditions so the sheet is a review/override step rather than an
+        // empty form that forgets where the run came from.
+        launchDraft = HistoryLaunchDraft(
+            record: record,
+            mode: mode,
+            project: record.project,
+            provider: record.provider,
+            model: record.model
+        )
     }
 
     func cancelLaunch() {

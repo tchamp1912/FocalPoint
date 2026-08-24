@@ -296,10 +296,12 @@ managed_value="false"
 mux_pane=""
 mux_session=""
 mux_server=""
+mux_socket=""
 if [ -n "${TMUX:-}" ] && [ -n "${FOCALPOINT_TMUX_SERVER:-}" ] && command -v tmux >/dev/null 2>&1; then
   mux_pane=$(tmux -L "$FOCALPOINT_TMUX_SERVER" display-message -p '#{pane_id}' 2>/dev/null) || mux_pane=""
   mux_session=$(tmux -L "$FOCALPOINT_TMUX_SERVER" display-message -p '#{session_name}' 2>/dev/null) || mux_session=""
   mux_server="$FOCALPOINT_TMUX_SERVER"
+  mux_socket="${TMUX%%,*}"
   [ -n "$mux_pane" ] && [ -n "$mux_session" ] && managed_value="true"
 fi
 
@@ -325,11 +327,13 @@ case "$event" in
         [ -n "$resume_label" ] || resume_label=$(extract_title "$transcript_path" "$title_cache")
         [ -n "$resume_label" ] || resume_label="$(basename "${cwd:-.}")"
         resume_args=(idle --session "$session_id" --kind claude --cwd "$cwd" --label "$resume_label" --refresh-identity)
-        resume_args+=(--meta "managed=$managed_value" --meta "mux_pane=$mux_pane" --meta "mux_session=$mux_session" --meta "mux_server=$mux_server")
+        resume_args+=(--meta "managed=$managed_value" --meta "mux_pane=$mux_pane" --meta "mux_session=$mux_session" --meta "mux_server=$mux_server" --meta "mux_socket=$mux_socket")
         resume_args+=(--meta "resume_session_id=$FOCALPOINT_RESUME_SESSION_ID")
         [ -n "${transcript_path:-}" ] && resume_args+=(--meta "transcript_path=$transcript_path")
         [ -n "${FOCALPOINT_RELAUNCH_ID:-}" ] && \
           resume_args+=(--meta "relaunch_id=$FOCALPOINT_RELAUNCH_ID")
+        [ -n "${FOCALPOINT_LAUNCH_ID:-}" ] && \
+          resume_args+=(--meta "launch_id=$FOCALPOINT_LAUNCH_ID")
         [ -n "${FOCALPOINT_ORCHESTRATOR_TASK_ID:-}" ] && \
           resume_args+=(--meta "orchestrator_task_id=$FOCALPOINT_ORCHESTRATOR_TASK_ID")
         [ -n "${FOCALPOINT_SESSION_TITLE:-}" ] && \
@@ -362,11 +366,11 @@ case "$event" in
       # today's behavior.
       if [ -n "${FOCALPOINT_CHANNEL_ID:-}" ]; then
         "$FOCALPOINT" set-meta --session "$session_id" --kind claude \
-          --meta "managed=$managed_value" --meta "mux_pane=$mux_pane" --meta "mux_session=$mux_session" --meta "mux_server=$mux_server" \
+          --meta "managed=$managed_value" --meta "mux_pane=$mux_pane" --meta "mux_session=$mux_session" --meta "mux_server=$mux_server" --meta "mux_socket=$mux_socket" \
           --meta "channel_id=$FOCALPOINT_CHANNEL_ID" >/dev/null 2>&1 || true
       else
         "$FOCALPOINT" set-meta --session "$session_id" --kind claude \
-          --meta "managed=$managed_value" --meta "mux_pane=$mux_pane" --meta "mux_session=$mux_session" --meta "mux_server=$mux_server" >/dev/null 2>&1 || true
+          --meta "managed=$managed_value" --meta "mux_pane=$mux_pane" --meta "mux_session=$mux_session" --meta "mux_server=$mux_server" --meta "mux_socket=$mux_socket" >/dev/null 2>&1 || true
       fi
       channel_pull
     fi
@@ -472,10 +476,12 @@ if [ -n "${session_id:-}" ]; then
   [ -n "$label" ] || label=$(extract_title "$transcript_path" "$title_cache")
   [ -n "$label" ] || label="$(basename "${cwd:-.}")"
   args+=(--session "$session_id" --kind claude --cwd "$cwd" --label "$label")
-  args+=(--meta "managed=$managed_value" --meta "mux_pane=$mux_pane" --meta "mux_session=$mux_session" --meta "mux_server=$mux_server")
+  args+=(--meta "managed=$managed_value" --meta "mux_pane=$mux_pane" --meta "mux_session=$mux_session" --meta "mux_server=$mux_server" --meta "mux_socket=$mux_socket")
   [ -n "${transcript_path:-}" ] && args+=(--meta "transcript_path=$transcript_path")
   [ -n "${FOCALPOINT_RELAUNCH_ID:-}" ] && \
     args+=(--meta "relaunch_id=$FOCALPOINT_RELAUNCH_ID")
+  [ -n "${FOCALPOINT_LAUNCH_ID:-}" ] && \
+    args+=(--meta "launch_id=$FOCALPOINT_LAUNCH_ID")
   [ -n "${FOCALPOINT_RESUME_SESSION_ID:-}" ] && \
     args+=(--meta "resume_session_id=$FOCALPOINT_RESUME_SESSION_ID")
   [ -n "${FOCALPOINT_ORCHESTRATOR_TASK_ID:-}" ] && \

@@ -37,6 +37,7 @@ grep -F -- '--meta pid=7777' "$CAPTURE" >/dev/null
 grep -F -- '--meta tty=/dev/ttys077' "$CAPTURE" >/dev/null
 grep -F -- '--meta attachment_registration=true' "$CAPTURE" >/dev/null
 grep -F -- '--meta mux_server=fp-cursor-self-42' "$CAPTURE" >/dev/null
+grep -F -- '--meta mux_socket=/tmp/tmux-501/fp-cursor-self-42' "$CAPTURE" >/dev/null
 grep -F -- '--meta orchestrator_task_id=cursor-self' "$CAPTURE" >/dev/null
 grep -F -- 'end-session cursor-real-id' "$CAPTURE" >/dev/null
 

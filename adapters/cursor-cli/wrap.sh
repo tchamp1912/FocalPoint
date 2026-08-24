@@ -72,7 +72,7 @@ load_field() {
 }
 
 emit_state() {
-  local state="$1" session cwd model label mux_pane mux_session pane_pid pane_tty
+  local state="$1" session cwd model label mux_pane mux_session mux_socket pane_pid pane_tty
   # A Cursor headless stream is the first point at which Cursor gives us its
   # real chat id. Carry the managed-launch identity through that registration
   # so `fpctl-agent` channel and ownership operations work exactly like the
@@ -86,13 +86,15 @@ emit_state() {
   [ -n "${FOCALPOINT_CHANNEL_ID:-}" ] && meta_args+=(--meta "channel_id=${FOCALPOINT_CHANNEL_ID}")
   [ -n "${FOCALPOINT_SESSION_TITLE:-}" ] && meta_args+=(--meta "session_title=${FOCALPOINT_SESSION_TITLE}")
   [ -n "${FOCALPOINT_SESSION_SLOT:-}" ] && meta_args+=(--meta "requested_slot=${FOCALPOINT_SESSION_SLOT}")
+  [ -n "${FOCALPOINT_LAUNCH_ID:-}" ] && meta_args+=(--meta "launch_id=${FOCALPOINT_LAUNCH_ID}")
   if [ -n "${TMUX:-}" ] && [ -n "${FOCALPOINT_TMUX_SERVER:-}" ] && command -v tmux >/dev/null 2>&1; then
+    mux_socket="${TMUX%%,*}"
     mux_pane=$(tmux -L "$FOCALPOINT_TMUX_SERVER" display-message -p '#{pane_id}' 2>/dev/null) || mux_pane=""
     mux_session=$(tmux -L "$FOCALPOINT_TMUX_SERVER" display-message -p '#{session_name}' 2>/dev/null) || mux_session=""
     pane_pid=$(tmux -L "$FOCALPOINT_TMUX_SERVER" display-message -p '#{pane_pid}' 2>/dev/null) || pane_pid=""
     pane_tty=$(tmux -L "$FOCALPOINT_TMUX_SERVER" display-message -p '#{pane_tty}' 2>/dev/null) || pane_tty=""
     if [ -n "$mux_pane" ] && [ -n "$mux_session" ]; then
-      meta_args+=(--meta "mux_server=${FOCALPOINT_TMUX_SERVER}" --meta "mux_session=$mux_session" --meta "mux_pane=$mux_pane")
+      meta_args+=(--meta "mux_server=${FOCALPOINT_TMUX_SERVER}" --meta "mux_socket=$mux_socket" --meta "mux_session=$mux_session" --meta "mux_pane=$mux_pane")
     fi
     [ -n "$pane_pid" ] && meta_args+=(--meta "pid=$pane_pid")
     [ -n "$pane_tty" ] && meta_args+=(--meta "tty=$pane_tty" --meta 'attachment_registration=true')

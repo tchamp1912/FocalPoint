@@ -195,7 +195,9 @@ impl TestDaemon {
         let mut events = Vec::new();
         loop {
             let mut line = String::new();
-            reader.read_line(&mut line).expect("read subscription event");
+            reader
+                .read_line(&mut line)
+                .expect("read subscription event");
             assert!(!line.is_empty(), "subscription closed before snapshot-end");
             let event: Value = serde_json::from_str(line.trim()).expect("valid event JSON");
             let complete = event["event"] == "snapshot-end";
@@ -261,8 +263,14 @@ fn subscription_snapshot_is_framed_and_includes_disconnected_sessions() {
         events.first().unwrap()["generation"],
         events.last().unwrap()["generation"]
     );
-    let live = events.iter().find(|event| event["session"] == "live").unwrap();
-    let gone = events.iter().find(|event| event["session"] == "gone").unwrap();
+    let live = events
+        .iter()
+        .find(|event| event["session"] == "live")
+        .unwrap();
+    let gone = events
+        .iter()
+        .find(|event| event["session"] == "gone")
+        .unwrap();
     assert_eq!(live["connected"], true);
     assert_eq!(
         live["slot"],
@@ -292,10 +300,23 @@ fn pane_local_reregister_reconstructs_managed_identity() {
     let fake_tmux_text = fake_tmux.to_string_lossy().to_string();
     let output = d.cli_with_env(
         &[
-            "re-register", "--session", "provider-session", "--kind", "codex",
-            "--title", "Parser implementation", "--task-id", "worker-1",
-            "--role", "worker", "--manager-task-id", "orchestrator-1",
-            "--slot", "4", "--state", "thinking",
+            "re-register",
+            "--session",
+            "provider-session",
+            "--kind",
+            "codex",
+            "--title",
+            "Parser implementation",
+            "--task-id",
+            "worker-1",
+            "--role",
+            "worker",
+            "--manager-task-id",
+            "orchestrator-1",
+            "--slot",
+            "4",
+            "--state",
+            "thinking",
         ],
         &[
             ("TMUX", "/tmp/tmux-501/fp-worker-42,123,0"),
@@ -633,7 +654,10 @@ fn compaction_continuation_carries_stats_and_resets_context() {
 
 #[test]
 fn dead_pid_sweep_reaps_and_tombstone_is_recoverable() {
-    let d = TestDaemon::start();
+    let d = TestDaemon::start_with(
+        Some("[session]\nattachment_probe_grace_seconds = 30\n"),
+        None,
+    );
     let attachment = missing_process_attachment_meta(999_999_999, 101);
 
     d.cli_ok(&[
@@ -665,7 +689,8 @@ fn dead_pid_sweep_reaps_and_tombstone_is_recoverable() {
     );
 
     // The real attachment probe runs every 15 seconds and requires failures
-    // spanning 30 seconds before detaching an absent process. This proves the
+    // spanning this test's configured 30 seconds before detaching an absent
+    // process. Production defaults to a more tolerant 120 seconds. This proves the
     // debounce and durable disconnected row end to end in a live daemon.
     d.wait_until(Duration::from_secs(70), || {
         d.cli_json(&["sessions", "--json"])
@@ -708,7 +733,10 @@ fn dead_pid_sweep_reaps_and_tombstone_is_recoverable() {
 
 #[test]
 fn shared_label_and_cwd_do_not_recover_a_dead_tty_tombstone() {
-    let d = TestDaemon::start();
+    let d = TestDaemon::start_with(
+        Some("[session]\nattachment_probe_grace_seconds = 30\n"),
+        None,
+    );
     let old_attachment = missing_process_attachment_meta(111_111, 201);
     let new_attachment = missing_process_attachment_meta(222_222, 202);
 
@@ -783,10 +811,19 @@ fn shared_label_and_cwd_do_not_recover_a_dead_tty_tombstone() {
     let sessions = d.cli_json(&["sessions", "--json"]);
     let arr = sessions.as_array().unwrap();
     assert_eq!(arr.len(), 2);
-    let new = arr.iter().find(|session| session["session"] == "new").unwrap();
+    let new = arr
+        .iter()
+        .find(|session| session["session"] == "new")
+        .unwrap();
     assert_eq!(new["connected"], serde_json::json!(true));
-    assert_eq!(new["meta"]["turns"], 1, "fresh session must not inherit old totals");
-    let old = arr.iter().find(|session| session["session"] == "old").unwrap();
+    assert_eq!(
+        new["meta"]["turns"], 1,
+        "fresh session must not inherit old totals"
+    );
+    let old = arr
+        .iter()
+        .find(|session| session["session"] == "old")
+        .unwrap();
     assert_eq!(old["connected"], serde_json::json!(false));
 }
 
