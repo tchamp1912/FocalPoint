@@ -33,6 +33,13 @@ struct DesktopWidgetView: View {
     @ObservedObject var model: AppModel
     var onOpenSettings: () -> Void
     var onQuit: () -> Void
+    /// The widget is a borderless, non-activating panel, so preflight can't
+    /// be a sheet here — picking a formation hands the package to the app
+    /// delegate, which opens a real window for it.
+    var onStartWorkflow: (FormationPackage) -> Void
+    /// The "+" menu's "New Agent…" item — opens the managed quick-launch
+    /// window (same reason: panels don't host that flow).
+    var onQuickLaunch: () -> Void
     /// Reports grip drag start/end so the window controller can keep
     /// mid-drag content refits pinned to the same corner as the grip.
     var onGripDragChanged: (Bool) -> Void
@@ -176,11 +183,45 @@ struct DesktopWidgetView: View {
                 .padding(.vertical, 5)
                 Divider().padding(.horizontal, 10)
             }
+            if let outcome = model.workflowLauncher.outcome {
+                workflowLaunchOutcomeLine(outcome)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 5)
+                Divider().padding(.horizontal, 10)
+            }
             verticalSessionsArea
             verticalUsageSection
         }
         .padding(.vertical, 8)
         .frame(width: widthOverride ?? 260, alignment: .leading)
+    }
+
+    /// Compact launch-outcome line for widget-initiated workflow starts —
+    /// the shared launcher model means a start confirmed in the preflight
+    /// window reports back here (and in the dropdown) rather than vanishing.
+    private func workflowLaunchOutcomeLine(_ outcome: WorkflowLauncherModel.LaunchOutcome) -> some View {
+        HStack(alignment: .top, spacing: 5) {
+            switch outcome {
+            case .launched(let name, let detail):
+                Label("\(name): \(detail)", systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            case .failed(let name, let detail):
+                Label("\(name): \(detail)", systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.red)
+                    .lineLimit(3)
+            }
+            Spacer(minLength: 2)
+            Button { model.workflowLauncher.dismissOutcome() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Dismiss")
+        }
     }
 
     /// Drag handle bar: the one "background chrome" region — drag to move
@@ -194,6 +235,7 @@ struct DesktopWidgetView: View {
                 .frame(width: 28, height: 18)
             Text("FocalPoint").font(.system(size: 12, weight: .semibold))
             Spacer()
+            startWorkflowButton
             Text(model.connected ? model.aggregate.display : "Offline")
                 .font(.system(size: 10))
                 .foregroundStyle(model.connected ? .secondary : Color.red.opacity(0.85))
@@ -202,6 +244,19 @@ struct DesktopWidgetView: View {
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .background(WindowDragHandle())
+    }
+
+    /// The widget's start affordance: a compact "+" popping the same
+    /// formations menu as the dropdown's Start Workflow row (over the
+    /// launcher model both surfaces share), topped with "New Agent…" for
+    /// a single managed launch.
+    private var startWorkflowButton: some View {
+        WorkflowStartMenu(launcher: model.workflowLauncher,
+                          daemonConnected: model.connected,
+                          showsTextLabel: false,
+                          onQuickLaunch: onQuickLaunch,
+                          onPreflight: onStartWorkflow)
+        .onAppear { model.workflowLauncher.refresh() }
     }
 
     /// Height always fits the content (only the width is user-pinnable), so
@@ -232,20 +287,84 @@ struct DesktopWidgetView: View {
 
     @ViewBuilder
     private var sessionList: some View {
-        // Grouping is a reordering of these same rows. When nothing is
-        // grouped (no live orchestrator, or a launcher that reports no
-        // orchestration meta) fall back to the flat list rather than drawing
-        // a single pointless "Ungrouped" header over everything.
-        if model.desktopWidgetGrouping == .byOrchestrator && model.hasOrchestratorGroups {
-            groupedSessionList
-        } else {
-            VStack(spacing: 1) {
-                ForEach(model.activeSessions) { s in
-                    sessionRowButton(s)
+        let partition = model.workflowRunPartition
+        VStack(spacing: 0) {
+            // Workflow runs first: a run's agents nest under the run's
+            // header instead of mixing into the flat list — the workflow is
+            // the thing the human launched, so it's the grouping they look
+            // for. Slots are untouched; badges stay non-monotonic down the
+            // list, exactly as with orchestrator grouping.
+            ForEach(partition.runs) { run in
+                VStack(spacing: 1) {
+                    workflowRunHeader(run)
+                    ForEach(run.members) { member in
+                        sessionRowButton(member)
+                            .padding(.leading, 12)
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.top, 4)
+            }
+            if !partition.rest.isEmpty {
+                // Grouping is a reordering of these same rows. When nothing
+                // is grouped (no live orchestrator, or a launcher that
+                // reports no orchestration meta) fall back to the flat list
+                // rather than drawing a single pointless "Ungrouped" header
+                // over everything.
+                if model.desktopWidgetGrouping == .byOrchestrator && model.hasOrchestratorGroups {
+                    groupedSessionList
+                } else {
+                    VStack(spacing: 1) {
+                        ForEach(partition.rest) { s in
+                            sessionRowButton(s)
+                        }
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.top, 4)
                 }
             }
-            .padding(.horizontal, 6)
-            .padding(.top, 4)
+        }
+    }
+
+    /// A live workflow run's header row: state swatch, formation name,
+    /// member count. Tapping focuses the run's lead (the orchestrator when
+    /// identifiable) — the same target a double-tap on a member's number
+    /// hotkey selects.
+    private func workflowRunHeader(_ run: WorkflowRunGroup) -> some View {
+        Button {
+            if let lead = run.lead { model.focusSession(lead) }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "person.3.sequence")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                Text(run.displayName)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text("· \(run.members.count)")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                Spacer()
+                StateSwatch(state: run.aggregate,
+                            color: model.styles[run.aggregate]?.color ?? defaultStyle(run.aggregate).color,
+                            size: 8)
+            }
+            .contentShape(Rectangle())
+            .padding(.horizontal, 5)
+            .padding(.vertical, 5)
+        }
+        .buttonStyle(.plain)
+        .help(run.phases.isEmpty
+              ? "Workflow run — click to focus its lead"
+              : "Workflow run · \(run.phases.joined(separator: " · ")) — click to focus its lead")
+        .contextMenu {
+            if let lead = run.lead {
+                Button("Focus Lead") { model.focusSession(lead) }
+            }
+            Button("Focus Next Attention in Run") { model.focusNextAttentionSession(inRun: run.runID) }
+                .disabled(!run.needsAttention)
         }
     }
 
@@ -504,6 +623,7 @@ struct DesktopWidgetView: View {
                     .frame(width: 18, height: 12)
                     .help(model.connected ? "FocalPoint · \(model.aggregate.display)" : "FocalPoint · Offline")
                 horizontalSessionsArea
+                startWorkflowButton
             }
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
@@ -622,6 +742,16 @@ struct DesktopWidgetView: View {
         .shadow(color: keyColor.opacity(shouldHighlightAttention(s) ? 0.85 : 0), radius: 3.5)
         .opacity(dimmed ? 0.45 : 1)
         .padding(.vertical, 3)   // even strip height across key sizes
+        // Workflow membership reads as a shared accent underline — slots
+        // stay in daemon order, but a run's keys carry the same mark.
+        .overlay(alignment: .bottom) {
+            if let accent = runAccent(for: s) {
+                Capsule(style: .continuous)
+                    .fill(accent)
+                    .frame(height: 2.5)
+                    .padding(.horizontal, 1)
+            }
+        }
     }
 
     private func renameBinding(for s: SessionInfo) -> Binding<Bool> {
@@ -648,6 +778,10 @@ struct DesktopWidgetView: View {
             status = s.state.display
         }
         lines.append("\(status) · \(elapsedString(since: s.lastChange))")
+        if let runID = s.workflowRunID, !runID.isEmpty,
+           let run = model.workflowRunPartition.runs.first(where: { $0.id == runID }) {
+            lines.append("Workflow: \(run.displayName)\(s.isOrchestrator ? " (orchestrator)" : "")")
+        }
         if let n = model.orchestratorNumber(for: s) {
             lines.append("Orchestrator O\(n) · \(model.managedSessionCount(for: s)) workers")
         }
@@ -676,6 +810,22 @@ struct DesktopWidgetView: View {
     private func attentionColor(for session: SessionInfo) -> Color {
         (model.styles[session.state] ?? defaultStyle(session.state)).color
     }
+
+    /// Stable accent per live workflow run, shown as the keycap underline in
+    /// the horizontal strip so a run's keys read as one unit. Indexed by the
+    /// run's position in the partition (first-appearance order), not hashed,
+    /// so colors spread across the palette instead of colliding.
+    private func runAccent(for session: SessionInfo) -> Color? {
+        guard let runID = session.workflowRunID, !runID.isEmpty,
+              let index = model.workflowRunPartition.runs.firstIndex(where: { $0.id == runID }) else {
+            return nil
+        }
+        return Self.runAccentPalette[index % Self.runAccentPalette.count]
+    }
+
+    private static let runAccentPalette: [Color] = [
+        .blue, .purple, .orange, .teal, .pink, .indigo, .mint, .cyan,
+    ]
 
     private func sessionRow(_ s: SessionInfo) -> some View {
         let hasStats = SessionStat.allCases.contains { model.visibleStats.contains($0) && s.stats[$0] != nil }
@@ -963,6 +1113,13 @@ final class DesktopOverlayController: NSObject, NSWindowDelegate {
 
     /// Set by the app delegate so the widget's context menu can open Settings.
     var onOpenSettings: (() -> Void)?
+    /// Set by the app delegate so the widget's "+" menu can present workflow
+    /// preflight in a real window (this panel is borderless/non-activating,
+    /// so a sheet is the wrong tool).
+    var onStartWorkflow: ((FormationPackage) -> Void)?
+    /// Set by the app delegate so the "+" menu's "New Agent…" can open the
+    /// managed quick-launch window.
+    var onQuickLaunch: (() -> Void)?
 
     private static let originXKey = "desktopWidgetOriginX"
     private static let originYKey = "desktopWidgetOriginY"
@@ -983,21 +1140,24 @@ final class DesktopOverlayController: NSObject, NSWindowDelegate {
             model.$desktopWidgetMode, model.$aggregate,
             model.$sessions, model.$desktopWidgetHotkeyHidden
         )
-        Publishers.CombineLatest(visibilityInputs, model.$managedRelaunchStatus)
+        Publishers.CombineLatest3(visibilityInputs, model.$managedRelaunchStatus,
+                                  model.$mainWindowVisible)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] inputs, relaunchStatus in
+            .sink { [weak self] inputs, relaunchStatus, mainWindowVisible in
                 let (mode, aggregate, sessions, hotkeyHidden) = inputs
                 self?.updateVisibility(mode: mode, aggregate: aggregate, sessions: sessions,
                                         hotkeyHidden: hotkeyHidden,
-                                        hasRelaunchStatus: relaunchStatus != nil)
+                                        hasRelaunchStatus: relaunchStatus != nil,
+                                        mainWindowVisible: mainWindowVisible)
             }
             .store(in: &cancellables)
     }
 
     private func updateVisibility(mode: DesktopWidgetMode, aggregate: AgentState,
                                    sessions: [SessionInfo], hotkeyHidden: Bool,
-                                   hasRelaunchStatus: Bool) {
-        guard !hotkeyHidden else { setVisible(false); return }
+                                   hasRelaunchStatus: Bool,
+                                   mainWindowVisible: Bool) {
+        guard !hotkeyHidden, !mainWindowVisible else { setVisible(false); return }
         switch mode {
         case .hidden:
             setVisible(false)
@@ -1042,6 +1202,8 @@ final class DesktopOverlayController: NSObject, NSWindowDelegate {
             model: model,
             onOpenSettings: { [weak self] in self?.onOpenSettings?() },
             onQuit: { NSApp.terminate(nil) },
+            onStartWorkflow: { [weak self] in self?.onStartWorkflow?($0) },
+            onQuickLaunch: { [weak self] in self?.onQuickLaunch?() },
             onGripDragChanged: { [weak self] in self?.gripResizing = $0 }
         )
         p.contentViewController = NSHostingController(rootView: view)

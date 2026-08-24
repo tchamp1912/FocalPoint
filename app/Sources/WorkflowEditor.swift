@@ -1128,39 +1128,6 @@ final class WorkflowEditorModel: ObservableObject {
 
 // MARK: - Editor window
 
-/// Owns the one Workflow Editor window. Follows the Settings window pattern
-/// (lazily created NSWindow hosting SwiftUI, non-opaque with a transparent
-/// titlebar so the pane materials render as real vibrancy), but lives here
-/// rather than on AppDelegate so the feature adds no edits outside its own
-/// files.
-@MainActor
-final class WorkflowEditorWindow {
-    static let shared = WorkflowEditorWindow()
-
-    private var windowController: NSWindowController?
-    private let store = WorkflowEditorModel()
-
-    func show() {
-        if windowController == nil {
-            let viewController = NSHostingController(rootView: WorkflowEditorView(store: store))
-            let window = NSWindow(contentViewController: viewController)
-            window.title = "Workflow Editor"
-            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            window.isOpaque = false
-            window.backgroundColor = .clear
-            window.titlebarAppearsTransparent = true
-            window.isReleasedWhenClosed = false
-            window.setContentSize(NSSize(width: 780, height: 540))
-            window.setFrameAutosaveName("FocalPointWorkflowEditor")
-            if !window.setFrameUsingName("FocalPointWorkflowEditor") {
-                window.center()
-            }
-            windowController = NSWindowController(window: window)
-        }
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-        windowController?.showWindow(nil)
-        windowController?.window?.makeKeyAndOrderFront(nil)
-        store.reload()
-    }
-}
+// The standalone Workflow Editor window was consolidated into the unified
+// main window — see MainWindowController in MainWindowView.swift. The
+// launch menu's "Workflow Editor…" item lands there via `showWorkflows()`.

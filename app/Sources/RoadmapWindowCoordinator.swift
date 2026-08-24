@@ -22,27 +22,14 @@ final class RoadmapWindowCoordinator {
         }
     }
 
-    func showSessionTriage() {
-        show("session-triage", title: "Session Triage", size: NSSize(width: 860, height: 620)) { [weak self] in
-            AnyView(LiveSessionTriageView(model: self?.model ?? .shared))
-        }
-    }
-
-    func showWorkflowDashboard() {
-        show("workflow-dashboard", title: "Workflow Runs", size: NSSize(width: 980, height: 680)) { [weak self] in
-            AnyView(LiveWorkflowDashboardView(model: self?.model ?? .shared))
-        }
-    }
+    // Session Triage, History, and the workflow-runs dashboard live in the
+    // unified main window (MainWindowController); the Live* views below are
+    // shared with it. Quick Launch and Diagnostics stay standalone windows:
+    // both are modal-ish task flows, not browsing surfaces.
 
     func showDiagnostics() {
         show("diagnostics", title: "FocalPoint Setup Diagnostics", size: NSSize(width: 720, height: 700)) { [weak self] in
             AnyView(LiveSetupDiagnosticsView(model: self?.model ?? .shared))
-        }
-    }
-
-    func showHistory() {
-        show("history", title: "FocalPoint History", size: NSSize(width: 980, height: 680)) { [weak self] in
-            AnyView(LiveHistoryWorkspaceView(model: self?.model ?? .shared))
         }
     }
 
@@ -84,7 +71,9 @@ private struct LiveQuickLaunchView: View {
     }
 }
 
-private struct LiveSessionTriageView: View {
+/// Live session triage over AppModel. Shared by the unified main window's
+/// Triage detail.
+struct LiveSessionTriageView: View {
     @ObservedObject var model: AppModel
     @StateObject private var triage: SessionTriageViewModel
 
@@ -114,7 +103,9 @@ private struct LiveSessionTriageView: View {
     }
 }
 
-private struct LiveWorkflowDashboardView: View {
+/// Live workflow-runs dashboard over AppModel. Shared by the roadmap window
+/// and the unified main window's Runs detail.
+struct LiveWorkflowDashboardView: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
@@ -168,7 +159,9 @@ private struct LiveSetupDiagnosticsView: View {
     }
 }
 
-private struct LiveHistoryWorkspaceView: View {
+/// Live history workspace over AppModel. Shared by the unified main
+/// window's History detail.
+struct LiveHistoryWorkspaceView: View {
     @ObservedObject var model: AppModel
     @StateObject private var store: HistoryWorkspaceStore
 

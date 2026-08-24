@@ -73,7 +73,7 @@ private struct LiquidGlassSurface: ViewModifier {
     private func native(_ content: Content) -> some View {
         let glass: Glass = tint.map { Glass.clear.tint($0) } ?? .clear
         switch role {
-        case .floatingPanel(let opacity), .sidebarPane(let opacity), .detailPane(let opacity):
+        case .floatingPanel(let opacity):
             // Drawn as a background layer rather than applied to `content`
             // directly, so the Translucency setting can fade the glass
             // without also fading the text and icons on top of it.
@@ -82,11 +82,33 @@ private struct LiquidGlassSurface: ViewModifier {
                     .glassEffect(glass, in: shape)
                     .opacity(opacity)
             }
-        case .menuPanel, .card, .chip:
-            content.glassEffect(glass, in: shape)
-        case .settingsCard:
+        case .sidebarPane(let opacity), .detailPane(let opacity):
+            // Settings/editor panes use `.regular`, not `.clear`: these are
+            // reading/editing surfaces, so legibility beats see-through. The
+            // widget keeps `.clear` because its Translucency slider exists
+            // precisely to dial that look in.
             content.background {
-                shape.fill(.background.opacity(0.88))
+                shape.fill(.clear)
+                    .glassEffect(.regular, in: shape)
+                    .opacity(opacity)
+            }
+        case .menuPanel:
+            content.glassEffect(glass, in: shape)
+        case .card, .chip, .settingsCard:
+            // Cards always sit *inside* an already-glassed pane or panel in
+            // this app, and `.clear` stacked on glass composites as milky
+            // double refraction. `.regular` carries its own adaptive
+            // backdrop, so cards read as raised glass — the layered macOS 26
+            // look — in both light and dark mode.
+            //
+            // Drawn as a background layer, exactly like the panes above:
+            // `content.glassEffect` on list rows inside ScrollViews renders
+            // as solid white boxes in this non-opaque window, while the
+            // background-layer path composites correctly.
+            let raised: Glass = tint.map { Glass.regular.tint($0) } ?? .regular
+            content.background {
+                shape.fill(.clear)
+                    .glassEffect(raised, in: shape)
             }
         }
     }
@@ -113,18 +135,20 @@ private struct LiquidGlassSurface: ViewModifier {
                 )
                 .overlay(shape.strokeBorder(.white.opacity(0.14), lineWidth: 1))
         case .card:
-            content.background(shape.fill(.primary.opacity(0.10)))
+            // A tint (e.g. triage's attention highlight) replaces the
+            // neutral fill rather than layering over it.
+            content.background(shape.fill(tint ?? Color.primary.opacity(0.10)))
         case .settingsCard:
             content.background {
                 shape.fill(Color(nsColor: .windowBackgroundColor).opacity(0.92))
             }
             .overlay(shape.strokeBorder(.primary.opacity(0.06), lineWidth: 1))
         case .chip:
-            content.background(shape.fill(.primary.opacity(0.08)))
+            content.background(shape.fill(tint ?? Color.primary.opacity(0.08)))
         case .sidebarPane(let opacity):
-            content.background(VisualEffectView(material: .sidebar, blendingMode: .behindWindow).opacity(opacity))
+            content.background(VisualEffectView(material: .sidebar, blendingMode: .withinWindow).opacity(opacity))
         case .detailPane(let opacity):
-            content.background(VisualEffectView(material: .underPageBackground, blendingMode: .behindWindow).opacity(opacity))
+            content.background(VisualEffectView(material: .underPageBackground, blendingMode: .withinWindow).opacity(opacity))
         }
     }
 }

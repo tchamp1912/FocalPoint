@@ -374,59 +374,46 @@ final class WorkflowLauncherModel: ObservableObject {
     }
 }
 
-// MARK: - Menu-bar section view
+// MARK: - Shared start-workflow menu
 
-/// The "Start Workflow" row of the dropdown panel: a submenu listing the
-/// installed formations, plus honest inline status (offline, launching,
-/// launch failed, malformed packages). Visual language matches the rest of
-/// MenuContentView: Metrics.hPad margins, caption/callout type, footer-style
-/// borderless controls.
-struct WorkflowLauncherSection: View {
+/// The formations menu, shared by the dropdown's "Start Workflow" row and
+/// the desktop widget's "+" button. Owns the bundled-install confirmation;
+/// preflight presentation is the caller's choice — the dropdown shows a
+/// sheet, the widget (a borderless, non-activating panel) routes through
+/// `onPreflight` so the app delegate can open a real window.
+struct WorkflowStartMenu: View {
     @ObservedObject var launcher: WorkflowLauncherModel
     let daemonConnected: Bool
-    /// A convenience displayed in preflight only. It is never selected unless
-    /// the human explicitly presses "Select This Folder".
-    let targetCwd: String
-    @State private var preflightPackage: FormationPackage?
+    /// False renders a compact "+" glyph (the widget's drag handle); true
+    /// renders the full "Start Workflow" label (the menu-bar dropdown).
+    var showsTextLabel: Bool = true
+    /// When set, a "New Agent…" item tops the menu (the widget's "+" is the
+    /// start-anything affordance). Nil keeps the menu workflow-only — the
+    /// dropdown already has Launch Managed Agent in its footer.
+    var onQuickLaunch: (() -> Void)? = nil
+    let onPreflight: (FormationPackage) -> Void
     @State private var bundledInstall: FormationPackage?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                startMenu
-                if !daemonConnected {
-                    Text("Daemon offline")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                }
-                Spacer()
-                if !launcher.issues.isEmpty {
-                    Label("\(launcher.issues.count)", systemImage: "exclamationmark.triangle")
-                        .font(.caption2)
-                        .foregroundStyle(.orange)
-                        .help(launcher.issues
-                            .map { "\($0.directoryName): \($0.message)" }
-                            .joined(separator: "\n"))
-                }
-            }
-            if let launchingName {
-                HStack(spacing: 6) {
-                    ProgressView()
-                        .controlSize(.small)
-                        .scaleEffect(0.7)
-                    Text("Launching \(launchingName) orchestrator\u{2026}")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-            }
-            if let outcome = launcher.outcome {
-                outcomeLine(outcome)
-            }
-            if let outcome = launcher.catalogOutcome {
-                catalogOutcomeLine(outcome)
+        Menu {
+            menuContent
+        } label: {
+            if showsTextLabel {
+                Label("Start Workflow", systemImage: "person.3.sequence")
+            } else {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle())
             }
         }
-        .padding(.horizontal, Metrics.hPad)
-        .padding(.vertical, 8)
-        .onAppear { launcher.refresh() }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(showsTextLabel ? .visible : .hidden)
+        .fixedSize()
+        .font(showsTextLabel ? .callout : .body)
+        .help(daemonConnected
+              ? "Launch one orchestrator agent for an installed formation — the orchestrator expands and runs the crew"
+              : "The daemon is offline, so workflows can't be launched — installed packages are still listed")
         .alert(item: $bundledInstall) { package in
             Alert(
                 title: Text("Install bundled workflow?"),
@@ -437,39 +424,19 @@ struct WorkflowLauncherSection: View {
                 secondaryButton: .cancel()
             )
         }
-        .sheet(item: $preflightPackage) { package in
-            WorkflowLaunchPreflightView(
-                package: package,
-                suggestedDirectory: URL(fileURLWithPath: targetCwd, isDirectory: true),
-                daemonConnected: daemonConnected
-            ) { configuration in
-                launcher.start(package, configuration: configuration)
-            }
-        }
-    }
-
-    private var launchingName: String? {
-        guard let id = launcher.launchInFlightID else { return nil }
-        return launcher.packages.first(where: { $0.id == id })?.name ?? id
-    }
-
-    private var startMenu: some View {
-        Menu {
-            menuContent
-        } label: {
-            Label("Start Workflow", systemImage: "person.3.sequence")
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.visible)
-        .fixedSize()
-        .font(.callout)
-        .help(daemonConnected
-              ? "Launch one orchestrator agent for an installed formation — the orchestrator expands and runs the crew"
-              : "The daemon is offline, so workflows can't be launched — installed packages are still listed")
     }
 
     @ViewBuilder
     private var menuContent: some View {
+        if let onQuickLaunch {
+            Button {
+                onQuickLaunch()
+            } label: {
+                Label("New Agent\u{2026}", systemImage: "person.badge.plus")
+            }
+            .disabled(!daemonConnected)
+            Divider()
+        }
         Text("Project folder is chosen in preflight")
         if !launcher.hasScanned {
             Text("Scanning\u{2026}")
@@ -481,7 +448,7 @@ struct WorkflowLauncherSection: View {
                 Text("Installed")
                 ForEach(launcher.packages) { package in
                     Button {
-                        preflightPackage = package
+                        onPreflight(package)
                     } label: {
                         Label("\(package.name) · \(package.menuDetail)",
                               systemImage: "person.3.sequence")
@@ -521,14 +488,89 @@ struct WorkflowLauncherSection: View {
         Divider()
         Button("Refresh") { launcher.refresh() }
         Button("Open Workflows Folder\u{2026}") { launcher.openWorkflowsFolder() }
-        Button("Workflow Editor\u{2026}") { WorkflowEditorWindow.shared.show() }
+        Button("Workflow Editor\u{2026}") { MainWindowController.shared.showWorkflows() }
     }
 
-    private static func bundledInstallConfirmation(for package: FormationPackage) -> String {
+    static func bundledInstallConfirmation(for package: FormationPackage) -> String {
         let types = package.referencedAgentTypes.joined(separator: ", ")
         return """
         This copies workflow '\(package.name)' and its referenced agent types (\(types)) into your FocalPoint configuration. Existing package directories are never overwritten; installation stops if any collide.
         """
+    }
+
+    static func shortPath(_ url: URL) -> String {
+        url.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+    }
+}
+
+// MARK: - Menu-bar section view
+
+/// The "Start Workflow" row of the dropdown panel: a submenu listing the
+/// installed formations, plus honest inline status (offline, launching,
+/// launch failed, malformed packages). Visual language matches the rest of
+/// MenuContentView: Metrics.hPad margins, caption/callout type, footer-style
+/// borderless controls.
+struct WorkflowLauncherSection: View {
+    @ObservedObject var launcher: WorkflowLauncherModel
+    let daemonConnected: Bool
+    /// A convenience displayed in preflight only. It is never selected unless
+    /// the human explicitly presses "Select This Folder".
+    let targetCwd: String
+    @State private var preflightPackage: FormationPackage?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                WorkflowStartMenu(launcher: launcher, daemonConnected: daemonConnected) {
+                    preflightPackage = $0
+                }
+                if !daemonConnected {
+                    Text("Daemon offline")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+                Spacer()
+                if !launcher.issues.isEmpty {
+                    Label("\(launcher.issues.count)", systemImage: "exclamationmark.triangle")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .help(launcher.issues
+                            .map { "\($0.directoryName): \($0.message)" }
+                            .joined(separator: "\n"))
+                }
+            }
+            if let launchingName {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.7)
+                    Text("Launching \(launchingName) orchestrator\u{2026}")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            if let outcome = launcher.outcome {
+                outcomeLine(outcome)
+            }
+            if let outcome = launcher.catalogOutcome {
+                catalogOutcomeLine(outcome)
+            }
+        }
+        .padding(.horizontal, Metrics.hPad)
+        .padding(.vertical, 8)
+        .onAppear { launcher.refresh() }
+        .sheet(item: $preflightPackage) { package in
+            WorkflowLaunchPreflightView(
+                package: package,
+                suggestedDirectory: URL(fileURLWithPath: targetCwd, isDirectory: true),
+                daemonConnected: daemonConnected
+            ) { configuration in
+                launcher.start(package, configuration: configuration)
+            }
+        }
+    }
+
+    private var launchingName: String? {
+        guard let id = launcher.launchInFlightID else { return nil }
+        return launcher.packages.first(where: { $0.id == id })?.name ?? id
     }
 
     @ViewBuilder
@@ -581,9 +623,5 @@ struct WorkflowLauncherSection: View {
                 .help("Dismiss")
             }
         }
-    }
-
-    private static func shortPath(_ url: URL) -> String {
-        url.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
     }
 }

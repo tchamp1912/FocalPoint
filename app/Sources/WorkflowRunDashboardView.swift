@@ -40,7 +40,8 @@ struct WorkflowRunDashboardView: View {
             }
         }
         .frame(minWidth: 820, minHeight: 570)
-        .background(Color(nsColor: .windowBackgroundColor))
+        // No opaque backdrop of its own — the unified window's detail pane
+        // (glass) is the background.
         .onAppear { repairSelection() }
         .onChange(of: snapshot.activePhaseID) { _, _ in repairSelection() }
         .onChange(of: snapshot.phases.map(\.id)) { _, _ in repairSelection() }
@@ -156,7 +157,7 @@ struct WorkflowRunDashboardView: View {
             }
             .padding(14)
         }
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
+        .background(Color.primary.opacity(0.04))
     }
 
     private var summaryStrip: some View {
@@ -329,8 +330,7 @@ struct WorkflowRunDashboardView: View {
             }
         }
         .padding(14)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(.separator.opacity(0.5), lineWidth: 1))
+        .liquidGlass(.card, radius: 12)
     }
 
     private func healthRow(_ role: WorkflowRunRole) -> some View {
@@ -406,7 +406,7 @@ struct WorkflowRunDashboardView: View {
         }
         .padding(11)
         .frame(maxWidth: .infinity, minHeight: 67)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 11))
+        .liquidGlass(.card, radius: 11)
     }
 
     private func phaseMarker(_ phase: WorkflowRunPhase) -> some View {

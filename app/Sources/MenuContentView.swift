@@ -12,19 +12,17 @@ struct MenuContentView: View {
     @ObservedObject var model: AppModel
     var onSettings: () -> Void
     var onQuickLaunch: () -> Void
-    var onTriage: () -> Void
-    var onWorkflowDashboard: () -> Void
     var onDiagnostics: () -> Void
-    var onHistory: () -> Void
 
     /// Session currently being renamed inline, if any.
     @State private var renamingID: String?
     @State private var pendingStop: SessionInfo?
 
     /// Formation-package scanner + orchestrator launcher for the "Start
-    /// Workflow" row (WorkflowLauncher.swift). Owned here rather than on
-    /// AppModel so the feature stays inside its own file.
-    @StateObject private var workflowLauncher = WorkflowLauncherModel()
+    /// Workflow" row (WorkflowLauncher.swift). Shared with the desktop
+    /// widget's "+" menu via AppModel, so a launch started from either
+    /// surface reports its outcome to both.
+    private var workflowLauncher: WorkflowLauncherModel { model.workflowLauncher }
 
     /// Radius of the window MenuBarExtra hosts the panel in — matched so the
     /// glass shape tracks the real window edge.
@@ -165,26 +163,10 @@ struct MenuContentView: View {
         return max(180, screen.visibleFrame.height - chrome)
     }
 
-    /// Where a started formation runs (WORKFLOWS-PROPOSAL.md §8.2's
-    /// "against the auth refactor"): the session in front of the human, else
-    /// the most recently active connected session, else home. The launcher
-    /// menu shows it as "Runs in …" so the target is visible before anything
-    /// launches, and the orchestrator is told to confirm it when the
-    /// formation plainly targets something else.
-    private var workflowTargetCwd: String {
-        if let id = model.focusedSessionID,
-           let focused = model.sessions.first(where: { $0.id == id }),
-           let cwd = focused.cwd, !cwd.isEmpty {
-            return cwd
-        }
-        if let latest = model.sessions
-            .filter({ $0.connected && !($0.cwd ?? "").isEmpty })
-            .max(by: { $0.lastChange < $1.lastChange }),
-           let cwd = latest.cwd {
-            return cwd
-        }
-        return NSHomeDirectory()
-    }
+    /// Where a started formation runs — the shared heuristic lives on
+    /// AppModel so the dropdown and the widget's "+" preflight suggest the
+    /// same directory.
+    private var workflowTargetCwd: String { model.workflowTargetCwd }
 
     // MARK: Header — aggregate + connection status
 
@@ -220,11 +202,23 @@ struct MenuContentView: View {
     // MARK: Session rows
 
     private var sessionList: some View {
-        VStack(spacing: 0) {
+        let partition = model.workflowRunPartition
+        // The last rendered row of the active area suppresses its trailing
+        // divider — with runs pulled out of the flat list, that row is the
+        // last ungrouped session, else the last run's last member.
+        let lastActiveID = partition.rest.last?.id ?? partition.runs.last?.members.last?.id
+        return VStack(spacing: 0) {
             if !model.activeSessions.isEmpty {
                 VStack(spacing: 1) {
-                    ForEach(model.activeSessions) { s in
-                        sessionRowButton(s, isLastInSection: s.id == model.activeSessions.last?.id)
+                    ForEach(partition.runs) { run in
+                        workflowRunHeader(run)
+                        ForEach(run.members) { s in
+                            sessionRowButton(s, isLastInSection: s.id == lastActiveID)
+                                .padding(.leading, 10)
+                        }
+                    }
+                    ForEach(partition.rest) { s in
+                        sessionRowButton(s, isLastInSection: s.id == lastActiveID)
                     }
                 }
                 .padding(.vertical, 6)
@@ -242,6 +236,53 @@ struct MenuContentView: View {
                 .padding(.horizontal, 6)
             }
         }
+    }
+
+    /// A live workflow run's header: formation name, member count, and the
+    /// run's aggregate state. Tapping focuses the run's lead (the
+    /// orchestrator when identifiable) — the same target double-tapping a
+    /// member's number hotkey selects.
+    private func workflowRunHeader(_ run: WorkflowRunGroup) -> some View {
+        Button {
+            if let lead = run.lead { model.focusSession(lead) }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "person.3.sequence")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                Text(run.displayName)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text("\(run.members.count)")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                Spacer()
+                StateSwatch(state: run.aggregate,
+                            color: model.styles[run.aggregate]?.color ?? defaultStyle(run.aggregate).color,
+                            size: 9)
+            }
+            .contentShape(Rectangle())
+            .padding(.horizontal, Metrics.hPad - 4)
+            .padding(.vertical, 5)
+        }
+        .buttonStyle(.plain)
+        .help(run.phases.isEmpty
+              ? "Workflow run — click to focus its lead"
+              : "Workflow run · \(run.phases.joined(separator: " · ")) — click to focus its lead")
+        .contextMenu { workflowRunContextMenu(run) }
+    }
+
+    /// Run-level focus actions: the lead directly, or cycle the run's
+    /// attention queue without leaving the workflow.
+    @ViewBuilder
+    private func workflowRunContextMenu(_ run: WorkflowRunGroup) -> some View {
+        if let lead = run.lead {
+            Button("Focus Lead") { model.focusSession(lead) }
+        }
+        Button("Focus Next Attention in Run") { model.focusNextAttentionSession(inRun: run.runID) }
+            .disabled(!run.needsAttention)
     }
 
     /// Section divider between the active list and parked-but-still-live
@@ -622,9 +663,10 @@ struct MenuContentView: View {
             }
             Menu {
                 Button("Launch Managed Agent", action: onQuickLaunch)
-                Button("Session Triage", action: onTriage)
-                Button("Workflow Runs", action: onWorkflowDashboard)
-                Button("History Workspace", action: onHistory)
+                Divider()
+                Button("Session Triage") { MainWindowController.shared.show(.triage) }
+                Button("Workflow Runs") { MainWindowController.shared.show(.runs) }
+                Button("History Workspace") { MainWindowController.shared.show(.history) }
                 Divider()
                 Button("Setup Diagnostics", action: onDiagnostics)
             } label: {

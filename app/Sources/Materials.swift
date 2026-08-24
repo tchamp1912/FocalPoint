@@ -43,9 +43,10 @@ enum Metrics {
     static let badgeRadius: CGFloat = 6
     static let hPad: CGFloat = 14
     static let vPad: CGFloat = 10
-    /// Settings sidebar/detail backgrounds — kept high for legibility. The
-    /// desktop widget has its own user-controlled translucency slider.
-    static let settingsPaneOpacity: Double = 0.94
+    /// Settings sidebar/detail backgrounds — near-solid for legibility over
+    /// busy desktop content. The desktop widget has its own user-controlled
+    /// translucency slider.
+    static let settingsPaneOpacity: Double = 0.98
 }
 
 // MARK: - Budget alert color (client-only; not an AgentState)

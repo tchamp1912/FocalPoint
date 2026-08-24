@@ -123,6 +123,10 @@ enum FocusNavDirection {
     case attentionNext, attentionPrev, sessionNext, sessionPrev
 }
 
+// `HotkeyDoubleTapTracker` lives in its own Foundation-only file
+// (HotkeyDoubleTapTracker.swift) so its window semantics are unit-testable
+// without dragging Carbon into a test target.
+
 /// What a hotkey does when it fires.
 private enum HotkeyAction {
     case keyTap(String)          // inject key <control> tap on press

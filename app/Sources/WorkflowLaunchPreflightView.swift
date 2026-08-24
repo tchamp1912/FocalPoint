@@ -9,6 +9,10 @@ struct WorkflowLaunchPreflightView: View {
     @StateObject private var preflight: WorkflowLaunchPreflightModel
     let daemonConnected: Bool
     let onLaunch: (WorkflowLaunchConfiguration) -> Void
+    /// Non-sheet presentation (the widget's preflight window) supplies this
+    /// so Cancel/Confirm close the host window — `\.dismiss` is a sheet
+    /// affordance and no-ops in a plain NSWindow.
+    var dismissOverride: (() -> Void)?
     @State private var planViewMode = PlanViewMode.list
 
     private enum PlanViewMode { case list, graph }
@@ -20,6 +24,10 @@ struct WorkflowLaunchPreflightView: View {
         ))
         self.daemonConnected = daemonConnected
         self.onLaunch = onLaunch
+    }
+
+    private func dismissHosted() {
+        if let dismissOverride { dismissOverride() } else { dismiss() }
     }
 
     var body: some View {
@@ -253,14 +261,14 @@ struct WorkflowLaunchPreflightView: View {
 
     private var footer: some View {
         HStack {
-            Button("Cancel") { dismiss() }
+            Button("Cancel") { dismissHosted() }
             Spacer()
             if preflight.isReviewingConfirmation {
                 Button("Back") { preflight.isReviewingConfirmation = false }
                 Button("Confirm & Launch") {
                     guard let configuration = preflight.makeConfiguration() else { return }
                     onLaunch(configuration)
-                    dismiss()
+                    dismissHosted()
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(!daemonConnected || !preflight.canContinue)

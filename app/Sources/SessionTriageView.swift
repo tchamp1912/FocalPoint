@@ -153,7 +153,10 @@ struct SessionTriageView: View {
             Spacer()
         }
         .padding(.vertical, 5)
-        .background(.background.opacity(0.94))
+        // Pinned header: a toolbar-style material occludes rows scrolling
+        // under it and blends with whatever pane hosts the view (the
+        // unified window's detail pane is glass, not an opaque window).
+        .background(.bar)
     }
 
     private func row(_ session: SessionTriageSession) -> some View {

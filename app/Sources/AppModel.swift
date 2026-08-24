@@ -148,6 +148,31 @@ final class AppModel: ObservableObject {
     /// Older daemons simply leave these nil/empty.
     @Published private(set) var daemonDiagnostics: DaemonDiagnostics?
     @Published private(set) var workflowRuns: [WorkflowRunSummary] = []
+    /// The one workflow launcher, shared by the menu-bar dropdown and the
+    /// desktop widget's "+" menu so a launch's outcome is visible from both
+    /// surfaces and the two never disagree about what's installed or in
+    /// flight. Lazy: the package scan only runs on `refresh()`.
+    lazy var workflowLauncher = WorkflowLauncherModel()
+
+    /// Where a started formation runs (WORKFLOWS-PROPOSAL.md §8.2's
+    /// "against the auth refactor"): the session in front of the human, else
+    /// the most recently active connected session, else home. Shown in
+    /// preflight as a suggestion only — nothing launches until the human
+    /// confirms the directory.
+    var workflowTargetCwd: String {
+        if let id = focusedSessionID,
+           let focused = sessions.first(where: { $0.id == id }),
+           let cwd = focused.cwd, !cwd.isEmpty {
+            return cwd
+        }
+        if let latest = sessions
+            .filter({ $0.connected && !($0.cwd ?? "").isEmpty })
+            .max(by: { $0.lastChange < $1.lastChange }),
+           let cwd = latest.cwd {
+            return cwd
+        }
+        return NSHomeDirectory()
+    }
     /// A bounded, user-facing outcome for roadmap window actions.  Keeping
     /// daemon failures in shared state lets the originating surface explain a
     /// failed launch instead of silently closing or pretending it succeeded.
@@ -254,6 +279,10 @@ final class AppModel: ObservableObject {
     /// setting. Deliberately not persisted: it resets on relaunch so the
     /// configured mode is what you get back.
     @Published var desktopWidgetHotkeyHidden = false
+    /// Runtime-only workspace suppression. The floating widget should never
+    /// cover the unified FocalPoint window; it returns when that window closes
+    /// without changing the user's visibility preference or hotkey override.
+    @Published var mainWindowVisible = false
     /// Desktop widget frosted-background opacity (1.0 = opaque, lower =
     /// more see-through). Settings uses a fixed high opacity instead — see
     /// Metrics.settingsPaneOpacity.
@@ -1013,9 +1042,44 @@ final class AppModel: ObservableObject {
     var activeSessions: [SessionInfo] { sessions.filter { !$0.backlogged } }
     var backlogSessions: [SessionInfo] { sessions.filter(\.backlogged) }
 
+    /// `activeSessions` partitioned into live workflow runs plus the sessions
+    /// belonging to no run (WorkflowRunGrouping). Pure presentation: same
+    /// rows, regrouped; slots untouched. The menu dropdown and desktop widget
+    /// draw each run's agents under the run's header instead of mixed into
+    /// the flat list — a workflow is the thing the human launched, so its
+    /// agents nest under it.
+    var workflowRunPartition: (runs: [WorkflowRunGroup], rest: [SessionInfo]) {
+        WorkflowRunGrouping.partition(activeSessions)
+    }
+
+    /// The session a double-tap on slot `slot`'s number hotkey selects: the
+    /// lead of the workflow run occupying that slot (its orchestrator when
+    /// identifiable), or nil when the slot holds no workflow member — in
+    /// which case a double-tap is just two ordinary session focuses.
+    func workflowRunLead(forSlot slot: Int) -> SessionInfo? {
+        guard let session = activeSessions.first(where: { $0.slot == slot }),
+              let runID = session.workflowRunID, !runID.isEmpty else { return nil }
+        return workflowRunPartition.runs.first(where: { $0.runID == runID })?.lead
+    }
+
+    /// Focus the next attention-needing session within a workflow run (the
+    /// run header's context-menu action). Wraps around; starts at the first
+    /// when the focused session isn't in the run's attention set. A no-op
+    /// when the run has nothing waiting — the menu item disables then too.
+    func focusNextAttentionSession(inRun runID: String) {
+        guard let run = workflowRunPartition.runs.first(where: { $0.runID == runID }),
+              let next = run.nextAttentionMember(after: focusedSessionID) else { return }
+        focusSession(next)
+    }
+
     /// `activeSessions` arranged into orchestrator-led blocks for the widget's
     /// grouping view. Pure presentation: it partitions and reorders the same
     /// rows and never consults or mutates slots.
+    ///
+    /// Workflow-run members are excluded here — they group under their run
+    /// (`workflowRunPartition`), which is the stronger affiliation: a
+    /// workflow's orchestrator/workers appear inside the run's section, and
+    /// this grouping covers only orchestrations outside any workflow.
     ///
     /// Keyed on the **stable task id** (`orchestrator_task_id` /
     /// `manager_task_id` from `fpctl-agent launch`), never on session id and
@@ -1037,7 +1101,7 @@ final class AppModel: ObservableObject {
     /// treated as ungrouped rather than hidden — never drop a row to make a
     /// grouping look tidy.
     var orchestratorGroups: [SessionGroup] {
-        let rows = activeSessions
+        let rows = workflowRunPartition.rest
         // Source order is already the daemon's (connected first, then slot),
         // so leads and members both stay in slot order for free.
         let leads = rows.filter { $0.isOrchestrator && !($0.orchestratorTaskID ?? "").isEmpty }
@@ -1068,7 +1132,7 @@ final class AppModel: ObservableObject {
     /// flat list otherwise, so it never shows a lone "Ungrouped" header over
     /// what is simply every session.
     var hasOrchestratorGroups: Bool {
-        activeSessions.contains { $0.isOrchestrator && !($0.orchestratorTaskID ?? "").isEmpty }
+        workflowRunPartition.rest.contains { $0.isOrchestrator && !($0.orchestratorTaskID ?? "").isEmpty }
     }
 
     /// Park a live session in the backlog (or bring it back to active). The

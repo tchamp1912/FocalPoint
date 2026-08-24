@@ -1,174 +1,51 @@
 // FocalPoint menu-bar app — workflow editor (view layer).
 //
-// One window, two package kinds: formations (phases, gates, roles, fan-out,
-// escalation) and agent types (provider preferences, advisory/enforced
-// tables, and the persona prompt itself). Visual language follows the
-// settings window: settingsCard glass groups, caption/callout type, pane
-// materials behind a transparent titlebar. All load/save/validation logic
-// lives in WorkflowEditor.swift; this file is layout and binding only.
+// Two package kinds: formations (phases, gates, roles, fan-out, escalation)
+// and agent types (provider preferences, advisory/enforced tables, and the
+// persona prompt itself). Since the window consolidation this file provides
+// the editor's *detail column* (`WorkflowEditorDetailView`), hosted by
+// MainWindowView's unified sidebar — the standalone Workflow Editor window
+// no longer exists. Visual language follows the settings panes:
+// settingsCard glass groups, caption/callout type. All load/save/validation
+// logic lives in WorkflowEditor.swift; this file is layout and binding only.
 // MIT License.
 
 import SwiftUI
 import AppKit
 
-struct WorkflowEditorView: View {
+/// The workflow editor's detail column, hosted by MainWindowView's unified
+/// sidebar. Owns the bundled-install and catalog-error alerts, which are
+/// raised from the bundled detail views below.
+struct WorkflowEditorDetailView: View {
     @ObservedObject var store: WorkflowEditorModel
-    @State private var confirmingDelete = false
     @State private var bundledInstall: BundledInstallRequest?
     @State private var catalogError: String?
 
     var body: some View {
-        NavigationSplitView {
-            sidebar
-                .navigationSplitViewColumnWidth(min: 200, ideal: 224, max: 280)
-        } detail: {
-            detail
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .liquidGlass(.detailPane(opacity: Metrics.settingsPaneOpacity), radius: 0)
-        }
-        .frame(minWidth: 720, idealWidth: 780, minHeight: 460, idealHeight: 540)
-        .onAppear { store.reload() }
-        .alert("Move to Trash?", isPresented: $confirmingDelete) {
-            Button("Move to Trash", role: .destructive) {
-                if let selection = store.selection { store.delete(selection) }
+        detail
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .alert(item: $bundledInstall) { request in
+                Alert(
+                    title: Text("Install bundled package?"),
+                    message: Text(request.confirmationText),
+                    primaryButton: .default(Text("Install")) {
+                        let error: String?
+                        switch request {
+                        case .formation(let formation): error = store.installBundledFormation(formation)
+                        case .agentType(let type): error = store.installBundledAgentType(type)
+                        }
+                        catalogError = error
+                    },
+                    secondaryButton: .cancel()
+                )
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The package directory is moved to the Trash and can be restored from there.")
-        }
-        .alert(item: $bundledInstall) { request in
-            Alert(
-                title: Text("Install bundled package?"),
-                message: Text(request.confirmationText),
-                primaryButton: .default(Text("Install")) {
-                    let error: String?
-                    switch request {
-                    case .formation(let formation): error = store.installBundledFormation(formation)
-                    case .agentType(let type): error = store.installBundledAgentType(type)
-                    }
-                    catalogError = error
-                },
-                secondaryButton: .cancel()
-            )
-        }
-        .alert("Couldn't install bundled package", isPresented: Binding(
-            get: { catalogError != nil }, set: { if !$0 { catalogError = nil } }
-        )) {
-            Button("OK", role: .cancel) { catalogError = nil }
-        } message: {
-            Text(catalogError ?? "")
-        }
-    }
-
-    // MARK: Sidebar
-
-    private var sidebar: some View {
-        List(selection: $store.selection) {
-            Section("Workflows") {
-                ForEach(store.formations) { formation in
-                    sidebarRow(title: formation.name,
-                               detail: formationDetail(formation),
-                               symbol: "person.3.sequence",
-                               dirty: store.isDirty(formation))
-                        .tag(EditorSelection.formation(formation.id))
-                }
-                ForEach(store.broken.filter { $0.kind == .formation }) { package in
-                    sidebarRow(title: package.id, detail: "Malformed", symbol: "exclamationmark.triangle",
-                               dirty: false, tint: .orange)
-                        .tag(EditorSelection.broken(.formation, package.id))
-                }
+            .alert("Couldn't install bundled package", isPresented: Binding(
+                get: { catalogError != nil }, set: { if !$0 { catalogError = nil } }
+            )) {
+                Button("OK", role: .cancel) { catalogError = nil }
+            } message: {
+                Text(catalogError ?? "")
             }
-            Section("Agent Types") {
-                ForEach(store.agentTypes) { type in
-                    sidebarRow(title: type.name,
-                               detail: type.prefer.joined(separator: " › "),
-                               symbol: "person.crop.square",
-                               dirty: store.isDirty(type))
-                        .tag(EditorSelection.agentType(type.id))
-                }
-                ForEach(store.broken.filter { $0.kind == .agentType }) { package in
-                    sidebarRow(title: package.id, detail: "Malformed", symbol: "exclamationmark.triangle",
-                               dirty: false, tint: .orange)
-                        .tag(EditorSelection.broken(.agentType, package.id))
-                }
-            }
-            Section("Bundled Workflows") {
-                ForEach(store.bundledFormations) { formation in
-                    sidebarRow(title: formation.name, detail: formationDetail(formation),
-                               symbol: "shippingbox", dirty: false, tint: .accentColor)
-                        .tag(EditorSelection.bundledFormation(formation.id))
-                }
-            }
-            Section("Bundled Agent Types") {
-                ForEach(store.bundledAgentTypes) { type in
-                    sidebarRow(title: type.name, detail: type.prefer.joined(separator: " › "),
-                               symbol: "shippingbox", dirty: false, tint: .accentColor)
-                        .tag(EditorSelection.bundledAgentType(type.id))
-                }
-            }
-        }
-        .listStyle(.sidebar)
-        .safeAreaInset(edge: .bottom) {
-            HStack(spacing: 10) {
-                Menu {
-                    Button("New Workflow") { store.createFormation() }
-                    Button("New Agent Type") { store.createAgentType() }
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .frame(width: 22)
-                .help("Create a new package")
-                Button { confirmingDelete = true } label: {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .disabled(store.selection == nil)
-                .help("Move the selected package to the Trash")
-                Spacer()
-                Button { store.reload() } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("Reload from disk (unsaved edits are kept)")
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-        }
-    }
-
-    private func sidebarRow(title: String, detail: String, symbol: String,
-                            dirty: Bool, tint: Color? = nil) -> some View {
-        HStack(spacing: 7) {
-            Image(systemName: symbol)
-                .font(.system(size: 11))
-                .foregroundStyle(tint ?? Color.secondary)
-                .frame(width: 16)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.callout).lineLimit(1)
-                if !detail.isEmpty {
-                    Text(detail).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
-                }
-            }
-            Spacer(minLength: 4)
-            if dirty {
-                Circle()
-                    .fill(Color.orange)
-                    .frame(width: 6, height: 6)
-                    .help("Unsaved changes")
-            }
-        }
-        .padding(.vertical, 2)
-    }
-
-    private func formationDetail(_ formation: EditableFormation) -> String {
-        if formation.phased {
-            return "\(formation.phases.count) phase\(formation.phases.count == 1 ? "" : "s")"
-        }
-        return "\(formation.roles.count) role\(formation.roles.count == 1 ? "" : "s")"
     }
 
     // MARK: Detail routing
@@ -217,13 +94,19 @@ struct WorkflowEditorView: View {
                 .font(.system(size: 28))
                 .foregroundStyle(.tertiary)
             Text(text)
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .font(.headline)
             Text("Packages live under \(WorkflowEditorModel.configRoot.path)")
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .truncationMode(.middle)
         }
+        .multilineTextAlignment(.center)
+        .padding(24)
+        .frame(maxWidth: 420)
+        .settingsCard()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(Metrics.settingsPageInset)
     }
 }
 
@@ -254,10 +137,12 @@ private struct BundledFormationView: View {
     let install: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Bundled workflow").font(.caption).foregroundStyle(.secondary)
-            Text(formation.name).font(.title2.weight(.semibold))
-            Text(formation.description).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: Metrics.settingsCardRhythm) {
+            SettingsPageHeader(
+                title: formation.name,
+                subtitle: formation.description,
+                symbol: "shippingbox"
+            )
             EditorCard(title: "Will install") {
                 Text("Workflow: \(formation.name)")
                 Text("Agent types: \(formation.referencedAgentTypes.joined(separator: ", "))")
@@ -274,8 +159,7 @@ private struct BundledFormationView: View {
                 .buttonStyle(.borderedProminent)
             Spacer()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(24)
+        .settingsPageLayout()
     }
 }
 
@@ -284,20 +168,22 @@ private struct BundledAgentTypeView: View {
     let install: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Bundled agent type").font(.caption).foregroundStyle(.secondary)
-            Text(type.name).font(.title2.weight(.semibold))
-            Text(type.description).foregroundStyle(.secondary)
-            Text("\(type.prefer.joined(separator: " › ")) · \(type.model)")
-                .font(.callout).foregroundStyle(.secondary)
-            Text("Installing requires confirmation and refuses existing package directories; it never overwrites them.")
-                .font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: Metrics.settingsCardRhythm) {
+            SettingsPageHeader(
+                title: type.name,
+                subtitle: type.description,
+                symbol: "shippingbox"
+            )
+            EditorCard(title: "Will install") {
+                Text("\(type.prefer.joined(separator: " › ")) · \(type.model)")
+                Text("Installing requires confirmation and refuses existing package directories; it never overwrites them.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Button("Install bundled agent type…", action: install)
                 .buttonStyle(.borderedProminent)
             Spacer()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(24)
+        .settingsPageLayout()
     }
 }
 
@@ -372,12 +258,13 @@ private struct DiagnosticsCard: View {
             }
             .font(.caption)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(10)
-            .liquidGlass(.settingsCard, radius: Metrics.rowRadius)
+            .settingsCard(.alert)
         }
     }
 }
 
+/// The editor's titled section card: the shared canonical settings-card
+/// chrome plus a small title/caption header.
 private struct EditorCard<Content: View>: View {
     let title: String
     let caption: String?
@@ -391,17 +278,11 @@ private struct EditorCard<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
-                if let caption {
-                    Text(caption).font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
-                }
-            }
+            SettingsCardHeader(title: title, subtitle: caption)
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .liquidGlass(.settingsCard, radius: Metrics.cardRadius)
+        .settingsCard()
     }
 }
 
@@ -461,7 +342,7 @@ private struct FormationEditorView: View {
             )
             Divider()
             ScrollView(.vertical) {
-                VStack(spacing: 12) {
+                VStack(spacing: Metrics.settingsCardRhythm) {
                     DiagnosticsCard(errors: diagnostics.errors,
                                     warnings: diagnostics.warnings + formation.warnings)
                     packageCard
@@ -478,7 +359,7 @@ private struct FormationEditorView: View {
                     }
                     escalateCard
                 }
-                .padding(16)
+                .padding(Metrics.settingsPageInset)
             }
         }
     }
@@ -523,7 +404,7 @@ private struct FormationEditorView: View {
     }
 
     private var phasesEditor: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: Metrics.settingsCardRhythm) {
             ForEach(formation.phases.indices, id: \.self) { index in
                 PhaseCardView(
                     phase: $formation.phases[index],
@@ -779,17 +660,11 @@ private struct RoleCardView: View {
                     .font(.system(.caption, design: .monospaced))
                     .frame(minHeight: 34, maxHeight: 90)
                     .padding(4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(Color.primary.opacity(0.05))
-                    )
+                    .settingsInset()
             }
         }
         .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: Metrics.rowRadius, style: .continuous)
-                .fill(Color.primary.opacity(0.04))
-        )
+        .settingsInset()
     }
 }
 
@@ -840,7 +715,7 @@ private struct AgentTypeEditorView: View {
             )
             Divider()
             ScrollView(.vertical) {
-                VStack(spacing: 12) {
+                VStack(spacing: Metrics.settingsCardRhythm) {
                     DiagnosticsCard(errors: diagnostics.errors,
                                     warnings: diagnostics.warnings + type.warnings)
                     identityCard
@@ -849,7 +724,7 @@ private struct AgentTypeEditorView: View {
                     enforcedCard
                     personaCard
                 }
-                .padding(16)
+                .padding(Metrics.settingsPageInset)
             }
         }
     }
@@ -958,10 +833,7 @@ private struct AgentTypeEditorView: View {
                 .font(.system(.body, design: .monospaced))
                 .frame(minHeight: 200)
                 .padding(4)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.primary.opacity(0.05))
-                )
+                .settingsInset()
         }
     }
 
@@ -980,19 +852,20 @@ private struct BrokenPackageView: View {
     @ObservedObject var store: WorkflowEditorModel
 
     var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 30))
-                .foregroundStyle(.orange)
-            Text(package.id).font(.headline)
-            Text(package.message)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            Text(package.directoryURL.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+        VStack(alignment: .leading, spacing: Metrics.settingsCardRhythm) {
+            Text("Malformed package").font(.caption).foregroundStyle(.secondary)
+            Text(package.id).font(.title2.weight(.semibold))
+            VStack(alignment: .leading, spacing: 6) {
+                Label(package.message, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(package.directoryURL.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            .font(.caption)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .settingsCard(.alert)
             HStack(spacing: 12) {
                 Button("Reveal in Finder") {
                     store.reveal(.broken(package.kind, package.id))
@@ -1005,8 +878,9 @@ private struct BrokenPackageView: View {
             Text("Fix the manifest in your editor, then reload — or trash the package.")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
+            Spacer()
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(Metrics.settingsPageInset)
     }
 }

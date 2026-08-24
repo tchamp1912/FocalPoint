@@ -121,8 +121,10 @@ struct HistoryWorkspaceView: View {
                                 if index < group.records.count - 1 { Divider().padding(.leading, 45) }
                             }
                         }
-                        .background(.background.opacity(0.55), in: RoundedRectangle(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(.separator.opacity(0.5)))
+                        // A raised glass card (`.regular` on macOS 26, subtle
+                        // fill below) — the pane behind this is glass, so a
+                        // window-color slab would clash.
+                        .liquidGlass(.card, radius: 10)
                     } header: {
                         groupHeader(group)
                     }
@@ -146,7 +148,7 @@ struct HistoryWorkspaceView: View {
             Text(group.records.count.formatted()).font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
         }
         .padding(.vertical, 6)
-        .background(.background)
+        .background(.bar)
     }
 
     @ViewBuilder
@@ -340,6 +342,10 @@ private struct HistoryRecordRow: View {
                 Image(systemName: "ellipsis.circle").foregroundStyle(.secondary)
             }
             .menuStyle(.borderlessButton)
+            // Hide the pull-down indicator — in a 24pt frame it renders
+            // underneath the ellipsis glyph and reads as a smudged arrow.
+            .menuIndicator(.hidden)
+            .fixedSize()
             .frame(width: 24)
         }
         .padding(12)

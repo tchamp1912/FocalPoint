@@ -12,11 +12,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model = AppModel.shared
     private var hotkeys: HotkeyManager!
     private var overlay: DesktopOverlayController!
-    private var settingsWC: NSWindowController?
+    private var preflightWC: NSWindowController?
     private lazy var roadmapWC = RoadmapWindowCoordinator(model: model)
+    /// Double-tap detection for the number hotkeys: tap focuses the session
+    /// in that slot; a second tap within the window selects its workflow
+    /// (focuses the run's lead). See Hotkeys.swift.
+    private var slotDoubleTap = HotkeyDoubleTapTracker()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        let launchArguments = Set(ProcessInfo.processInfo.arguments)
+
+        if launchArguments.contains("--dark-appearance") {
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+        }
+
+        // Screenshot/smoke-test launches can keep the floating widget from
+        // obscuring the window under review without changing its persisted
+        // visibility preference.
+        if launchArguments.contains("--hide-widget") {
+            model.desktopWidgetHotkeyHidden = true
+        }
 
         hotkeys = HotkeyManager(bindings: model.resolvedHotkeyBindings, inject: { [weak self] cmd in
             // The key1-9 hotkeys tap a slot directly (bypassing focusSession,
@@ -25,7 +41,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let control = cmd["control"] as? String, control.hasPrefix("key"),
                let slot = Int(control.dropFirst(3)),
                let session = self?.model.sessions.first(where: { $0.slot == slot }) {
-                self?.model.focusedSessionID = session.id
+                if self?.slotDoubleTap.tap(slot: slot) == true,
+                   let lead = self?.model.workflowRunLead(forSlot: slot) {
+                    // Double-tap: select the workflow this slot belongs to by
+                    // focusing the run's lead — accept/reject/PTT then route
+                    // to the workflow's orchestrator, not the single member.
+                    self?.model.focusSession(lead)
+                } else {
+                    self?.model.focusedSessionID = session.id
+                }
             }
             self?.model.client.send(cmd)
         }, toggleWidget: { [weak self] in
@@ -53,10 +77,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.hotkeys.updateBindings(bindings)
         }
         overlay.onOpenSettings = { [weak self] in self?.showSettings() }
+        overlay.onStartWorkflow = { [weak self] in self?.showWorkflowPreflight($0) }
+        overlay.onQuickLaunch = { [weak self] in self?.showQuickLaunch() }
 
         model.start()
         if model.hotkeysEnabled { hotkeys.register() }
         SetupDiagnosticsWindowCoordinator.shared.presentFirstRunIfNeeded()
+
+        // Deterministic launch routes for visual QA and automation. These
+        // avoid requiring Accessibility permission merely to open a specific
+        // unified-window surface for screenshots or smoke tests.
+        let requestedSelection: MainWindowSelection?
+        if launchArguments.contains("--open-workflows") {
+            requestedSelection = .workflows
+        } else if launchArguments.contains("--open-hotkeys") {
+            requestedSelection = .settings(.hotkeys)
+        } else if launchArguments.contains("--open-integrations") {
+            requestedSelection = .settings(.integrations)
+        } else if launchArguments.contains("--open-idle-style") {
+            requestedSelection = .settings(.state(.idle))
+        } else if launchArguments.contains("--open-settings") {
+            requestedSelection = .settings(.general)
+        } else {
+            requestedSelection = nil
+        }
+        if let requestedSelection {
+            DispatchQueue.main.async {
+                MainWindowController.shared.show(requestedSelection)
+            }
+        }
 
         log("FocalPoint launched (socket: \(focalpointSocketPath()))")
     }
@@ -68,37 +117,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.refreshRoadmapState()
     }
 
+    /// The unified main window (workflows + settings), landed on Behavior.
+    /// The window is reused, so a plain show() keeps the user's last
+    /// selection — only an explicit request forces the settings landing.
     func showSettings() {
-        if settingsWC == nil {
-            let vc = NSHostingController(rootView: SettingsView(
-                model: model,
-                onOpenHistoryWorkspace: { [weak self] in self?.roadmapWC.showHistory() },
-                onOpenDiagnostics: { [weak self] in self?.roadmapWC.showDiagnostics() }
-            ))
-            let window = NSWindow(contentViewController: vc)
-            window.title = "FocalPoint Settings"
-            window.styleMask = [.titled, .closable, .miniaturizable]
-            // Non-opaque + transparent titlebar so the .behindWindow materials
-            // in SettingsView are true see-through vibrancy, not just a
-            // frosted look composited over an opaque backdrop.
-            window.isOpaque = false
-            window.backgroundColor = .clear
-            window.titlebarAppearsTransparent = true
-            window.isReleasedWhenClosed = false
-            settingsWC = NSWindowController(window: window)
+        MainWindowController.shared.show(.settings(.general))
+    }
+
+    /// Workflow preflight for starts initiated from the desktop widget's "+"
+    /// menu. The widget is a borderless, non-activating panel, so preflight
+    /// gets a real window; the dropdown keeps its sheet. The launch itself
+    /// goes through the shared launcher model, so the outcome reports back
+    /// to both surfaces.
+    func showWorkflowPreflight(_ package: FormationPackage) {
+        var view = WorkflowLaunchPreflightView(
+            package: package,
+            suggestedDirectory: URL(fileURLWithPath: model.workflowTargetCwd, isDirectory: true),
+            daemonConnected: model.connected
+        ) { [weak self] configuration in
+            self?.model.workflowLauncher.start(package, configuration: configuration)
         }
+        let window = NSWindow()
+        window.title = "Start \(package.name)"
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.setContentSize(NSSize(width: 720, height: 640))
+        window.isReleasedWhenClosed = false
+        // The preflight view dismisses via \.dismiss (a sheet affordance);
+        // re-point that at closing this window so Cancel/confirm both work.
+        view.dismissOverride = { [weak window] in window?.close() }
+        window.contentViewController = NSHostingController(rootView: view)
+        preflightWC = NSWindowController(window: window)
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
-        settingsWC?.showWindow(nil)
-        settingsWC?.window?.center()
-        settingsWC?.window?.makeKeyAndOrderFront(nil)
+        preflightWC?.showWindow(nil)
+        window.center()
     }
 
     func showQuickLaunch() { roadmapWC.showQuickLaunch() }
-    func showSessionTriage() { roadmapWC.showSessionTriage() }
-    func showWorkflowDashboard() { roadmapWC.showWorkflowDashboard() }
     func showDiagnostics() { roadmapWC.showDiagnostics() }
-    func showHistoryWorkspace() { roadmapWC.showHistory() }
 }
 
 // MARK: - Menu-bar label (icon + attention badge)
@@ -137,10 +193,7 @@ struct FocalPointApp: App {
         MenuBarExtra {
             MenuContentView(model: model, onSettings: { appDelegate.showSettings() },
                             onQuickLaunch: { appDelegate.showQuickLaunch() },
-                            onTriage: { appDelegate.showSessionTriage() },
-                            onWorkflowDashboard: { appDelegate.showWorkflowDashboard() },
-                            onDiagnostics: { appDelegate.showDiagnostics() },
-                            onHistory: { appDelegate.showHistoryWorkspace() })
+                            onDiagnostics: { appDelegate.showDiagnostics() })
         } label: {
             MenuBarLabel(model: model)
         }

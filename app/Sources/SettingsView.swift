@@ -1,7 +1,6 @@
-// FocalPoint menu-bar app — settings window (per-state style editor + toggles).
-// Sidebar/detail layout: a list of General + the 6 states on the left (with
-// a live swatch preview per state), an editor for the selected item on the
-// right. Scales much better than a flat repeated-group list.
+// FocalPoint menu-bar app — settings panes (per-state style editor + toggles).
+// Since the window consolidation these are the *detail panes* hosted by
+// MainWindowView's unified sidebar — the standalone Settings window is gone.
 // Initialized from get-styles; sends set-style on change (sliders debounced).
 // MIT License.
 
@@ -23,89 +22,7 @@ enum SettingsSection: Hashable {
     case general
     case hotkeys
     case integrations
-    case history
     case state(AgentState)
-}
-
-struct SettingsView: View {
-    @ObservedObject var model: AppModel
-    var onOpenHistoryWorkspace: () -> Void
-    var onOpenDiagnostics: () -> Void
-    @State private var selection: SettingsSection? = .general
-
-    var body: some View {
-        NavigationSplitView {
-            sidebar
-        } detail: {
-            detail
-        }
-        .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 210)
-        .frame(width: 580, height: 440)
-        // NavigationSplitView paints its own opaque NSSplitViewController
-        // background on macOS regardless of window.isOpaque/backgroundColor
-        // — without this, the sidebar/detail VisualEffectViews and glass
-        // cards render correctly but sit on a solid backing, so none of it
-        // reads as translucent.
-        .background(.clear)
-    }
-
-    private var sidebar: some View {
-        List(selection: $selection) {
-            Section("General") {
-                Label("Behavior", systemImage: "gearshape")
-                    .tag(SettingsSection.general)
-                Label("Hotkeys", systemImage: "keyboard")
-                    .tag(SettingsSection.hotkeys)
-                Label("Agent Integrations", systemImage: "sparkles")
-                    .tag(SettingsSection.integrations)
-                Label("History", systemImage: "clock.arrow.circlepath")
-                    .tag(SettingsSection.history)
-            }
-            Section("State styles") {
-                ForEach(AgentState.allCases) { state in
-                    HStack(spacing: 8) {
-                        StateSwatch(state: state, color: (model.styles[state] ?? defaultStyle(state)).color, size: 10)
-                        Text(state.display)
-                    }
-                    .tag(SettingsSection.state(state))
-                }
-            }
-        }
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
-        // Opacity on the material layer only — never on the window itself —
-        // so turning translucency up fades the glass toward raw desktop
-        // without touching the legibility of the list text. Goes through
-        // Glass.swift like every other surface so macOS 26 gets real Liquid
-        // Glass here too, instead of always the pre-26 vibrancy material.
-        .liquidGlass(.sidebarPane(opacity: Metrics.settingsPaneOpacity), radius: 0)
-    }
-
-    @ViewBuilder
-    private var detail: some View {
-        ZStack {
-            Color.clear
-                .liquidGlass(.detailPane(opacity: Metrics.settingsPaneOpacity), radius: 0)
-                .ignoresSafeArea()
-            // Groups the section's cards so macOS 26 renders them as one
-            // material; a pass-through on older systems.
-            LiquidGlassGroup(spacing: 22) {
-                switch selection {
-                case .state(let s):
-                    StateStyleDetail(model: model, state: s)
-                case .hotkeys:
-                    HotkeysSettingsView(model: model)
-                case .integrations:
-                    IntegrationsSettingsView(model: model)
-                case .history:
-                    SessionHistoryView(model: model, onOpenHistoryWorkspace: onOpenHistoryWorkspace,
-                                       onOpenDiagnostics: onOpenDiagnostics)
-                case .general, .none:
-                    GeneralSettingsView(model: model)
-                }
-            }
-        }
-    }
 }
 
 // MARK: - General / behavior section
@@ -115,10 +32,15 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                Text("Behavior").font(.title3).bold()
+            VStack(alignment: .leading, spacing: Metrics.settingsCardRhythm) {
+                SettingsPageHeader(
+                    title: "Behavior",
+                    subtitle: "Choose how FocalPoint behaves, appears, and opens managed sessions.",
+                    symbol: "gearshape"
+                )
 
                 VStack(alignment: .leading, spacing: 14) {
+                    SettingsCardHeader(title: "App behavior")
                     Toggle("Enable global hotkeys", isOn: $model.hotkeysEnabled)
                     Divider()
                     VStack(alignment: .leading, spacing: 4) {
@@ -126,74 +48,82 @@ struct GeneralSettingsView: View {
                         Text("The menu-bar icon is a neutral template by default; it adds a badge when a session needs attention. Turn this on to tint it by aggregate state.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                }
+                .settingsCard()
+
+                VStack(alignment: .leading, spacing: 14) {
+                    SettingsCardHeader(
+                        title: "Desktop widget",
+                        subtitle: "Control when the floating session monitor appears and how it lays out sessions."
+                    )
                     Divider()
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Desktop widget").font(.subheadline).bold()
-                        Picker("", selection: $model.desktopWidgetMode) {
-                            ForEach(DesktopWidgetMode.allCases) { mode in
-                                Text(mode.display).tag(mode)
+                    Picker("Visibility", selection: $model.desktopWidgetMode) {
+                        ForEach(DesktopWidgetMode.allCases) { mode in
+                            Text(mode.display).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.radioGroup)
+                    Text("Auto-hide keeps the widget out of the way while every session is idle and restores it when something needs attention.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Divider()
+                    HStack {
+                        Text("Orientation")
+                        Spacer()
+                        Picker("Orientation", selection: $model.desktopWidgetOrientation) {
+                            ForEach(DesktopWidgetOrientation.allCases) { option in
+                                Text(option.display).tag(option)
                             }
                         }
                         .labelsHidden()
-                        .pickerStyle(.radioGroup)
-                        Text("Auto-hide keeps the desktop widget out of the way while every session is idle; it reappears the moment something needs attention.")
-                            .font(.caption).foregroundStyle(.secondary)
-                        HStack {
-                            Text("Orientation")
-                            Spacer()
-                            Picker("", selection: $model.desktopWidgetOrientation) {
-                                ForEach(DesktopWidgetOrientation.allCases) { option in
-                                    Text(option.display).tag(option)
-                                }
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.segmented)
-                            .frame(width: 190)
-                        }
-                        .padding(.top, 4)
-                        if let width = model.widgetWidth(for: model.desktopWidgetOrientation) {
-                            HStack {
-                                Text("Width")
-                                Spacer()
-                                Text("\(Int(width)) pt")
-                                    .font(.caption).monospacedDigit().foregroundStyle(.secondary)
-                                Button("Reset to Automatic") {
-                                    model.resetWidgetWidth(for: model.desktopWidgetOrientation)
-                                }
-                                .controlSize(.small)
-                            }
-                        }
-                        Text("Horizontal renders the pad itself: a short strip of keycaps, one per session — state glyph and slot number lit in its state color; hover a key for its name and details, click to focus. The strip sizes itself to the session count; drag the widget's bottom-right corner to cap its width (keys scroll past the cap). Widths are remembered per orientation, and the widget grows away from the screen edge it's parked on.")
-                            .font(.caption).foregroundStyle(.secondary)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Toggle("Compact session rows", isOn: $model.compactWidgetRows)
-                            Text("One line per session — hides the stats row and context meter in the widget (they remain in the dropdown).")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        .padding(.top, 4)
+                        .pickerStyle(.segmented)
+                        .frame(width: 190)
                     }
-                    Divider()
-                    VStack(alignment: .leading, spacing: 6) {
+                    if let width = model.widgetWidth(for: model.desktopWidgetOrientation) {
                         HStack {
-                            Text("Desktop widget translucency").font(.subheadline).bold()
+                            Text("Custom width")
                             Spacer()
-                            Text("\(Int(model.interfaceTranslucency * 100))%")
+                            Text("\(Int(width)) pt")
                                 .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                            Button("Reset to Automatic") {
+                                model.resetWidgetWidth(for: model.desktopWidgetOrientation)
+                            }
+                            .controlSize(.small)
                         }
-                        Slider(value: $model.interfaceTranslucency, in: 0.05...1.0, step: 0.01)
-                        Text("Fades only the widget's frosted background — text and icons stay fully readable. Settings stays opaque for legibility.")
+                    }
+                    Text("Horizontal renders the pad as a compact key strip. Drag the widget's bottom-right corner to cap its width; widths are remembered separately for each orientation.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Divider()
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle("Compact session rows", isOn: $model.compactWidgetRows)
+                        Text("Hides the stats row and context meter in the widget; both remain available in the dropdown.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                .padding(16)
-                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
+                .settingsCard()
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Terminal").font(.title3).bold()
-                    Text("Which app FocalPoint opens when you launch a session \u{2014} \u{201C}Open in Terminal\u{201D} and History \u{2192} Resume.")
-                        .font(.caption).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 10) {
+                    SettingsCardHeader(
+                        title: "Widget appearance",
+                        subtitle: "Adjust only the floating widget's background; text and icons remain fully opaque."
+                    )
+                    Divider()
                     HStack {
-                        Picker("", selection: $model.terminalBundleID) {
+                        Text("Translucency")
+                        Spacer()
+                        Text("\(Int(model.interfaceTranslucency * 100))%")
+                            .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                    }
+                    Slider(value: $model.interfaceTranslucency, in: 0.05...1.0, step: 0.01)
+                }
+                .settingsCard()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    SettingsCardHeader(
+                        title: "Terminal",
+                        subtitle: "Used for managed launches, Open in Terminal, and History → Resume."
+                    )
+                    HStack {
+                        Picker("Terminal app", selection: $model.terminalBundleID) {
                             Text("System default").tag("")
                             ForEach(model.installedTerminalApps, id: \.id) { app in
                                 Text(app.name).tag(app.id)
@@ -205,17 +135,15 @@ struct GeneralSettingsView: View {
                                 Text(model.terminalDisplayName).tag(model.terminalBundleID)
                             }
                         }
-                        .labelsHidden()
                         .frame(maxWidth: 220)
                         Spacer()
                         Button("Choose\u{2026}") { model.chooseTerminalApp() }
                     }
                 }
-                .padding(16)
-                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
+                .settingsCard()
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Reset").font(.title3).bold()
+                    SettingsCardHeader(title: "Reset state styles")
                     HStack {
                         Text("Restore every state's color, pattern, and period to its shipped default.")
                             .font(.caption).foregroundStyle(.secondary)
@@ -223,115 +151,11 @@ struct GeneralSettingsView: View {
                         Button("Reset All to Defaults", role: .destructive) { model.resetStyles() }
                     }
                 }
-                .padding(16)
-                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
+                .settingsCard()
 
                 Spacer(minLength: 0)
             }
-            .padding(20)
-        }
-    }
-}
-
-// MARK: - History section
-
-struct SessionHistoryView: View {
-    @ObservedObject var model: AppModel
-    var onOpenHistoryWorkspace: () -> Void
-    var onOpenDiagnostics: () -> Void
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                Text("History").font(.title3).bold()
-
-                HStack {
-                    Button("Open History Workspace", action: onOpenHistoryWorkspace)
-                    Spacer()
-                    Button("Run Setup Diagnostics", action: onOpenDiagnostics)
-                }
-
-                if model.sessionHistory.isEmpty {
-                    VStack(spacing: 6) {
-                        Image(systemName: "clock.arrow.circlepath")
-                            .font(.system(size: 22))
-                            .foregroundStyle(.tertiary)
-                        Text("No sessions yet").font(.body).foregroundStyle(.secondary)
-                        Text("Completed sessions will show up here.")
-                            .font(.caption2).foregroundStyle(.tertiary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 28)
-                    .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(model.sessionHistory) { entry in
-                            historyRow(entry)
-                            if entry.id != model.sessionHistory.last?.id { Divider() }
-                        }
-                    }
-                    .padding(16)
-                    .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
-
-                    HStack {
-                        Text("\(model.sessionHistory.count) session\(model.sessionHistory.count == 1 ? "" : "s") kept, most recent first.")
-                            .font(.caption).foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Clear History", role: .destructive) { model.clearSessionHistory() }
-                    }
-                    .padding(16)
-                    .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
-                }
-
-                Spacer(minLength: 0)
-            }
-            .padding(20)
-        }
-    }
-
-    private func historyRow(_ entry: SessionHistoryEntry) -> some View {
-        HStack(spacing: 10) {
-            StateSwatch(state: entry.finalState,
-                        color: (model.styles[entry.finalState] ?? defaultStyle(entry.finalState)).color, size: 9)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(entry.title).font(.body)
-                HStack(spacing: 5) {
-                    Text(entry.kind).font(.caption2).foregroundStyle(.tertiary)
-                    if let cwd = entry.cwd {
-                        Text(cwd).font(.caption2).foregroundStyle(.tertiary)
-                            .lineLimit(1).truncationMode(.middle)
-                    }
-                }
-            }
-            Spacer(minLength: 8)
-            if model.resumeCommand(for: entry) != nil {
-                Button { model.recoverSession(entry) } label: {
-                    Label("Resume Managed", systemImage: "arrow.clockwise")
-                        .font(.caption)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .help("Reopen this \(entry.kind) conversation under FocalPoint's managed tmux transport")
-            }
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(durationString(entry.endedAt.timeIntervalSince(entry.startedAt)))
-                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                Text("\(elapsedString(since: entry.endedAt)) ago")
-                    .font(.caption2).foregroundStyle(.tertiary)
-            }
-        }
-        .padding(.vertical, 6)
-        .contentShape(Rectangle())
-        .contextMenu {
-            if model.resumeCommand(for: entry) != nil {
-                Button("Resume as Managed Session") { model.recoverSession(entry) }
-                Divider()
-            }
-            if let cwd = entry.cwd {
-                Button("Open in Terminal") { model.openInTerminal(cwd) }
-                Button("Show in Finder") { model.revealInFinder(cwd) }
-                Button("Copy Working Directory") { model.copyToPasteboard(cwd) }
-            }
+            .settingsPageLayout()
         }
     }
 }
@@ -348,13 +172,15 @@ struct IntegrationsSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                Text("Agent Integrations").font(.title3).bold()
-                Text("Features specific to Claude Code, Cursor, and Codex CLI sessions rather than the protocol in general.")
-                    .font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: Metrics.settingsCardRhythm) {
+                SettingsPageHeader(
+                    title: "Agent Integrations",
+                    subtitle: "Configure provider-specific context, usage reporting, badges, and alerts.",
+                    symbol: "sparkles"
+                )
 
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Context window").font(.subheadline).bold()
+                    SettingsCardHeader(title: "Context window")
                     Text("Per-provider cap for the meter under each session row. Leave on Auto to use the adapter-reported window when available. Set a lower number to match your compact/rot preference — the bar turns red at 100% of your cap even if the model allows more.")
                         .font(.caption).foregroundStyle(.secondary)
                     Divider()
@@ -365,11 +191,10 @@ struct IntegrationsSettingsView: View {
                     contextWindowField(kind: "cursor", title: "Cursor",
                                        hint: "Cursor does not report occupancy yet; set a cap if you add context data later.")
                 }
-                .padding(16)
-                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
+                .settingsCard()
 
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Session stat badges").font(.subheadline).bold()
+                    SettingsCardHeader(title: "Session stat badges")
                     Text("Shown next to a session's elapsed time when the adapter reports them. A stat you enable here simply stays hidden for sessions that don't have data for it yet — nothing to configure per-adapter.")
                         .font(.caption).foregroundStyle(.secondary)
                     Divider()
@@ -386,10 +211,10 @@ struct IntegrationsSettingsView: View {
                     Text("Claude Code and Codex CLI report tokens, turns, tool calls, and subagents from local session data. Cursor 3.13+ reports the same badges using stop-hook token usage plus its transcript; older Cursor versions omit tokens. Cost is Claude Code only, reported by its status-line hook as a real dollar figure (not an estimate).")
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
-                .padding(16)
-                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
+                .settingsCard()
 
                 VStack(alignment: .leading, spacing: 10) {
+                    SettingsCardHeader(title: "Provider usage")
                     Toggle("Show account usage monitor", isOn: $model.showUsage)
                     Text("The monitor displays provider-reported subscription quota and reset times, not estimates from session token counts.")
                         .font(.caption).foregroundStyle(.secondary)
@@ -418,11 +243,10 @@ struct IntegrationsSettingsView: View {
                     Text("Reads included usage from the local Cursor sign-in. Set CURSOR_ADMIN_API_KEY to show exact team API spend for the current cycle; it is used only for Cursor's Admin API and is never stored or sent to the daemon.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                .padding(16)
-                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
+                .settingsCard()
 
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Budget alerts").font(.subheadline).bold()
+                    SettingsCardHeader(title: "Budget alerts")
                     Text("When either threshold below is set and a session crosses it — tokens (in + out) or total cost, whichever trips first — that session's row tints to a warning color in the dropdown and the desktop widget. Purely local and visual: nothing is sent to the daemon, an adapter, or anywhere else. Leave a field blank to turn that threshold off.")
                         .font(.caption).foregroundStyle(.secondary)
                     Divider()
@@ -444,11 +268,10 @@ struct IntegrationsSettingsView: View {
                             .frame(width: 90)
                     }
                 }
-                .padding(16)
-                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
+                .settingsCard()
 
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Stale sessions").font(.subheadline).bold()
+                    SettingsCardHeader(title: "Stale sessions")
                     Text("For integrations whose process or tmux pane cannot be verified, optionally dim an active-looking session after this many minutes without an adapter event. Healthy sessions use the daemon's 15-second attachment heartbeat and never become stale from age alone. This is display-only and defaults to Off.")
                         .font(.caption).foregroundStyle(.secondary)
                     Divider()
@@ -462,11 +285,10 @@ struct IntegrationsSettingsView: View {
                         Text("min").foregroundStyle(.secondary)
                     }
                 }
-                .padding(16)
-                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
+                .settingsCard()
 
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Ideas / roadmap").font(.subheadline).bold()
+                    SettingsCardHeader(title: "Ideas / roadmap")
                     Text("Not implemented yet — listed here so they don't get lost.")
                         .font(.caption).foregroundStyle(.secondary)
                     Divider()
@@ -485,12 +307,11 @@ struct IntegrationsSettingsView: View {
                         }
                     }
                 }
-                .padding(16)
-                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
+                .settingsCard()
 
                 Spacer(minLength: 0)
             }
-            .padding(20)
+            .settingsPageLayout()
         }
     }
 
@@ -582,11 +403,13 @@ struct StateStyleDetail: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(spacing: 10) {
-                    StateSwatch(state: state, color: style.color, size: 18)
-                    Text(state.display).font(.title2).bold()
-                    Spacer()
+            VStack(alignment: .leading, spacing: Metrics.settingsCardRhythm) {
+                SettingsPageHeader(
+                    title: state.display,
+                    subtitle: "Customize the color and animation shown when a session is \(state.display.lowercased()).",
+                    symbol: state.symbolName,
+                    tint: style.color
+                ) {
                     Button("Reset") { model.setStyle(state, defaultStyle(state)) }
                 }
 
@@ -599,6 +422,8 @@ struct StateStyleDetail: View {
                 }
 
                 VStack(alignment: .leading, spacing: 16) {
+                    SettingsCardHeader(title: "State appearance")
+                    Divider()
                     HStack {
                         Text("Color").font(.subheadline)
                         Spacer()
@@ -626,12 +451,11 @@ struct StateStyleDetail: View {
                         Slider(value: periodBinding, in: 100...5000, step: 50)
                     }
                 }
-                .padding(16)
-                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
+                .settingsCard()
 
                 Spacer(minLength: 0)
             }
-            .padding(20)
+            .settingsPageLayout()
         }
         .id(state) // fresh identity per state so debounced edits never bleed across rows
     }
@@ -690,17 +514,24 @@ struct HotkeysSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack {
-                    Text("Hotkeys").font(.title3).bold()
-                    Spacer()
+            VStack(alignment: .leading, spacing: Metrics.settingsCardRhythm) {
+                SettingsPageHeader(
+                    title: "Hotkeys",
+                    subtitle: "Global shortcuts work without Accessibility permission and always require a modifier key.",
+                    symbol: "keyboard"
+                ) {
                     Button("Reset All to Defaults", role: .destructive) {
                         cancelRecording()
                         model.resetAllHotkeyBindings()
                     }
                 }
-                Text("Global hotkeys work system-wide without Accessibility permission. Every combo must include at least one modifier key (\u{2303}\u{2325}\u{21E7}\u{2318}) so normal typing elsewhere is never affected.")
-                    .font(.caption).foregroundStyle(.secondary)
+
+                Label("Double-tap a Focus Session number to select its workflow lead; Accept, Reject, and Push to Talk then route to the orchestrator.",
+                      systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .settingsCard(.alert)
 
                 VStack(spacing: 0) {
                     ForEach(HotkeyActionID.allCases) { action in
@@ -710,12 +541,11 @@ struct HotkeysSettingsView: View {
                         }
                     }
                 }
-                .padding(12)
-                .liquidGlass(.settingsCard, radius: Metrics.rowRadius * 1.5)
+                .settingsCard(.list)
 
                 Spacer(minLength: 0)
             }
-            .padding(20)
+            .settingsPageLayout()
         }
         .onDisappear { cancelRecording() }
     }
