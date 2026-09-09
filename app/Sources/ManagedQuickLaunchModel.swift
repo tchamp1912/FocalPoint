@@ -36,10 +36,23 @@ struct ManagedQuickLaunchRequest: Equatable, Identifiable {
     let title: String
     let taskID: String
     let complexity: ManagedQuickLaunchComplexity
+    var terminalColor: String? = nil
+    var customLauncher: String? = nil
     var id: String { taskID }
 
+    /// An unchanged retry reuses the daemon's receipt; edited work gets a new id.
+    func withLaunchIdentity(previous: Self?) -> Self {
+        guard let previous else { return self }
+        func identified(_ id: String) -> Self {
+            .init(task: task, cwd: cwd, agentType: agentType, provider: provider,
+                  model: model, title: title, taskID: id, complexity: complexity, terminalColor: terminalColor, customLauncher: customLauncher)
+        }
+        let retry = identified(previous.taskID)
+        return retry == previous ? retry : identified(ManagedQuickLaunchRules.mintTaskID(prefix: "task"))
+    }
+
     var daemonPayload: [String: Any] {
-        [
+        var payload: [String: Any] = [
             "cmd": "launch-session",
             "provider": provider.rawValue,
             "model": model,
@@ -50,18 +63,23 @@ struct ManagedQuickLaunchRequest: Equatable, Identifiable {
             "title": title,
             "role": "worker",
         ]
+        if let terminalColor { payload["terminal_color"] = terminalColor }
+        if let customLauncher { payload["custom_launcher"] = customLauncher }
+        return payload
     }
 }
 
 struct ManagedQuickLaunchDraft: Equatable {
     var task = ""
     var cwd = ""
-    var agentType = "" // Blank agent + model means: resolve both from this task.
-    var provider: ManagedQuickLaunchProvider = .codex
+    var agentType = "" // Blank fields resolve independently from this task.
+    var provider: ManagedQuickLaunchProvider? = nil // nil is explicitly Automatic.
     var model = "" // Intentionally blank: there is no remembered/implicit model.
     var title = ""
     var taskID = ManagedQuickLaunchRules.mintTaskID(prefix: "task")
     var complexity: ManagedQuickLaunchComplexity = .infer
+    var terminalColor: String? = nil
+    var customLauncher: String? = nil
 
     mutating func apply(_ preset: ManagedQuickLaunchPreset) {
         cwd = preset.cwd
@@ -76,7 +94,7 @@ struct ManagedQuickLaunchDraft: Equatable {
 }
 
 struct ManagedQuickLaunchValidationIssue: Equatable, Identifiable {
-    enum Field: String { case task, cwd, agentType, provider, model, title, taskID }
+    enum Field: String { case task, cwd, agentType, provider, model, title, taskID, terminalColor, customLauncher }
     let field: Field
     let message: String
     var id: String { field.rawValue }
@@ -124,10 +142,35 @@ enum ManagedQuickLaunchRules {
         draft.complexity == .infer ? inferredComplexity(for: draft.task) : draft.complexity
     }
 
-    /// Resolve a task to a concrete provider, role, and model. The result is
-    /// recomputed from task text and complexity; no prior UI selection or
-    /// provider default participates in the decision.
+    /// Suggestions honor an explicit provider; only Automatic routes by task.
     static func recommendation(for draft: ManagedQuickLaunchDraft) -> ManagedQuickLaunchRecommendation {
+        let suggested = taskRecommendation(for: draft)
+        guard let provider = draft.provider else { return suggested }
+        let model: String
+        switch provider {
+        case .codex: model = suggested.complexity == .complex ? "gpt-5.6-sol" : "gpt-5.6-terra"
+        case .claude:
+            switch suggested.complexity {
+            case .simple: model = "claude-haiku-4-5"
+            case .complex: model = "claude-opus-5"
+            case .standard, .infer: model = "claude-sonnet-5"
+            }
+        case .cursor: model = "composer-2.5"
+        }
+        return .init(complexity: suggested.complexity, agentType: suggested.agentType,
+                     provider: provider, model: model,
+                     rationale: "Suggested for this task's complexity using your selected provider.")
+    }
+
+    static func suggestedModels(for provider: ManagedQuickLaunchProvider) -> [String] {
+        switch provider {
+        case .codex: return ["gpt-5.6-terra", "gpt-5.6-sol"]
+        case .claude: return ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"]
+        case .cursor: return ["composer-2.5"]
+        }
+    }
+
+    private static func taskRecommendation(for draft: ManagedQuickLaunchDraft) -> ManagedQuickLaunchRecommendation {
         let complexity = effectiveComplexity(for: draft)
         let intent = taskIntent(for: draft.task)
 
@@ -176,7 +219,8 @@ enum ManagedQuickLaunchRules {
             var isDirectory: ObjCBool = false
             return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
                 && isDirectory.boolValue
-        }
+        },
+        launcherExists: (String) -> Bool = isExecutableLauncher
     ) -> [ManagedQuickLaunchValidationIssue] {
         var issues: [ManagedQuickLaunchValidationIssue] = []
         let task = draft.task.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -191,8 +235,21 @@ enum ManagedQuickLaunchRules {
             || forbiddenAgentType(agentType) {
             issues.append(.init(field: .agentType, message: "Choose a concrete agent type; auto, default, and general are not launchable."))
         }
+        if draft.provider == nil {
+            issues.append(.init(field: .provider, message: "Choose a provider before saving these settings."))
+        }
+        if let launcher = draft.customLauncher {
+            if draft.provider != .claude {
+                issues.append(.init(field: .customLauncher, message: "Custom launchers use the Claude session integration."))
+            } else if !launcher.hasPrefix("/") || launcher.contains("\0") || !launcherExists(launcher) {
+                issues.append(.init(field: .customLauncher, message: "Choose an executable launcher script using its full path."))
+            }
+        }
         let model = draft.model.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !matches(model, pattern: #"[A-Za-z0-9][A-Za-z0-9._/@:-]{0,127}"#)
+        if (draft.provider == .claude && draft.customLauncher == nil && (model.hasPrefix("gpt-") || model.hasPrefix("composer-")))
+            || (draft.provider == .codex && (model.hasPrefix("claude-") || model.hasPrefix("composer-"))) {
+            issues.append(.init(field: .model, message: "This model belongs to another provider. Choose a model for the selected provider."))
+        } else if !matches(model, pattern: #"[A-Za-z0-9][A-Za-z0-9._/@:-]{0,127}"#)
             || forbiddenModel(model) {
             issues.append(.init(field: .model, message: "Enter a concrete model ID; auto and provider defaults are not launchable."))
         }
@@ -203,36 +260,69 @@ enum ManagedQuickLaunchRules {
         if !matches(draft.taskID, pattern: #"[A-Za-z0-9][A-Za-z0-9._-]{0,63}"#) {
             issues.append(.init(field: .taskID, message: "Task ID must be 1–64 letters, numbers, dots, underscores, or dashes."))
         }
+        if let color = draft.terminalColor, !matches(color, pattern: "#[0-9A-Fa-f]{6}") {
+            issues.append(.init(field: .terminalColor, message: "Choose a valid terminal color."))
+        }
         return issues
     }
 
     static func request(from draft: ManagedQuickLaunchDraft,
+                        personaPrompt: String? = nil,
                         directoryExists: (String) -> Bool = { path in
                             var isDirectory: ObjCBool = false
                             return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
                                 && isDirectory.boolValue
-                        }) -> Result<ManagedQuickLaunchRequest, ManagedQuickLaunchValidationFailure> {
+                        },
+                        launcherExists: (String) -> Bool = isExecutableLauncher) -> Result<ManagedQuickLaunchRequest, ManagedQuickLaunchValidationFailure> {
         var resolved = draft
+        resolved.cwd = (draft.cwd.trimmingCharacters(in: .whitespacesAndNewlines) as NSString).expandingTildeInPath
+        if let launcher = draft.customLauncher {
+            resolved.customLauncher = (launcher.trimmingCharacters(in: .whitespacesAndNewlines) as NSString).expandingTildeInPath
+        }
+        if draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            resolved.title = suggestedTitle(for: draft.task)
+        }
         let hasAgentType = !draft.agentType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let hasModel = !draft.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        if !hasAgentType && !hasModel {
-            let selection = recommendation(for: draft)
-            resolved.agentType = selection.agentType
-            resolved.provider = selection.provider
-            resolved.model = selection.model
-        }
-        let issues = validate(resolved, directoryExists: directoryExists)
+        let selection = recommendation(for: draft)
+        if !hasAgentType { resolved.agentType = selection.agentType }
+        if !hasModel && draft.customLauncher == nil { resolved.model = selection.model }
+        resolved.provider = draft.provider ?? selection.provider
+        resolved.agentType = resolved.agentType.trimmingCharacters(in: .whitespacesAndNewlines)
+        resolved.model = resolved.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let issues = validate(resolved, directoryExists: directoryExists, launcherExists: launcherExists)
         guard issues.isEmpty else { return .failure(.init(issues: issues)) }
+        let userTask = resolved.task.trimmingCharacters(in: .whitespacesAndNewlines)
+        let launchTask = personaPrompt.map { "Agent instructions:\n\($0)\n\nTask:\n\(userTask)" } ?? userTask
+        guard launchTask.utf8.count <= 16_384, !launchTask.contains("\0") else {
+            return .failure(.init(issues: [.init(field: .task,
+                message: "The task and agent instructions are too long. Shorten the task or choose another agent type.")]))
+        }
         return .success(.init(
-            task: resolved.task.trimmingCharacters(in: .whitespacesAndNewlines),
+            task: launchTask,
             cwd: URL(fileURLWithPath: resolved.cwd).standardizedFileURL.path,
             agentType: resolved.agentType,
-            provider: resolved.provider,
+            provider: resolved.provider ?? selection.provider,
             model: resolved.model,
             title: resolved.title.trimmingCharacters(in: .whitespacesAndNewlines),
             taskID: resolved.taskID,
-            complexity: effectiveComplexity(for: resolved)
+            complexity: effectiveComplexity(for: resolved),
+            terminalColor: resolved.terminalColor,
+            customLauncher: resolved.customLauncher
         ))
+    }
+
+    static func isExecutableLauncher(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+            && !isDirectory.boolValue && FileManager.default.isExecutableFile(atPath: path)
+    }
+
+    static func suggestedTitle(for task: String) -> String {
+        let words = task.components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }.joined(separator: " ")
+        return String(words.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }
+            .map(String.init).joined().prefix(80))
     }
 
     static func mintTaskID(prefix: String) -> String {
@@ -303,7 +393,7 @@ struct ManagedQuickLaunchPreset: Codable, Equatable, Identifiable {
         self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         cwd = draft.cwd
         agentType = draft.agentType
-        provider = draft.provider
+        provider = draft.provider ?? ManagedQuickLaunchRules.recommendation(for: draft).provider
         model = draft.model
         title = draft.title
         complexity = draft.complexity
@@ -343,7 +433,16 @@ final class ManagedQuickLaunchPresetStore {
     }
 
     func save(name: String, draft: ManagedQuickLaunchDraft) -> Result<[ManagedQuickLaunchPreset], ManagedQuickLaunchPresetError> {
-        let preset = ManagedQuickLaunchPreset(name: name, draft: draft)
+        var resolved = draft
+        let selection = ManagedQuickLaunchRules.recommendation(for: draft)
+        resolved.provider = draft.provider ?? selection.provider
+        if draft.agentType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            resolved.agentType = selection.agentType
+        }
+        if draft.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            resolved.model = selection.model
+        }
+        let preset = ManagedQuickLaunchPreset(name: name, draft: resolved)
         guard !preset.name.isEmpty, preset.name.count <= 60,
               !preset.name.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
             return .failure(.invalidName)

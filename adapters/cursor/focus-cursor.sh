@@ -8,13 +8,10 @@
 #
 # Goal: bring the Cursor window for this session's workspace to the front.
 #
-# Strategy, in order:
-#   1. `cursor -r <workspace>` — Cursor's CLI flag to reuse and raise the
-#      window already showing that folder. Plain `cursor <path>` can spawn a
-#      new window (especially with multi-workbench / glass builds).
-#   2. `open -a Cursor --args -r <workspace>` — same reuse flag when the CLI
-#      shim isn't on PATH.
-#   3. Plain activate when there's no workspace path to target.
+# Open the workspace through Cursor's CLI, whose ordinary folder-open path
+# selects an existing matching workspace. --reuse-window instead replaces the
+# last active workspace and can send focus to a completely unrelated session.
+# GUI apps have a sparse PATH, so also resolve Cursor's bundled CLI.
 #
 # HONEST LIMITATION: this focuses the WORKSPACE WINDOW, not the individual
 # chat. Cursor's hooks expose no window or composer handle — only
@@ -65,7 +62,7 @@ run_guarded() {
   local ticks=0
   while kill -0 "$pid" 2>/dev/null; do
     if [ "$ticks" -ge "$max_ticks" ]; then
-      kill "$pid" 2>/dev/null
+      kill -KILL "$pid" 2>/dev/null
       wait "$pid" 2>/dev/null
       return 124
     fi
@@ -76,21 +73,30 @@ run_guarded() {
   wait "$pid" 2>/dev/null
 }
 
-# Nothing to focus if Cursor isn't running — and we won't start it.
-pgrep -x "Cursor" >/dev/null 2>&1 || exit 0
+# Nothing to focus if Cursor isn't running. Return failure so the daemon
+# reports the missing endpoint instead of broadcasting a successful focus.
+pgrep -x "Cursor" >/dev/null 2>&1 || exit 1
 
-# 1/2: reuse and raise the existing workspace window — never spawn a new one.
+cursor_cli=$(command -v cursor 2>/dev/null || true)
+if [ -z "$cursor_cli" ]; then
+  for candidate in "/Applications/Cursor.app/Contents/Resources/app/bin/cursor" \
+      "$HOME/Applications/Cursor.app/Contents/Resources/app/bin/cursor"; do
+    if [ -x "$candidate" ]; then
+      cursor_cli="$candidate"
+      break
+    fi
+  done
+fi
+
 if [ -n "$CWD" ] && [ -d "$CWD" ]; then
-  if command -v cursor >/dev/null 2>&1; then
-    run_guarded cursor -r "$CWD" || true
-  else
-    run_guarded open -a "Cursor" --args -r "$CWD" || true
+  if [ -n "$cursor_cli" ]; then
+    run_guarded "$cursor_cli" "$CWD" && exit 0
   fi
+  # Passing a document to Launch Services reaches an already-running app;
+  # --args only supplies launch arguments and is ineffective in that case.
+  run_guarded open -a "Cursor" "$CWD"
+  exit $?
 fi
 
-# 3: make sure Cursor is the frontmost app regardless of which path ran.
-if command -v osascript >/dev/null 2>&1; then
-  run_guarded osascript -e 'tell application "Cursor" to activate' || true
-fi
-
-exit 0
+run_guarded osascript -e 'tell application "Cursor" to activate'
+exit $?

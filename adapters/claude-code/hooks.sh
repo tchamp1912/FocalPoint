@@ -338,6 +338,8 @@ case "$event" in
           resume_args+=(--meta "orchestrator_task_id=$FOCALPOINT_ORCHESTRATOR_TASK_ID")
         [ -n "${FOCALPOINT_SESSION_TITLE:-}" ] && \
           resume_args+=(--meta "session_title=$FOCALPOINT_SESSION_TITLE")
+        [ -n "${FOCALPOINT_CUSTOM_LAUNCHER:-}" ] && \
+          resume_args+=(--meta "custom_launcher=$FOCALPOINT_CUSTOM_LAUNCHER")
         [ -n "${FOCALPOINT_SESSION_SLOT:-}" ] && \
           resume_args+=(--meta "requested_slot=$FOCALPOINT_SESSION_SLOT")
         [ -n "${FOCALPOINT_ORCHESTRATION_ROLE:-}" ] && \
@@ -488,6 +490,8 @@ if [ -n "${session_id:-}" ]; then
     args+=(--meta "orchestrator_task_id=$FOCALPOINT_ORCHESTRATOR_TASK_ID")
   [ -n "${FOCALPOINT_SESSION_TITLE:-}" ] && \
     args+=(--meta "session_title=$FOCALPOINT_SESSION_TITLE")
+  [ -n "${FOCALPOINT_CUSTOM_LAUNCHER:-}" ] && \
+    args+=(--meta "custom_launcher=$FOCALPOINT_CUSTOM_LAUNCHER")
   [ -n "${FOCALPOINT_SESSION_SLOT:-}" ] && \
     args+=(--meta "requested_slot=$FOCALPOINT_SESSION_SLOT")
   [ -n "${FOCALPOINT_ORCHESTRATION_ROLE:-}" ] && \

@@ -189,6 +189,18 @@ The installer refreshes the launcher but creates
 That config applies only to FocalPoint-managed sessions and does not replace
 the user's normal tmux configuration.
 
+Managed terminals keep mouse scrollback with 100,000 lines of history. Drag to
+select text and release to copy it to the macOS clipboard. In tmux copy mode,
+Enter also copies (or `y` with vi keys); Escape leaves copy mode. The wrapper
+installs these bindings on each new private server, including installations
+with an older preserved `tmux.conf`.
+
+Choose a terminal accent in the launcher, or set
+`FOCALPOINT_TERMINAL_COLOR='#6C8CFF'` when invoking the wrapper. It colors a
+small tmux status bar and pane borders, leaving agent output colors unchanged.
+The app can also recolor an existing managed terminal; the daemon verifies its
+exact private pane before changing it. Colors must use six-digit `#RRGGBB`.
+
 Set `FOCALPOINT_TMUX_LAYOUT=cockpit` to put managed agents into one tmux session
 as separate windows. The default, `per-agent`, creates one tmux session per
 launcher invocation.

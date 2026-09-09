@@ -683,33 +683,33 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Dispatches the complete quick-launch identity exactly as reviewed. No
-    /// field is inferred here: validation has already required concrete agent,
-    /// provider, model, cwd, title, and stable task id in the launch sheet.
-    func launchManagedQuickSession(_ request: ManagedQuickLaunchRequest) {
+    /// Launch one validated request and return its acknowledgement to the form.
+    /// Keep the form busy until the daemon has finished opening the terminal.
+    func launchManagedQuickSession(_ request: ManagedQuickLaunchRequest) async -> String? {
         let spec = ManagedLaunchSpec(agentType: request.agentType,
                                      provider: request.provider.rawValue,
                                      model: request.model, cwd: request.cwd,
                                      taskID: request.taskID, title: request.title,
                                      task: request.task, role: "worker",
-                                     managerTaskID: nil, channelID: nil, workflow: nil)
-        roadmapActionError = nil
+                                     managerTaskID: nil, channelID: nil, workflow: nil,
+                                     terminalColor: request.terminalColor,
+                                     customLauncher: request.customLauncher)
         let client = self.client
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let response = client.launch(spec)
-            let failure: String?
-            if response?["ok"] as? Bool == true {
-                failure = nil
-            } else if let daemonError = response?["error"] as? String, !daemonError.isEmpty {
-                failure = daemonError
-            } else {
-                failure = "FocalPoint could not launch the managed session. Check that the daemon is running."
-            }
-            Task { @MainActor [weak self] in
-                self?.roadmapActionError = failure
-                if failure == nil { self?.refreshRoadmapState() }
+        let failure: String? = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                // Cursor registration alone can take 15 seconds. The previous
+                // five-second timeout reported failure while launch continued.
+                let response = client.launch(spec, timeout: 30)
+                if response?["ok"] as? Bool == true {
+                    continuation.resume(returning: nil)
+                } else {
+                    continuation.resume(returning: (response?["error"] as? String)
+                        ?? "The launch has not been acknowledged. Check Live Sessions before retrying; retrying unchanged settings uses the same launch request.")
+                }
             }
         }
+        if failure == nil { refreshRoadmapState() }
+        return failure
     }
 
     func clearRoadmapActionError() { roadmapActionError = nil }
@@ -897,6 +897,7 @@ final class AppModel: ObservableObject {
         let meta = e["meta"] as? [String: Any]
         let cwd = meta?["cwd"] as? String
         let model = meta?["model"] as? String
+        let customLauncher = meta?["custom_launcher"] as? String
         let contextTokens = (meta?["context_tokens"] as? NSNumber)?.doubleValue
         let reportedContextWindow = (meta?["context_window"] as? NSNumber)?.doubleValue
         let managed = Self.parseManaged(meta?["managed"])
@@ -956,6 +957,7 @@ final class AppModel: ObservableObject {
             if let b = e["backlogged"] as? Bool { s.backlogged = b }
             if let cwd = cwd { s.cwd = cwd }
             if let model = model { s.model = model }
+            if let customLauncher { s.customLauncher = customLauncher }
             if let contextTokens = contextTokens { s.contextTokens = contextTokens }
             if let reportedContextWindow = reportedContextWindow {
                 s.reportedContextWindow = reportedContextWindow
@@ -989,6 +991,7 @@ final class AppModel: ObservableObject {
             s.attachmentType = attachmentType
             s.lastVerified = lastVerified
             s.model = model
+            s.customLauncher = customLauncher
             s.contextTokens = contextTokens
             s.reportedContextWindow = reportedContextWindow
             if let managed = managed { s.managed = managed }
@@ -1273,22 +1276,12 @@ final class AppModel: ObservableObject {
 
     // MARK: - Commands
 
-    /// Focus/bounce a session by tapping its numbered key (PROTOCOL.md §3 Focus).
+    /// A row represents a session identity, even if its keyboard slot changes
+    /// before the daemon receives the click. Hardware keys still route by slot.
     func focusSession(_ s: SessionInfo) {
         focusedSessionID = s.id
         log("focus requested id=\(boundedLogField(s.id)) slot=\(s.slot.map(String.init) ?? "-") state=\(s.state.rawValue) connected=\(s.connected) managed=\(s.managed)")
-        if s.connected, let slot = s.slot {
-            // Live session with a slot: same path a numbered-key press takes.
-            client.send(["cmd": "inject", "kind": "key", "control": "key\(slot)", "action": "tap"])
-        } else {
-            // Disconnected (or slotless) — focus by id. The daemon looks the
-            // session up in live sessions or tombstones and runs the focus
-            // action against its last-known tty/cwd. A reaped session's
-            // terminal is usually still open (idle past the TTL, or an agent
-            // crash that left the window), so trying to switch to it is worth
-            // it even though it's no longer reporting.
-            client.send(["cmd": "focus-session", "session": s.id])
-        }
+        client.send(["cmd": "focus-session", "session": s.id])
     }
 
     // MARK: - Focus-navigation hotkeys (attention-next/prev, session-next/prev)
@@ -1331,6 +1324,30 @@ final class AppModel: ObservableObject {
         focusSession(next)
     }
 
+    /// Apply an accent to this managed terminal and report rejected or timed-out requests.
+    func setSessionTerminalColor(_ session: SessionInfo, color: String) {
+        let client = self.client
+        DispatchQueue.global(qos: .userInitiated).async {
+            let response = client.request([
+                "cmd": "set-session-terminal-color",
+                "session": session.id,
+                "terminal_color": color,
+            ], timeout: 5)
+            guard response?["ok"] as? Bool != true else { return }
+            let message = (response?["error"] as? String)
+                ?? "The daemon did not acknowledge the color change. Check the terminal before trying again."
+            Task { @MainActor in
+                let alert = NSAlert()
+                alert.messageText = "Could not change the terminal color for “\(session.title)”"
+                alert.informativeText = message
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "OK")
+                NSApp.activate(ignoringOtherApps: true)
+                alert.runModal()
+            }
+        }
+    }
+
     /// Rename a session (PROTOCOL.md §3). An empty/whitespace-only name
     /// clears the rename so the adapter's label shows again.
     ///
@@ -1368,16 +1385,27 @@ final class AppModel: ObservableObject {
     /// `quit-session` simply ignores it — pair it with the visible "Remove
     /// Session" action, which always works.
     func quitSession(_ s: SessionInfo, confirmedByUser: Void) {
-        if s.isManaged, let taskID = s.orchestratorTaskID {
-            let client = self.client
-            DispatchQueue.global(qos: .userInitiated).async {
-                _ = client.stopManagedSession(sessionID: s.id, taskID: taskID,
-                                              userConfirmed: ())
+        let client = self.client
+        DispatchQueue.global(qos: .userInitiated).async {
+            let response: [String: Any]?
+            if s.isManaged, let taskID = s.orchestratorTaskID, !taskID.isEmpty {
+                response = client.stopManagedSession(sessionID: s.id, taskID: taskID,
+                                                     userConfirmed: ())
+            } else {
+                response = client.request(["cmd": "quit-session", "session": s.id], timeout: 3)
             }
-        } else {
-            // Compatibility path for unmanaged/legacy rows. The Swift API
-            // still requires the caller to supply its completed confirmation.
-            client.send(["cmd": "quit-session", "session": s.id])
+            guard response?["ok"] as? Bool != true else { return }
+            let message = (response?["error"] as? String)
+                ?? "The daemon did not acknowledge the request. Check the session before trying again."
+            Task { @MainActor in
+                let alert = NSAlert()
+                alert.messageText = "Could not end “\(s.title)”"
+                alert.informativeText = message
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "OK")
+                NSApp.activate(ignoringOtherApps: true)
+                alert.runModal()
+            }
         }
     }
 
@@ -1429,7 +1457,7 @@ final class AppModel: ObservableObject {
         guard let s = sessions.first(where: { $0.id == id }) else { return }
         let entry = SessionHistoryEntry(
             id: UUID().uuidString, sessionID: s.id, title: s.title, kind: s.kind,
-            cwd: s.cwd, model: s.model, finalState: s.state,
+            cwd: s.cwd, model: s.model, customLauncher: s.customLauncher, finalState: s.state,
             startedAt: s.firstSeen, endedAt: Date(),
             statValues: Dictionary(uniqueKeysWithValues: s.stats.map { ($0.key.rawValue, $0.value) }))
         sessionHistory.insert(entry, at: 0)
@@ -1815,10 +1843,12 @@ final class AppModel: ObservableObject {
         let client = self.client
         let targetID = entry.sessionID
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let response = client.request([
+            var request: [String: Any] = [
                 "cmd": "resume-session", "provider": entry.kind, "cwd": cwd,
                 "session": targetID, "title": entry.title,
-            ], timeout: 3)
+            ]
+            if let launcher = entry.customLauncher { request["custom_launcher"] = launcher }
+            let response = client.request(request, timeout: 30)
             guard response?["ok"] as? Bool == true else {
                 Task { @MainActor [weak self] in
                     if let idx = self?.sessions.firstIndex(where: { $0.id == targetID && $0.pendingReopen }) {
@@ -1850,6 +1880,7 @@ final class AppModel: ObservableObject {
                                 name: nil, slot: nil, state: .idle, connected: true,
                                 cwd: entry.cwd, firstSeen: Date(), lastChange: Date(), stats: [:])
             s.pendingReopen = true
+            s.customLauncher = entry.customLauncher
             sessions.append(s)
         }
         log("optimistic reopen \(operation) id=\(boundedLogField(entry.sessionID)) kind=\(boundedLogField(entry.kind)) rows=\(sessions.count)")

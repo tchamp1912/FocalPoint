@@ -150,12 +150,13 @@ protocol SetupDiagnosticActionPerforming: Sendable {
 /// layer removes home paths, credential-shaped assignments, and common token
 /// forms in case a future probe accidentally supplies them.
 enum SetupDiagnosticsRedactor {
-    static func redact(_ input: String) -> String {
+    static func redact(_ input: String, limit: Int = 1_000) -> String {
         var output = input.replacingOccurrences(of: NSHomeDirectory(), with: "~")
         let patterns = [
             #"(?i)\b(api[_-]?key|access[_-]?token|auth[_-]?token|secret|password)\s*[:=]\s*[^\s,;]+"#,
             #"\b(sk|sk-ant|ghp|github_pat)-[A-Za-z0-9_-]{8,}\b"#,
-            #"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}"#
+            #"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}"#,
+            #"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b"#
         ]
         for pattern in patterns {
             guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
@@ -164,7 +165,16 @@ enum SetupDiagnosticsRedactor {
                                                     range: range,
                                                     withTemplate: "[REDACTED]")
         }
-        return String(output.prefix(1_000))
+        // Operational logs historically included labels and working paths.
+        // They are useful locally but never belong in a public issue body.
+        let privateFieldPattern = #"(?i)\b(title|label|cwd|prompt|body|text|project)=.*?(?=\s[a-z_][a-z0-9_]*=|$)"#
+        if let regex = try? NSRegularExpression(pattern: privateFieldPattern) {
+            let range = NSRange(output.startIndex..., in: output)
+            output = regex.stringByReplacingMatches(in: output,
+                                                    range: range,
+                                                    withTemplate: "$1=[REDACTED]")
+        }
+        return String(output.prefix(max(0, limit)))
     }
 }
 
@@ -185,7 +195,7 @@ struct SetupDiagnosticsReport {
                 lines.append("  - \(item.label): \(item.value)")
             }
         }
-        return SetupDiagnosticsRedactor.redact(lines.joined(separator: "\n"))
+        return SetupDiagnosticsRedactor.redact(lines.joined(separator: "\n"), limit: 50_000)
     }
 
     private static func machineArchitecture() -> String {

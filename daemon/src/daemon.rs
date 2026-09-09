@@ -113,6 +113,10 @@ pub enum Request {
     FocusSession {
         session: String,
     },
+    SetSessionTerminalColor {
+        session: String,
+        terminal_color: String,
+    },
     SetLed {
         index: u64,
         rgb: Vec<u64>,
@@ -182,6 +186,8 @@ pub enum Request {
         model: Option<String>,
         agent_type: Option<String>,
         cursor_mode: Option<String>,
+        terminal_color: Option<String>,
+        custom_launcher: Option<String>,
         task: String,
         task_id: String,
         title: Option<String>,
@@ -206,6 +212,7 @@ pub enum Request {
         cwd: String,
         session: String,
         title: Option<String>,
+        custom_launcher: Option<String>,
     },
     Ping,
     GetCapabilities,
@@ -518,6 +525,26 @@ fn executable_named(name: &str) -> Option<PathBuf> {
         .find(|path| path.is_file() && is_executable(path))
 }
 
+/// A custom launcher is one executable path, never a shell command string.
+#[cfg(unix)]
+fn custom_launcher_path(provider: &str, launcher: Option<&str>) -> Result<Option<PathBuf>, String> {
+    let Some(launcher) = launcher else { return Ok(None); };
+    if provider != "claude" {
+        return Err("custom_launcher is supported only for provider 'claude'".into());
+    }
+    let path = Path::new(launcher);
+    if !path.is_absolute() || !path.is_file() || !is_executable(path) {
+        return Err("custom_launcher must be an existing absolute executable file; it will not fall back to the default Claude launcher".into());
+    }
+    Ok(Some(path.to_path_buf()))
+}
+
+#[cfg(unix)]
+fn provider_launcher(provider: &str, custom: Option<&str>) -> Result<PathBuf, String> {
+    if let Some(path) = custom_launcher_path(provider, custom)? { return Ok(path); }
+    executable_named(provider).ok_or_else(|| format!("provider executable not found: {provider}"))
+}
+
 #[cfg(unix)]
 fn is_executable(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
@@ -553,6 +580,7 @@ struct ManagedResumeLaunch {
     config: PathBuf,
     cwd: PathBuf,
     provider: PathBuf,
+    custom_launcher: Option<String>,
     launch_path: std::ffi::OsString,
     kind: String,
     source_session_id: String,
@@ -572,8 +600,8 @@ fn prepare_managed_resume(
         return Err("working directory is not a directory".to_string());
     }
     let kind = session.kind.as_deref().unwrap_or("");
-    let provider =
-        executable_named(kind).ok_or_else(|| format!("provider executable not found: {kind}"))?;
+    let custom_launcher = session.meta.get("custom_launcher").and_then(Value::as_str);
+    let provider = provider_launcher(kind, custom_launcher)?;
     let tmux = executable_named("tmux").ok_or_else(|| "tmux is not installed".to_string())?;
     let focalpoint = executable_named("focalpoint")
         .ok_or_else(|| "focalpoint CLI is not installed".to_string())?;
@@ -620,6 +648,7 @@ fn prepare_managed_resume(
         config,
         cwd,
         provider,
+        custom_launcher: custom_launcher.map(str::to_owned),
         launch_path,
         kind: kind.to_string(),
         source_session_id: session.id.clone(),
@@ -651,8 +680,11 @@ fn launch_managed_resume(prepared: &ManagedResumeLaunch) -> Result<(), String> {
             prepared.focalpoint.to_string_lossy()
         ))
         .arg("-e")
-        .arg(format!("PATH={}", prepared.launch_path.to_string_lossy()))
-        .arg("-s")
+        .arg(format!("PATH={}", prepared.launch_path.to_string_lossy()));
+    if let Some(launcher) = &prepared.custom_launcher {
+        command.arg("-e").arg(format!("FOCALPOINT_CUSTOM_LAUNCHER={launcher}"));
+    }
+    command.arg("-s")
         .arg(&prepared.tmux_session)
         .arg("-c")
         .arg(&prepared.cwd)
@@ -960,6 +992,8 @@ fn correlate_pending_managed_launch(
         "manager_task_id",
         "channel_id",
         "terminal_bundle_id",
+        "terminal_color",
+        "custom_launcher",
         "agent_type",
         "provider",
         "model",
@@ -1138,6 +1172,64 @@ fn valid_orchestrator_task_id(id: &str) -> bool {
     matches!(chars.next(), Some(ch) if ch.is_ascii_alphanumeric())
         && id.len() <= 64
         && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
+}
+
+#[cfg(unix)]
+fn valid_terminal_color(color: &str) -> bool {
+    color.len() == 7 && color.starts_with('#') && color[1..].bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Mutate only a verified pane on a private FocalPoint tmux server.
+#[cfg(unix)]
+fn set_managed_terminal_color(session: &Session, color: &str) -> Result<(), String> {
+    let tmux = executable_named("tmux").ok_or("tmux is not installed")?;
+    set_managed_terminal_color_with_tmux(session, color, &tmux)
+}
+
+#[cfg(unix)]
+fn set_managed_terminal_color_with_tmux(session: &Session, color: &str, tmux: &Path) -> Result<(), String> {
+    if !valid_terminal_color(color) {
+        return Err("terminal_color must be a six-digit hex color such as #6C8CFF".into());
+    }
+    let Some(Attachment::Managed { mux_server, mux_socket, mux_session, mux_pane, pane_tty, .. }) = session.attachment.as_ref() else {
+        return Err("terminal color requires a connected managed session".into());
+    };
+    if !valid_focalpoint_tmux_server(mux_server) {
+        return Err("terminal color requires a private FocalPoint tmux server".into());
+    }
+    let address = if let Some(socket) = mux_socket.as_deref().filter(|s| !s.is_empty()) {
+        if Path::new(socket).file_name().and_then(|s| s.to_str()) != Some(mux_server.as_str()) {
+            return Err("managed tmux socket does not match its private server".into());
+        }
+        vec!["-S", socket]
+    } else {
+        vec!["-L", mux_server.as_str()]
+    };
+    let observed = Command::new(&tmux).args(&address)
+        .args(["list-panes", "-a", "-F", "#{session_name}|#{pane_id}|#{pane_tty}"])
+        .output().map_err(|error| format!("could not verify managed terminal: {error}"))?;
+    let expected = format!("{mux_session}|{mux_pane}|{pane_tty}");
+    if !observed.status.success() || !String::from_utf8_lossy(&observed.stdout).lines().any(|line| line == expected) {
+        return Err("managed terminal is disconnected or its pane identity changed".into());
+    }
+    let rgb = u32::from_str_radix(&color[1..], 16).expect("validated RGB");
+    let luma = 299 * ((rgb >> 16) & 255) + 587 * ((rgb >> 8) & 255) + 114 * (rgb & 255);
+    let text = if luma >= 140000 { "#111111" } else { "#ffffff" };
+    let status_style = format!("bg={color},fg={text}");
+    let border_style = format!("fg={color}");
+    let target_session = format!("={mux_session}");
+    let output = Command::new(tmux).args(&address).args([
+        "set-option", "-t", &target_session, "status", "on", ";",
+        "set-option", "-t", &target_session, "status-style", &status_style, ";",
+        "set-option", "-t", &target_session, "status-left", " FocalPoint ", ";",
+        "set-option", "-t", &target_session, "status-right", " #{session_name} ", ";",
+        "set-option", "-w", "-t", mux_pane, "pane-border-style", &border_style, ";",
+        "set-option", "-w", "-t", mux_pane, "pane-active-border-style", &border_style,
+    ]).output().map_err(|error| format!("could not recolor managed terminal: {error}"))?;
+    if !output.status.success() {
+        return Err("tmux could not apply the terminal color".into());
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -1927,10 +2019,12 @@ fn close_exact_terminal_endpoint_with_helper(
         endpoint.session_id.as_deref(),
         endpoint.host_tty.as_deref(),
     );
-    if let (Some("com.googlecode.iterm2"), Some(session_id)) = (bundle, session_id) {
+    let iterm_target = session_id.map(|id| ("--session-id", id))
+        .or_else(|| host_tty.map(|tty| ("--tty", tty)));
+    if let (Some("com.googlecode.iterm2"), Some((selector, value))) = (bundle, iterm_target) {
         if let Some(helper) = helper.filter(|path| path.is_file()) {
             let mut command = Command::new(helper);
-            command.args(["--close", "--session-id", session_id]);
+            command.args(["--close", selector, value]);
             if let Some(pid) = endpoint.application_pid {
                 command.args(["--application-pid", &pid.to_string()]);
             }
@@ -1944,6 +2038,10 @@ fn close_exact_terminal_endpoint_with_helper(
         (Some("com.googlecode.iterm2"), Some(session_id), _) => format!(
             "tell application id \"com.googlecode.iterm2\" to repeat with w in windows\nrepeat with t in tabs of w\nrepeat with s in sessions of t\nif unique ID of s is \"{}\" then close s\nend repeat\nend repeat\nend repeat",
             applescript_escape(session_id),
+        ),
+        (Some("com.googlecode.iterm2"), None, Some(tty)) => format!(
+            "tell application id \"com.googlecode.iterm2\" to repeat with w in windows\nrepeat with t in tabs of w\nrepeat with s in sessions of t\nif tty of s is \"{}\" then close s\nend repeat\nend repeat\nend repeat",
+            applescript_escape(tty),
         ),
         (Some("com.apple.Terminal"), _, Some(tty)) => format!(
             "tell application id \"com.apple.Terminal\" to repeat with w in windows\nrepeat with t in tabs of w\nif tty of t is \"{}\" then close t\nend repeat\nend repeat",
@@ -1970,6 +2068,8 @@ fn launch_orchestrated_session(
     model: &str,
     agent_type: &str,
     cursor_mode: Option<&str>,
+    terminal_color: Option<&str>,
+    custom_launcher: Option<&str>,
     cwd: &str,
     task: &str,
     task_id: &str,
@@ -2022,7 +2122,10 @@ fn launch_orchestrated_session(
     // daemon row, and no error anywhere. Silent degradation to a binary that
     // cannot do the job is worse than refusing, so headless launches require
     // the real agent CLI and say so.
-    let provider_bin = if provider == "cursor" {
+    let custom_provider = custom_launcher_path(provider, custom_launcher)?;
+    let provider_bin = if custom_provider.is_some() {
+        custom_provider
+    } else if provider == "cursor" {
         match executable_named("cursor-agent") {
             Some(path) => Some(path),
             None if cursor_mode == "attachable" => executable_named("cursor"),
@@ -2112,6 +2215,8 @@ fn launch_orchestrated_session(
         "model": model,
         "cwd": cwd,
         "terminal_bundle_id": terminal_bundle_id.clone(),
+        "terminal_color": terminal_color,
+        "custom_launcher": custom_launcher,
         "role": role,
         "manager_task_id": manager_task_id,
         "channel_id": channel_id,
@@ -2175,6 +2280,8 @@ fn launch_orchestrated_session(
         .map(|id| format!("export FOCALPOINT_CHANNEL_ID={}\n", shell_quote(id)))
         .unwrap_or_default();
     let roadmap_exports = [
+        ("FOCALPOINT_CUSTOM_LAUNCHER", custom_launcher),
+        ("FOCALPOINT_TERMINAL_COLOR", terminal_color),
         ("FOCALPOINT_AGENT_TYPE", Some(agent_type)),
         ("FOCALPOINT_WORKFLOW_ID", workflow_id),
         ("FOCALPOINT_WORKFLOW_RUN_ID", workflow_run_id),
@@ -2302,6 +2409,7 @@ fn resume_managed_session(
     cwd: &str,
     session: &str,
     title: Option<&str>,
+    custom_launcher: Option<&str>,
 ) -> Result<Value, String> {
     use std::os::unix::fs::OpenOptionsExt;
     if !matches!(provider, "claude" | "codex") {
@@ -2320,6 +2428,7 @@ fn resume_managed_session(
     if !runner.is_file() || !is_executable(&runner) {
         return Err("managed-session launcher is not installed".into());
     }
+    let provider_bin = provider_launcher(provider, custom_launcher)?;
     let state = crate::paths::daemon_state_dir();
     let receipts = state.join("resumes");
     let launchers = state.join("launchers");
@@ -2343,7 +2452,7 @@ fn resume_managed_session(
     // attempt collision-free and auditable instead.
     let receipt = receipts.join(format!("{provider}-{key}-{launch_id}.json"));
     let mut value = serde_json::json!({"ok":true,"launch_id":launch_id,"provider":provider,"session":session,
-        "title":title,"cwd":cwd,"terminal_bundle_id":terminal_bundle_id,"status":"opening"});
+        "title":title,"cwd":cwd,"terminal_bundle_id":terminal_bundle_id,"custom_launcher":custom_launcher,"status":"opening"});
     let mut file = OpenOptions::new()
         .create_new(true)
         .write(true)
@@ -2353,30 +2462,10 @@ fn resume_managed_session(
     serde_json::to_writer_pretty(&mut file, &value).map_err(|e| e.to_string())?;
     file.sync_all().map_err(|e| e.to_string())?;
     let launcher = launchers.join(format!("resume-{provider}-{key}.command"));
-    let provider_command = if provider == "claude" {
-        format!(
-            "{} --resume {}",
-            shell_quote(
-                &executable_named("claude")
-                    .ok_or("claude is not installed")?
-                    .display()
-                    .to_string()
-            ),
-            shell_quote(session)
-        )
-    } else {
-        format!(
-            "{} resume {}",
-            shell_quote(
-                &executable_named("codex")
-                    .ok_or("codex is not installed")?
-                    .display()
-                    .to_string()
-            ),
-            shell_quote(session)
-        )
-    };
-    let title_export = title
+    let provider_command = format!("{} {} {}", shell_quote(&provider_bin.display().to_string()),
+        if provider == "claude" { "--resume" } else { "resume" }, shell_quote(session));
+    let custom_export = custom_launcher.map(|path| format!("export FOCALPOINT_CUSTOM_LAUNCHER={}\n", shell_quote(path))).unwrap_or_default();
+    let title_export = custom_export + &title
         .filter(|value| !value.is_empty())
         .map(|value| format!("export FOCALPOINT_SESSION_TITLE={}\n", shell_quote(value)))
         .unwrap_or_default();
@@ -2958,28 +3047,56 @@ fn orchestrated_transcript_path(session: &Session) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+/// Capture shutdown identity before provider hooks can remove the registry row.
+/// Cursor GUI conversations share an editor process; that PID is for focus,
+/// never permission to quit the entire editor.
+#[cfg(unix)]
+fn session_shutdown_target(session: &Session) -> Result<(Option<i32>, Option<TerminalEndpoint>), String> {
+    if session.kind.as_deref() == Some("cursor")
+        && !matches!(session.attachment, Some(Attachment::Managed { .. }))
+    {
+        return Err("Close this conversation in Cursor, or remove it from FocalPoint; its process is shared with other editor sessions.".into());
+    }
+    let pid = session.pid();
+    if pid.is_some_and(|pid| pid <= 1) {
+        return Err("session has no safe provider process to stop".into());
+    }
+    let terminal = match session.attachment.as_ref() {
+        Some(Attachment::Process { terminal, .. } | Attachment::Managed { terminal, .. }) => {
+            Some(terminal.clone())
+        }
+        _ => None,
+    };
+    Ok((pid, terminal))
+}
+
 #[cfg(unix)]
 fn gracefully_end_session(
     id: &str,
-    pid: Option<i32>,
+    session: &Session,
     ctx: &EventCtx,
     host_tx: &tokio::sync::mpsc::UnboundedSender<HostCmd>,
-) {
-    if let Some(pid) = pid {
-        let ctx = ctx.clone();
-        let host_tx = host_tx.clone();
-        let id = id.to_string();
-        std::thread::spawn(move || {
-            quit_agent_process(pid);
-            let _transition = ctx.transition.lock().unwrap();
-            let effects = ctx.shared.lock().unwrap().registry.end_session(&id);
-            apply_effects(effects, &ctx, &host_tx);
-        });
-    } else {
+) -> Result<(), String> {
+    let (pid, terminal) = session_shutdown_target(session)?;
+    let ctx = ctx.clone();
+    let host_tx = host_tx.clone();
+    let id = id.to_string();
+    std::thread::spawn(move || {
+        if pid.is_some_and(|pid| !quit_agent_process(pid)) {
+            eprintln!("[session] quit-failed id={} reason=provider-still-running", diagnostic_text(&id));
+            return;
+        }
+        if let Some(endpoint) = terminal {
+            match close_exact_terminal_endpoint(&endpoint) {
+                Ok(()) => eprintln!("[session] quit-terminal id={} result=closed", diagnostic_text(&id)),
+                Err(reason) => eprintln!("[session] quit-terminal id={} result=left-open reason={}", diagnostic_text(&id), diagnostic_text(&reason)),
+            }
+        }
         let _transition = ctx.transition.lock().unwrap();
-        let effects = ctx.shared.lock().unwrap().registry.end_session(id);
-        apply_effects(effects, ctx, host_tx);
-    }
+        let effects = ctx.shared.lock().unwrap().registry.end_session(&id);
+        apply_effects(effects, &ctx, &host_tx);
+    });
+    Ok(())
 }
 
 /// JSON line for a `state` event (PROTOCOL.md §3): the aggregate state.
@@ -3183,13 +3300,43 @@ fn apply_effects(
                 state,
             } => {
                 session_effect = true;
+                let authoritative = ctx
+                    .shared
+                    .lock()
+                    .unwrap()
+                    .registry
+                    .session_or_tombstone(&id);
+                let attachment = authoritative
+                    .as_ref()
+                    .and_then(Session::attachment_type)
+                    .unwrap_or("none");
+                let health = authoritative
+                    .as_ref()
+                    .map(|session| session.health.name())
+                    .unwrap_or("unknown");
+                let health_reason = authoritative
+                    .as_ref()
+                    .and_then(|session| session.health_reason.as_deref())
+                    .map(diagnostic_text)
+                    .unwrap_or_else(|| "-".into());
+                let failed_probes = authoritative
+                    .as_ref()
+                    .map(|session| session.failed_probes)
+                    .unwrap_or(0);
                 eprintln!(
-                    "[session] upsert id={} slot={} state={} kind={} title={} task_id={} role={} pid={} tty={} mux_server={} mux_session={} mux_pane={} managed={} relaunch={}",
+                    "[session] upsert at_unix_ms={} id={} slot={} state={} kind={} title_len={} attachment={} health={} health_reason={} failed_probes={} adapter_event={} adapter_version={} task_id={} role={} pid={} tty={} mux_server={} mux_session={} mux_pane={} managed={} relaunch={}",
+                    unix_ms_now(),
                     diagnostic_text(&id),
                     slot.map(|v| v.to_string()).unwrap_or_else(|| "-".into()),
                     state.name(),
                     kind.as_deref().map(diagnostic_text).unwrap_or_else(|| "-".into()),
-                    label.as_deref().map(diagnostic_text).unwrap_or_else(|| "-".into()),
+                    label.as_deref().map(|value| value.chars().count().to_string()).unwrap_or_else(|| "-".into()),
+                    attachment,
+                    health,
+                    health_reason,
+                    failed_probes,
+                    diagnostic_meta(&meta, "adapter_event"),
+                    diagnostic_meta(&meta, "adapter_version"),
                     diagnostic_meta(&meta, "orchestrator_task_id"),
                     diagnostic_meta(&meta, "orchestration_role"),
                     diagnostic_meta(&meta, "pid"), diagnostic_meta(&meta, "tty"),
@@ -3203,12 +3350,6 @@ fn apply_effects(
                         state: Some(state),
                     });
                 }
-                let authoritative = ctx
-                    .shared
-                    .lock()
-                    .unwrap()
-                    .registry
-                    .session_or_tombstone(&id);
                 if let Some(session) = authoritative {
                     ctx.broadcast(&event_line(Event::Session {
                         session: session_to_dto(&session, None),
@@ -3237,10 +3378,21 @@ fn apply_effects(
                 // session), but subscribers keep the row as *disconnected*
                 // rather than dropping it.
                 session_effect = true;
+                let retained = ctx
+                    .shared
+                    .lock()
+                    .unwrap()
+                    .registry
+                    .session_or_tombstone(&id);
                 eprintln!(
-                    "[session] disconnect id={} slot={}",
+                    "[session] disconnect at_unix_ms={} id={} slot={} prior_attachment={} reason={} failed_probes={}",
+                    unix_ms_now(),
                     diagnostic_text(&id),
-                    slot.map(|v| v.to_string()).unwrap_or_else(|| "-".into())
+                    slot.map(|v| v.to_string()).unwrap_or_else(|| "-".into()),
+                    retained.as_ref().and_then(Session::attachment_type).unwrap_or("none"),
+                    retained.as_ref().and_then(|session| session.health_reason.as_deref())
+                        .map(diagnostic_text).unwrap_or_else(|| "-".into()),
+                    retained.as_ref().map(|session| session.failed_probes).unwrap_or(0),
                 );
                 if let Some(key) = slot {
                     let _ = host_tx.send(HostCmd::SetKeyState { key, state: None });
@@ -3249,14 +3401,23 @@ fn apply_effects(
             }
             Effect::SessionHealthChanged { id, health, reason } => {
                 session_effect = true;
+                let current = ctx
+                    .shared
+                    .lock()
+                    .unwrap()
+                    .registry
+                    .session_or_tombstone(&id);
                 eprintln!(
-                    "[probe] session={} health={} reason={}",
+                    "[probe] at_unix_ms={} session={} health={} reason={} attachment={} failed_probes={}",
+                    unix_ms_now(),
                     diagnostic_text(&id),
                     health.name(),
                     reason
                         .as_deref()
                         .map(diagnostic_text)
-                        .unwrap_or_else(|| "-".into())
+                        .unwrap_or_else(|| "-".into()),
+                    current.as_ref().and_then(Session::attachment_type).unwrap_or("none"),
+                    current.as_ref().map(|session| session.failed_probes).unwrap_or(0),
                 );
                 ctx.broadcast(&event_line(Event::SessionHealthChanged {
                     session: id,
@@ -3382,6 +3543,7 @@ fn public_meta(meta: &Map<String, Value>) -> Map<String, Value> {
                         | "process_boot_time"
                         | "process_start_time"
                         | "provider_executable"
+                        | "attachment_scope"
                         | "terminal_application_pid"
                 )
         })
@@ -3621,7 +3783,7 @@ fn save_snapshot(shared: &Mutex<Shared>) {
             .collect();
         let tombstones: Vec<serde_json::Value> = s
             .registry
-            .tombstones_snapshot()
+            .persisted_tombstones_snapshot()
             .iter()
             .map(|(_, sess, reaped_at)| {
                 let mut v = session_to_json(sess);
@@ -3995,7 +4157,8 @@ fn focus_environment(session: &crate::session::Session, slot: u8) -> Vec<(&'stat
 fn run_focus(ctx: &EventCtx, session: &crate::session::Session, slot: u8) {
     let focus = ctx.config.session.focus.clone().unwrap_or(Action::None);
     eprintln!(
-        "[focus] id={} slot={} state={} pid={} tty={} mux_server={} mux_session={} mux_pane={} managed={}",
+        "[focus] at_unix_ms={} id={} slot={} state={} pid={} tty={} mux_server={} mux_session={} mux_pane={} managed={}",
+        unix_ms_now(),
         diagnostic_text(&session.id),
         slot,
         session.state.name(),
@@ -4014,6 +4177,9 @@ fn run_focus(ctx: &EventCtx, session: &crate::session::Session, slot: u8) {
     };
     let strategy = match session.attachment.as_ref() {
         Some(Attachment::Managed { .. }) => "managed-tmux",
+        Some(Attachment::Process { .. }) if session.kind.as_deref() == Some("cursor") => {
+            "cursor-workspace"
+        }
         Some(Attachment::Process { terminal, .. }) if terminal.session_id.is_some() => {
             "terminal-session-id"
         }
@@ -4729,11 +4895,19 @@ fn dispatch(
                 let empty = serde_json::Map::new();
                 let fields = meta.as_ref().unwrap_or(&empty);
                 eprintln!(
-                    "[session-input] cmd=set-state id={} state={} task_id={} requested_slot={} pid={} tty={} mux_server={} mux_session={} mux_pane={} managed={} relaunch={} reregistered={}",
-                    diagnostic_text(id), state.name(),
+                    "[session-input] at_unix_ms={} cmd=set-state id={} kind={} state={} adapter_event={} adapter_version={} task_id={} requested_slot={} pid={} tty={} fingerprint={}/{}/{} mux_server={} mux_session={} mux_pane={} managed={} relaunch={} reregistered={}",
+                    unix_ms_now(),
+                    diagnostic_text(id),
+                    kind.as_deref().map(diagnostic_text).unwrap_or_else(|| "-".into()),
+                    state.name(),
+                    diagnostic_meta(fields, "adapter_event"),
+                    diagnostic_meta(fields, "adapter_version"),
                     diagnostic_meta(fields, "orchestrator_task_id"),
                     diagnostic_meta(fields, "requested_slot"),
                     diagnostic_meta(fields, "pid"), diagnostic_meta(fields, "tty"),
+                    fields.contains_key("process_boot_time"),
+                    fields.contains_key("process_start_time"),
+                    fields.contains_key("provider_executable"),
                     diagnostic_meta(fields, "mux_server"), diagnostic_meta(fields, "mux_session"),
                     diagnostic_meta(fields, "mux_pane"), diagnostic_meta(fields, "managed"),
                     diagnostic_meta(fields, "relaunch_id"), diagnostic_meta(fields, "reregistered"),
@@ -4789,6 +4963,19 @@ fn dispatch(
             }
             ok()
         }
+        Request::SetSessionTerminalColor { session: id, terminal_color } => {
+            let _transition = ctx.transition.lock().unwrap();
+            let target = shared.lock().unwrap().registry.list().into_iter().find(|session| session.id == id);
+            let Some(session) = target else { return err("unknown or disconnected session"); };
+            if let Err(message) = set_managed_terminal_color(&session, &terminal_color) {
+                return err(&message);
+            }
+            let effects = shared.lock().unwrap().registry.merge_meta(
+                &id, None, None, Map::from_iter([("terminal_color".into(), terminal_color.into())]), Instant::now(),
+            );
+            apply_effects(effects, ctx, host_tx);
+            ok()
+        }
         Request::SetMeta {
             session,
             kind,
@@ -4801,12 +4988,19 @@ fn dispatch(
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_string);
             eprintln!(
-                "[session-input] cmd=set-meta id={} task_id={} requested_slot={} pid={} tty={} mux_server={} mux_session={} mux_pane={} managed={} relaunch={} reregistered={}",
+                "[session-input] at_unix_ms={} cmd=set-meta id={} kind={} adapter_event={} adapter_version={} task_id={} requested_slot={} pid={} tty={} fingerprint={}/{}/{} mux_server={} mux_session={} mux_pane={} managed={} relaunch={} reregistered={}",
+                unix_ms_now(),
                 diagnostic_text(&session),
+                kind.as_deref().map(diagnostic_text).unwrap_or_else(|| "-".into()),
+                diagnostic_meta(&meta, "adapter_event"),
+                diagnostic_meta(&meta, "adapter_version"),
                 diagnostic_meta(&meta, "orchestrator_task_id"),
                 diagnostic_meta(&meta, "requested_slot"),
                 diagnostic_meta(&meta, "pid"),
                 diagnostic_meta(&meta, "tty"),
+                meta.contains_key("process_boot_time"),
+                meta.contains_key("process_start_time"),
+                meta.contains_key("provider_executable"),
                 diagnostic_meta(&meta, "mux_server"),
                 diagnostic_meta(&meta, "mux_session"),
                 diagnostic_meta(&meta, "mux_pane"),
@@ -4899,19 +5093,74 @@ fn dispatch(
             let state = shared.lock().unwrap();
             let live = state.registry.list();
             let disconnected = state.registry.tombstones_snapshot();
+            let now = Instant::now();
+            let age_ms = |instant: Instant| {
+                u64::try_from(now.saturating_duration_since(instant).as_millis())
+                    .unwrap_or(u64::MAX)
+            };
             let suspect = live
                 .iter()
                 .filter(|session| session.health != SessionHealth::Healthy)
                 .count();
+            let mut session_diagnostics: Vec<Value> = live
+                .iter()
+                .map(|session| (session, true))
+                .chain(disconnected.iter().map(|(_, session, _)| (session, false)))
+                .map(|(session, connected)| serde_json::json!({
+                    "session": session.id,
+                    "kind": session.kind,
+                    "state": session.state.name(),
+                    "connected": connected,
+                    "slot": session.slot,
+                    "health": session.health.name(),
+                    "health_reason": session.health_reason,
+                    "attachment_type": session.attachment_type(),
+                    "failed_probes": session.failed_probes,
+                    "last_activity_age_ms": age_ms(session.last_update),
+                    "last_verified_age_ms": session.last_verified.map(age_ms),
+                    "probe_failure_age_ms": session.first_probe_failure.map(age_ms),
+                    "identity": {
+                        "pid": session.meta.contains_key("pid"),
+                        "tty": session.meta.contains_key("tty"),
+                        "process_fingerprint": session.meta.contains_key("process_boot_time")
+                            && session.meta.contains_key("process_start_time")
+                            && session.meta.contains_key("provider_executable"),
+                        "managed_tmux": session.meta.contains_key("mux_server")
+                            && session.meta.contains_key("mux_session")
+                            && session.meta.contains_key("mux_pane"),
+                        "launch": session.meta.contains_key("launch_id")
+                            || session.meta.contains_key("relaunch_id")
+                            || session.meta.contains_key("orchestrator_task_id")
+                    },
+                    "adapter_event": session.meta.get("adapter_event"),
+                    "adapter_version": session.meta.get("adapter_version")
+                }))
+                .collect();
+            session_diagnostics.sort_by(|left, right| {
+                left.get("session")
+                    .and_then(Value::as_str)
+                    .cmp(&right.get("session").and_then(Value::as_str))
+            });
+            let pending_launch_slots: Vec<Value> = state
+                .registry
+                .pending_managed_launches()
+                .into_iter()
+                .map(|(_, slot)| serde_json::json!({"slot": slot}))
+                .collect();
             Dispatch::Reply(Response::Json(serde_json::json!({
                 "ok": true,
                 "daemon": "reachable",
+                "daemon_version": env!("CARGO_PKG_VERSION"),
                 "device_present": state.device_present,
                 "live_sessions": live.len(),
                 "disconnected_sessions": disconnected.len(),
                 "sessions_needing_diagnostics": suspect,
                 "provider_usage_sources": state.usage.len(),
                 "open_channels": state.channels.channels.len(),
+                "attachment_probe_grace_seconds": ctx.config.session.attachment_probe_grace().as_secs(),
+                "unverified_timeout_seconds": ctx.config.session.unverified_ttl().map(|value| value.as_secs()),
+                "pending_managed_launches": pending_launch_slots,
+                "session_diagnostics": session_diagnostics,
                 "checked_at_unix_ms": unix_ms_now()
             })))
         }
@@ -5057,82 +5306,14 @@ fn dispatch(
             ok()
         }
         Request::QuitSession { session: id } => {
-            // Destructively end a session: ask the actual agent process to
-            // exit gracefully (SIGINT→SIGTERM, so its own SessionEnd teardown
-            // runs), then guarantee the session is removed even if that hook
-            // never lands (no hooks installed, a wedged process, or a
-            // pid-less/disconnected session we can't signal). Distinct from
-            // `end-session`, which only removes the row and leaves the agent
-            // running. When we can signal, the removal rides the agent's real
-            // SessionEnd hook; the thread's own end_session is the idempotent
-            // safety net after the process is gone (or the grace elapses).
             let target = shared.lock().unwrap().registry.session_or_tombstone(&id);
-            let pid = target.as_ref().and_then(Session::pid);
-            let terminal = target
-                .as_ref()
-                .and_then(|session| match session.attachment.as_ref() {
-                    Some(
-                        Attachment::Process { terminal, .. } | Attachment::Managed { terminal, .. },
-                    ) => Some(terminal.clone()),
-                    _ => None,
-                });
-            match pid {
-                Some(pid) => {
-                    let ctx = ctx.clone();
-                    let host_tx = host_tx.clone();
-                    let id = id.clone();
-                    std::thread::spawn(move || {
-                        quit_agent_process(pid);
-                        if let Some(endpoint) = terminal {
-                            match close_exact_terminal_endpoint(&endpoint) {
-                                Ok(()) => eprintln!(
-                                    "[session] quit-terminal id={} result=closed",
-                                    diagnostic_text(&id)
-                                ),
-                                Err(reason) => eprintln!(
-                                    "[session] quit-terminal id={} result=left-open reason={}",
-                                    diagnostic_text(&id),
-                                    diagnostic_text(&reason)
-                                ),
-                            }
-                        }
-                        let _transition = ctx.transition.lock().unwrap();
-                        let effects = ctx.shared.lock().unwrap().registry.end_session(&id);
-                        apply_effects(effects, &ctx, &host_tx);
-                    });
-                }
-                None => {
-                    // A disconnected session can lose its provider pid while
-                    // retaining an exact terminal endpoint. Close that endpoint
-                    // before removing the durable row.
-                    if let Some(endpoint) = terminal {
-                        let ctx = ctx.clone();
-                        let host_tx = host_tx.clone();
-                        let id = id.clone();
-                        std::thread::spawn(move || {
-                            match close_exact_terminal_endpoint(&endpoint) {
-                                Ok(()) => eprintln!(
-                                    "[session] quit-terminal id={} result=closed",
-                                    diagnostic_text(&id)
-                                ),
-                                Err(reason) => eprintln!(
-                                    "[session] quit-terminal id={} result=left-open reason={}",
-                                    diagnostic_text(&id),
-                                    diagnostic_text(&reason)
-                                ),
-                            }
-                            let _transition = ctx.transition.lock().unwrap();
-                            let effects = ctx.shared.lock().unwrap().registry.end_session(&id);
-                            apply_effects(effects, &ctx, &host_tx);
-                        });
-                    } else {
-                        let _transition = ctx.transition.lock().unwrap();
-                        let effects = shared.lock().unwrap().registry.end_session(&id);
-                        apply_effects(effects, ctx, host_tx);
-                    }
-                }
+            let Some(session) = target else {
+                return err(&format!("unknown session: {id}"));
+            };
+            match gracefully_end_session(&id, &session, ctx, host_tx) {
+                Ok(()) => ok(),
+                Err(message) => err(&message),
             }
-            ok()
         }
         Request::StopManagedSession {
             session: id,
@@ -5150,7 +5331,9 @@ fn dispatch(
                 Ok(session) => session,
                 Err(message) => return err(&message),
             };
-            gracefully_end_session(&id, session.pid(), ctx, host_tx);
+            if let Err(message) = gracefully_end_session(&id, &session, ctx, host_tx) {
+                return err(&message);
+            }
             Dispatch::Reply(Response::Json(serde_json::json!({
                 "ok": true, "session": id, "task_id": task_id,
                 "status": "stopping", "confirmation": "accepted"
@@ -5617,6 +5800,8 @@ fn dispatch(
             model,
             agent_type,
             cursor_mode,
+            terminal_color,
+            custom_launcher,
             task,
             task_id,
             title,
@@ -5633,6 +5818,14 @@ fn dispatch(
             transition_confirmation,
         } => {
             let mut channel_id = channel_id;
+            if let Err(message) = custom_launcher_path(&provider, custom_launcher.as_deref()) {
+                return err(&message);
+            }
+            if let Some(color) = terminal_color.as_deref() {
+                if !valid_terminal_color(color) {
+                    return err("terminal_color must be a six-digit hex color such as #6C8CFF");
+                }
+            }
             let (agent_type, selected_model) =
                 match required_launch_selection(agent_type.as_deref(), model.as_deref()) {
                     Ok(selection) => selection,
@@ -5810,6 +6003,8 @@ fn dispatch(
                                 ("workflow_id", workflow_id.as_deref()),
                                 ("workflow_run_id", workflow_run_id.as_deref()),
                                 ("workflow_phase", workflow_phase.as_deref()),
+                                ("terminal_color", terminal_color.as_deref()),
+                                ("custom_launcher", custom_launcher.as_deref()),
                                 ("workflow_gate", workflow_gate.as_deref()),
                                 ("workflow_assignment", workflow_assignment.as_deref()),
                             ]
@@ -5899,6 +6094,8 @@ fn dispatch(
                 selected_model,
                 agent_type,
                 cursor_mode.as_deref(),
+                terminal_color.as_deref(),
+                custom_launcher.as_deref(),
                 &cwd,
                 &task,
                 &task_id,
@@ -5996,15 +6193,17 @@ fn dispatch(
                 Err(message) => err(&message),
             }
         }
-        Request::ResumeSession {
-            provider,
-            cwd,
-            session,
-            title,
-        } => match resume_managed_session(&provider, &cwd, &session, title.as_deref()) {
-            Ok(response) => Dispatch::Reply(Response::Json(response)),
-            Err(message) => err(&message),
-        },
+        Request::ResumeSession { provider, cwd, session, title, custom_launcher } => {
+            let previous = shared.lock().unwrap().registry.session_or_tombstone(&session);
+            let saved_launcher = previous.as_ref().and_then(|s| s.meta.get("custom_launcher")).and_then(Value::as_str);
+            if let (Some(saved), Some(requested)) = (saved_launcher, custom_launcher.as_deref()) {
+                if saved != requested { return err("resume custom_launcher differs from this session's saved launcher"); }
+            }
+            match resume_managed_session(&provider, &cwd, &session, title.as_deref(), saved_launcher.or(custom_launcher.as_deref())) {
+                Ok(response) => Dispatch::Reply(Response::Json(response)),
+                Err(message) => err(&message),
+            }
+        }
         Request::FocusSession { session: id } => {
             // Run the [session] focus action for a session looked up by id —
             // including a disconnected (tombstoned) one, whose terminal is
@@ -6679,6 +6878,89 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn custom_launcher_preserves_literal_arguments_and_never_falls_back() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = std::env::temp_dir().join(format!("fp-custom-test-{}-{}", std::process::id(), SNAPSHOT_SEQUENCE.fetch_add(1, Ordering::Relaxed)));
+        std::fs::create_dir(&directory).unwrap();
+        let launcher = directory.join("my launcher 'quoted'.sh");
+        let args_file = directory.join("args");
+        std::fs::write(&launcher, format!("#!/bin/sh\nprintf '%s\\0' \"$@\" > {}\n", shell_quote(&args_file.display().to_string()))).unwrap();
+        std::fs::set_permissions(&launcher, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let path = launcher.to_str().unwrap();
+        assert_eq!(provider_launcher("claude", Some(path)).unwrap(), launcher);
+        assert!(custom_launcher_path("codex", Some(path)).is_err());
+        assert!(custom_launcher_path("claude", Some("relative.sh")).is_err());
+        assert!(custom_launcher_path("claude", Some(directory.to_str().unwrap())).is_err());
+        let marker = directory.join("must-not-execute");
+        let prompt = format!("Review $(touch {}); 'quoted' task", shell_quote(&marker.display().to_string()));
+        let command = orchestrated_provider_command(&launcher, Some("gateway/open-model@v2"), &prompt);
+        assert!(Command::new("/bin/sh").args(["-c", &command]).status().unwrap().success());
+        assert_eq!(std::fs::read(&args_file).unwrap(), format!("--model\0gateway/open-model@v2\0{prompt}\0").as_bytes());
+        assert!(!marker.exists());
+        assert!(required_launch_selection(Some("reviewer"), Some("gateway/open-model@v2")).is_ok());
+        std::fs::set_permissions(&launcher, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(custom_launcher_path("claude", Some(path)).is_err());
+        std::fs::remove_file(&launcher).unwrap();
+        assert!(provider_launcher("claude", Some(path)).unwrap_err().contains("not fall back"));
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn custom_launcher_request_decodes_for_launch_and_resume() {
+        let request: Request = serde_json::from_value(json!({
+            "cmd":"launch-session", "provider":"claude", "cwd":"/tmp", "task":"review",
+            "task_id":"custom-task", "custom_launcher":"/tmp/custom.sh", "model":"gateway/model", "agent_type":"reviewer"
+        })).unwrap();
+        assert!(matches!(request, Request::LaunchSession { custom_launcher: Some(path), .. } if path == "/tmp/custom.sh"));
+        let request: Request = serde_json::from_value(json!({
+            "cmd":"resume-session", "provider":"claude", "cwd":"/tmp", "session":"old",
+            "custom_launcher":"/tmp/custom.sh"
+        })).unwrap();
+        assert!(matches!(request, Request::ResumeSession { custom_launcher: Some(path), .. } if path == "/tmp/custom.sh"));
+    }
+
+    #[test]
+    fn terminal_colors_accept_only_literal_rgb_values() {
+        for valid in ["#123456", "#aBcDeF", "#000000"] {
+            assert!(valid_terminal_color(valid));
+        }
+        for invalid in ["red", "#123", "#1234567", "#12345z", "#ffffff;run-shell x", "é12345"] {
+            assert!(!valid_terminal_color(invalid));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn runtime_terminal_color_mutates_only_the_verified_private_pane() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = std::env::temp_dir().join(format!("fp-color-test-{}-{}", std::process::id(), SNAPSHOT_SEQUENCE.fetch_add(1, Ordering::Relaxed)));
+        std::fs::create_dir(&directory).unwrap();
+        let tmux = directory.join("tmux");
+        let calls = directory.join("mutation");
+        std::fs::write(&tmux, format!("#!/bin/sh\ncase \"$*\" in *list-panes*) printf '%s\\n' 'owned|%3|/dev/ttys003';; *) printf '%s\\n' \"$*\" > {};; esac\n", shell_quote(&calls.display().to_string()))).unwrap();
+        std::fs::set_permissions(&tmux, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let mut session = session_from_json(&json!({"session":"color-test","kind":"codex","state":"idle","meta":{}}), Instant::now(), true).unwrap();
+        session.attachment = Some(Attachment::Managed {
+            id: "attachment".into(), launch_id: "launch".into(), mux_server: "fp-color-test".into(),
+            mux_socket: None, mux_session: "owned".into(), mux_pane: "%3".into(),
+            pane_tty: "/dev/ttys003".into(), client_tty: None, terminal: TerminalEndpoint::default(),
+        });
+        set_managed_terminal_color_with_tmux(&session, "#000000", &tmux).unwrap();
+        let mutation = std::fs::read_to_string(&calls).unwrap();
+        assert!(mutation.contains("-L fp-color-test"));
+        assert!(mutation.contains("-t =owned status-style bg=#000000,fg=#ffffff"));
+        assert!(mutation.contains("-w -t %3 pane-active-border-style fg=#000000"));
+        std::fs::remove_file(&calls).unwrap();
+        if let Some(Attachment::Managed { pane_tty, .. }) = session.attachment.as_mut() {
+            *pane_tty = "/dev/ttys999".into();
+        }
+        assert!(set_managed_terminal_color_with_tmux(&session, "#ffffff", &tmux).unwrap_err().contains("identity changed"));
+        assert!(!calls.exists());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
     fn preferred_terminal_bundle_ids_are_narrow() {
         assert_eq!(
@@ -6719,6 +7001,44 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn shutdown_keeps_terminal_endpoint_when_provider_pid_is_missing() {
+        let mut session = session_from_json(&json!({
+            "session": "shutdown-disconnected", "kind": "codex", "state": "idle", "meta": {}
+        }), Instant::now(), true).unwrap();
+        let endpoint = TerminalEndpoint {
+            bundle_id: Some("com.apple.Terminal".into()),
+            host_tty: Some("/dev/ttys004".into()),
+            ..Default::default()
+        };
+        session.attachment = Some(Attachment::Managed {
+            id: "managed-attachment".into(), launch_id: "launch".into(),
+            mux_server: "fp-test-123".into(), mux_socket: None,
+            mux_session: "session".into(), mux_pane: "%1".into(),
+            pane_tty: "/dev/ttys005".into(), client_tty: endpoint.host_tty.clone(),
+            terminal: endpoint.clone(),
+        });
+        assert_eq!(session_shutdown_target(&session).unwrap(), (None, Some(endpoint)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn shutdown_rejects_shared_cursor_editor_and_invalid_process_ids() {
+        let mut session = session_from_json(&json!({
+            "session": "cursor-conversation", "kind": "cursor", "state": "idle",
+            "meta": {"pid": 1234}
+        }), Instant::now(), true).unwrap();
+        assert!(session_shutdown_target(&session).unwrap_err().contains("shared"));
+        session.kind = Some("codex".into());
+        for pid in [-1, 0, 1] {
+            session.meta.insert("pid".into(), json!(pid));
+            assert!(session_shutdown_target(&session).is_err());
+        }
+        session.meta.insert("pid".into(), json!(1234));
+        assert_eq!(session_shutdown_target(&session).unwrap().0, Some(1234));
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn terminal_cleanup_passes_exact_iterm_session_and_application_pid() {
         use std::os::unix::fs::PermissionsExt;
 
@@ -6748,6 +7068,12 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(&calls).unwrap().trim(),
             "--close --session-id exact-session-id --application-pid 26748"
+        );
+        let tty_only_endpoint = TerminalEndpoint { session_id: None, ..endpoint };
+        close_exact_terminal_endpoint_with_helper(&tty_only_endpoint, Some(&helper)).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&calls).unwrap().trim(),
+            "--close --tty /dev/ttys002 --application-pid 26748"
         );
         std::fs::remove_dir_all(dir).unwrap();
     }

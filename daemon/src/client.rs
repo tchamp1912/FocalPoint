@@ -78,8 +78,8 @@ fn expect_ok(resp: &serde_json::Value) -> Result<(), CliError> {
 /// Auto-resolve tty/pid identity for `session`/`kind` and merge into
 /// `meta_obj`, unless the caller already supplied an explicit tty/pid meta
 /// value. Only applies to kinds whose adapter wants ancestry-derived
-/// identity (`claude`, `codex`) — skipped for everything else (`cursor`,
-/// `generic`, unknown), matching the reasoning bash used before this moved
+/// identity (`claude`, `codex`, and Cursor GUI hooks) — skipped for everything
+/// else (`cursor-cli`, `generic`, unknown), matching the reasoning bash used before this moved
 /// into Rust (SESSION-IDENTITY-PERSISTENCE-PLAN.md Part 1). A fully empty
 /// resolution is not cached, so subsequent hooks for the same instance
 /// automatically retry and self-heal.
@@ -93,7 +93,7 @@ fn apply_identity(
     let (Some(session), Some(kind)) = (session, kind) else {
         return;
     };
-    if !matches!(kind, "claude" | "codex") {
+    if !matches!(kind, "claude" | "codex" | "cursor") {
         return;
     }
     let identity = crate::identity::resolve_identity(session, kind, refresh_identity);
@@ -120,6 +120,22 @@ fn apply_identity(
     if !meta_obj.contains_key("provider_executable") {
         if let Some(value) = identity.executable {
             meta_obj.insert("provider_executable".to_string(), value.into());
+        }
+    }
+    // Cursor conversations share one Electron application process. Scope the
+    // verified process fingerprint to the conversation id so exact recovery
+    // cannot merge two chats that happen to live in the same app instance.
+    if kind == "cursor" {
+        meta_obj
+            .entry("attachment_scope".to_string())
+            .or_insert_with(|| session.into());
+        meta_obj
+            .entry("application_bundle_id".to_string())
+            .or_insert_with(|| "com.todesktop.230313mzl4w4u92".into());
+        if !meta_obj.contains_key("terminal_application_pid") {
+            if let Some(pid) = identity.pid {
+                meta_obj.insert("terminal_application_pid".into(), pid.into());
+            }
         }
     }
     // SessionStart and explicit re-registration are the only lifecycle
@@ -480,6 +496,13 @@ pub fn re_register(
         format!("pid={}", pane_pid.expect("validated pane pid")),
         "reregistered=true".to_string(),
     ];
+    if kind == "claude" {
+        if let Ok(value) = std::env::var("FOCALPOINT_CUSTOM_LAUNCHER") {
+            if std::path::Path::new(&value).is_absolute() {
+                meta.push(format!("custom_launcher={value}"));
+            }
+        }
+    }
     if let Ok(value) = std::env::var("FOCALPOINT_LAUNCH_ID") {
         if valid_managed_id(&value, 128) {
             meta.push(format!("launch_id={value}"));

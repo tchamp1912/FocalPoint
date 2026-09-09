@@ -16,7 +16,7 @@ final class RoadmapWindowCoordinator {
     init(model: AppModel) { self.model = model }
 
     func showQuickLaunch() {
-        show("quick-launch", title: "Launch Managed Agent", size: NSSize(width: 680, height: 740)) { [weak self] in
+        show("quick-launch", title: "Launch Agent", size: NSSize(width: 620, height: 580)) { [weak self] in
             guard let self else { return AnyView(EmptyView()) }
             return AnyView(LiveQuickLaunchView(model: self.model, onCancel: { [weak self] in self?.close("quick-launch") }))
         }
@@ -65,9 +65,9 @@ private struct LiveQuickLaunchView: View {
 
     var body: some View {
         ManagedQuickLaunchView(initialCwd: RoadmapPresentation.preferredCwd(from: model.sessions),
-                               actions: .init(launch: { model.launchManagedQuickSession($0) }, cancel: onCancel),
-                               launchFailureMessage: model.roadmapActionError)
-            .onAppear { model.clearRoadmapActionError() }
+                               recentProjects: model.sessions.compactMap(\.cwd),
+                               isConnected: model.connected,
+                               actions: .init(launch: { await model.launchManagedQuickSession($0) }, cancel: onCancel))
     }
 }
 
@@ -93,7 +93,19 @@ struct LiveSessionTriageView: View {
     }
 
     var body: some View {
-        SessionTriageView(model: triage)
+        SessionTriageView(model: triage, onColorChange: { triageSession, color in
+            guard let session = model.sessions.first(where: { $0.id == triageSession.id }) else {
+                let alert = NSAlert()
+                alert.messageText = "This session is no longer available"
+                alert.informativeText = "Its terminal color could not be changed."
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "OK")
+                NSApp.activate(ignoringOtherApps: true)
+                alert.runModal()
+                return
+            }
+            model.setSessionTerminalColor(session, color: color)
+        })
             .onAppear { synchronize() }
             .onReceive(model.$sessions) { _ in synchronize() }
     }

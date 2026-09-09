@@ -421,33 +421,19 @@ if [ ! -f "$CURSOR_HOOKS" ]; then
   ok "created $CURSOR_HOOKS"
 fi
 
-if jq -e --arg marker "$CURSOR_HOOK_MARKER" \
-     '[.. | select(type == "string") | select(contains($marker))] | length > 0' \
-     "$CURSOR_HOOKS" >/dev/null 2>&1; then
-  CURSOR_STATUS="already present — skipped"
+CURSOR_FRAGMENT="$ADAPTERS_DIR/cursor/hooks-fragment.json"
+MERGED="$("$ADAPTERS_DIR/cursor/merge-hooks.sh" "$CURSOR_HOOKS" "$CURSOR_FRAGMENT" \
+  "$ADAPTER_INSTALL_DIR/cursor-hooks.sh" "$CURSOR_HOOK_MARKER")"
+
+if [ "$(jq -S . "$CURSOR_HOOKS")" = "$(printf '%s' "$MERGED" | jq -S .)" ]; then
+  CURSOR_STATUS="already current — skipped"
   ok "focalpoint cursor hooks $CURSOR_STATUS"
 else
   BACKUP="$CURSOR_HOOKS.bak-focalpoint-$(date +%Y%m%d%H%M%S)"
   cp "$CURSOR_HOOKS" "$BACKUP"
   ok "backed up hooks.json -> $BACKUP"
-
-  # The committed fragment writes the command as ${HOME}/... for readability.
-  # Cursor's expansion of that is undocumented, and user-level hook paths
-  # resolve relative to ~/.cursor, so substitute the resolved absolute path
-  # here rather than trusting either.
-  CURSOR_FRAGMENT="$ADAPTERS_DIR/cursor/hooks-fragment.json"
-  MERGED="$(jq -s --arg cmd "$ADAPTER_INSTALL_DIR/cursor-hooks.sh" '
-    .[0] as $orig | .[1] as $frag
-    | $orig
-    | .version = ($orig.version // $frag.version // 1)
-    | .hooks = (($orig.hooks // {}) as $oh
-        | ($frag.hooks // {} | with_entries(
-            .value |= [ .[] | .command = $cmd ])) as $fh
-        | $fh | to_entries | reduce .[] as $e ($oh;
-            .[$e.key] = (($oh[$e.key] // []) + $e.value)))
-  ' "$CURSOR_HOOKS" "$CURSOR_FRAGMENT")"
   printf '%s\n' "$MERGED" > "$CURSOR_HOOKS"
-  CURSOR_STATUS="merged into hooks.json"
+  CURSOR_STATUS="reconciled with the current hook catalog"
   ok "focalpoint cursor hooks $CURSOR_STATUS"
 fi
 

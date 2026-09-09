@@ -99,6 +99,19 @@ else
   prompt=$(field prompt)
 fi
 
+# A Codex process also runs helper threads (subagents, guardians and side
+# conversations). They inherit launcher titles and terminal identity but
+# have no separate terminal to focus. The rollout header identifies these
+# explicitly; read only that header so tool hooks remain cheap.
+if [ -n "${transcript_path:-}" ] && [ -f "$transcript_path" ] && [ -n "$JQ_BIN" ]; then
+  if head -n 1 "$transcript_path" | "$JQ_BIN" -e '
+    .type == "session_meta" and
+    (.payload.source | type == "object" and has("subagent"))
+  ' >/dev/null 2>&1; then
+    exit 0
+  fi
+fi
+
 # Codex can immediately auto-approve PermissionRequest. Use a short,
 # cancelable grace period so only a permission request that remains blocked
 # becomes FocalPoint `waiting` (and therefore lights the keyboard/widget).

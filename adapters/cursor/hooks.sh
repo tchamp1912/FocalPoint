@@ -5,6 +5,7 @@
 # MIT License - see adapters/README.md
 #
 # Hook event mappings (see https://cursor.com/docs/hooks):
+#   sessionStart        → thinking + fresh Cursor process registration
 #   beforeSubmitPrompt  → thinking
 #   afterAgentThought   → thinking
 #   preToolUse          → running
@@ -49,6 +50,39 @@ set -u
 # Path to focalpoint CLI
 FOCALPOINT="${FOCALPOINT_PATH:-focalpoint}"
 JQ_BIN=$(command -v jq 2>/dev/null || true)
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/focalpoint/logs"
+LOG_FILE="$LOG_DIR/cursor-hooks.log"
+
+# Cursor swallows hook stdout and the adapter intentionally fails open, so a
+# bounded private log is the only practical way to distinguish "hook never
+# ran", "identity did not resolve", and "daemon rejected the update" later.
+# Never log hook JSON, prompts, transcripts, tool arguments, or environment
+# values. The app's issue workflow applies a second redaction layer.
+mkdir -p "$LOG_DIR" 2>/dev/null || true
+if [ -f "$LOG_FILE" ] && [ "$(wc -c < "$LOG_FILE" 2>/dev/null || echo 0)" -ge 1048576 ]; then
+  mv -f "$LOG_FILE" "$LOG_FILE.1" 2>/dev/null || true
+fi
+
+log_field() {
+  printf '%s' "${1:-}" | tr '\r\n\t' '   ' | cut -c1-160
+}
+
+adapter_log() {
+  local timestamp
+  timestamp=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date)
+  printf '%s [cursor-hook] %s\n' "$timestamp" "$(log_field "$1")" >> "$LOG_FILE" 2>/dev/null || true
+}
+
+invoke_focalpoint() {
+  local command_name="${1:-unknown}" status
+  if "$FOCALPOINT" "$@" >/dev/null 2>&1; then
+    adapter_log "event=${event:-unknown} session=${session_id:-missing} command=$command_name result=ok cursor_version=${CURSOR_VERSION:-unknown}"
+  else
+    status=$?
+    adapter_log "event=${event:-unknown} session=${session_id:-missing} command=$command_name result=error status=$status cursor_version=${CURSOR_VERSION:-unknown}"
+  fi
+  return 0
+}
 
 # Read the full hook JSON from stdin; if anything fails, silently exit 0
 hook_json=$(cat 2>/dev/null) || exit 0
@@ -140,6 +174,16 @@ else
 fi
 [ -n "${event:-}" ] || exit 0
 
+# Child composers use task-* ids in Cursor's agent data service. Some
+# versions also carry explicit parent ids or a subagent transcript path.
+# Their hooks must never claim a key or end/update the parent conversation.
+case "${session_id:-}" in task-*) exit 0 ;; esac
+case "${transcript_path:-}" in */subagents/*) exit 0 ;; esac
+parent_id=$(extract_field "parent_conversation_id")
+if [ -n "$parent_id" ] && [ "$parent_id" != "${session_id:-}" ]; then
+  exit 0
+fi
+
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/focalpoint/cursor"
 label_file="$state_dir/$session_id.label"
 stats_file="$state_dir/$session_id.stats.json"
@@ -155,7 +199,7 @@ if [ "$event" = "beforeSubmitPrompt" ] && [ -n "${prompt:-}" ] && [ -n "${sessio
 fi
 
 case "$event" in
-  beforeSubmitPrompt|afterAgentThought)
+  sessionStart|beforeSubmitPrompt|afterAgentThought)
     state="thinking"
     ;;
   preToolUse)
@@ -179,7 +223,7 @@ case "$event" in
   sessionEnd)
     # Free the session's numbered-key slot right away (PROTOCOL.md §3).
     if [ -n "${session_id:-}" ]; then
-      "$FOCALPOINT" end-session "$session_id" >/dev/null 2>&1 || true
+      invoke_focalpoint end-session "$session_id"
       rm -f "$label_file" "$stats_file" 2>/dev/null || true
     fi
     exit 0
@@ -216,6 +260,8 @@ if [ -n "${session_id:-}" ]; then
   [ -n "${FOCALPOINT_CHANNEL_ID:-}" ] && \
     args+=(--meta "channel_id=$FOCALPOINT_CHANNEL_ID")
   [ -n "${model:-}" ] && args+=(--meta "model=$model")
+  args+=(--meta "adapter_event=$event")
+  [ -n "${CURSOR_VERSION:-}" ] && args+=(--meta "adapter_version=$CURSOR_VERSION")
 
   if [ "$event" = "stop" ]; then
     stats=$(extract_stats "$transcript_path")
@@ -253,6 +299,10 @@ fi
 
 # Silently no-op if the daemon isn't running. stdout is redirected too: see
 # rule 2 in the header.
-"$FOCALPOINT" set-state "${args[@]}" >/dev/null 2>&1 || true
+if [ "$event" = "sessionStart" ]; then
+  invoke_focalpoint set-state "${args[@]}" --refresh-identity
+else
+  invoke_focalpoint set-state "${args[@]}"
+fi
 
 exit 0

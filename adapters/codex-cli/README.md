@@ -22,6 +22,13 @@ input/output tokens, model, and current context usage from that local rollout.
 Codex documents the transcript as a convenience rather than a stable hook API,
 so parsing is defensive and falls back to a persistent turn counter.
 
+Helper-agent rollouts are ignored before publishing lifecycle or telemetry updates.
+Codex can deliver a helper's transcript with the parent session ID; accepting it
+would replace the parent's context count and state with the helper's readings.
+The adapter checks the rollout's `session_meta.payload.source.subagent` marker.
+Real CLI forks retain their separate conversation history, while a verified
+terminal handoff releases the previous conversation's live keyboard slot.
+
 Codex does not expose a generated chat title through hooks. The adapter keeps
 the first submitted prompt as a stable label; before that prompt arrives it
 uses `Codex · <directory>` so provider sessions sharing a workspace remain

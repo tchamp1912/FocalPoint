@@ -143,6 +143,8 @@ export FOCALPOINT_TMUX_SERVER="$TMUX_SERVER"
 TMUX_ENV_ARGS+=(-e "FOCALPOINT_TMUX_SERVER=$TMUX_SERVER")
 [ -n "${FOCALPOINT_LAUNCH_ID:-}" ] && \
   TMUX_ENV_ARGS+=(-e "FOCALPOINT_LAUNCH_ID=$FOCALPOINT_LAUNCH_ID")
+[ -n "${FOCALPOINT_CUSTOM_LAUNCHER:-}" ] && \
+  TMUX_ENV_ARGS+=(-e "FOCALPOINT_CUSTOM_LAUNCHER=$FOCALPOINT_CUSTOM_LAUNCHER")
 [ -n "${FOCALPOINT_ORCHESTRATOR_TASK_ID:-}" ] && \
   TMUX_ENV_ARGS+=(-e "FOCALPOINT_ORCHESTRATOR_TASK_ID=$FOCALPOINT_ORCHESTRATOR_TASK_ID")
 [ -n "${FOCALPOINT_ORCHESTRATION_ROLE:-}" ] && \
@@ -167,6 +169,39 @@ CMD_NAME="$(basename "$1" 2>/dev/null)"
 SAFE_CMD="$(printf '%s' "$CMD_NAME" | tr -c 'A-Za-z0-9_-' '-')"
 [ -n "$SAFE_CMD" ] || SAFE_CMD="cmd"
 
+# Keep output colors untouched. An optional accent creates a thin identity bar
+# and colors pane borders on this launch's private server. Use only literal RGB
+# values: these arguments become tmux commands, not arbitrary style expressions.
+TMUX_STYLE_ARGS=()
+# Installed tmux.conf files intentionally preserve user edits. Apply the copy
+# transport on each new private server too, so upgrades fix existing installs.
+if [ -x /usr/bin/pbcopy ]; then
+  for table in copy-mode copy-mode-vi; do
+    for key in MouseDragEnd1Pane Enter; do
+      TMUX_STYLE_ARGS+=( ';' bind-key -T "$table" "$key" send-keys -X copy-pipe-and-cancel /usr/bin/pbcopy )
+    done
+  done
+  TMUX_STYLE_ARGS+=( ';' bind-key -T copy-mode-vi y send-keys -X copy-pipe-and-cancel /usr/bin/pbcopy )
+fi
+if [[ "${FOCALPOINT_TERMINAL_COLOR:-}" =~ ^#[[:xdigit:]]{6}$ ]]; then
+  TMUX_ENV_ARGS+=(-e "FOCALPOINT_TERMINAL_COLOR=$FOCALPOINT_TERMINAL_COLOR")
+  accent_rgb="${FOCALPOINT_TERMINAL_COLOR#\#}"
+  accent_luma=$((299 * 16#${accent_rgb:0:2} + 587 * 16#${accent_rgb:2:2} + 114 * 16#${accent_rgb:4:2}))
+  accent_text='#ffffff'
+  [ "$accent_luma" -ge 140000 ] && accent_text='#111111'
+  TMUX_STYLE_ARGS+=(
+    ';' set-option -g status on
+    ';' set-option -g status-style "bg=$FOCALPOINT_TERMINAL_COLOR,fg=$accent_text"
+    ';' set-option -g status-left ' FocalPoint '
+    ';' set-option -g status-right ' #{session_name} '
+    ';' set-option -g pane-border-style "fg=$FOCALPOINT_TERMINAL_COLOR"
+    ';' set-option -g pane-active-border-style "fg=$FOCALPOINT_TERMINAL_COLOR"
+  )
+elif [ -n "${FOCALPOINT_TERMINAL_COLOR:-}" ]; then
+  echo "FOCALPOINT_TERMINAL_COLOR must be a six-digit hex color such as #6C8CFF" >&2
+  exit 1
+fi
+
 launch_log "tmux-exec"
 
 case "$LAYOUT" in
@@ -175,14 +210,14 @@ case "$LAYOUT" in
     # invocations add a window to that existing cockpit and return; tmux
     # selects the new window for the already-attached cockpit client.
     if "$TMUX_BIN" -L "$TMUX_SERVER" has-session -t focalpoint 2>/dev/null; then
-      exec "$TMUX_BIN" -L "$TMUX_SERVER" new-window "${TMUX_ENV_ARGS[@]}" -t focalpoint -c "$PWD" -n "${SAFE_CMD}-$$" "$@"
+      exec "$TMUX_BIN" -L "$TMUX_SERVER" new-window "${TMUX_ENV_ARGS[@]}" -t focalpoint -c "$PWD" -n "${SAFE_CMD}-$$" "$@" ${TMUX_STYLE_ARGS[@]+"${TMUX_STYLE_ARGS[@]}"}
     fi
     exec "$TMUX_BIN" -L "$TMUX_SERVER" -f "$TMUX_CONF" new-session "${TMUX_ENV_ARGS[@]}" -s focalpoint -c "$PWD" \
-      -n "${SAFE_CMD}-$$" "$@"
+      -n "${SAFE_CMD}-$$" "$@" ${TMUX_STYLE_ARGS[@]+"${TMUX_STYLE_ARGS[@]}"}
     ;;
   per-agent|*)
     # Default: one dedicated tmux session per invocation, named after the
     # command and this shell's pid so concurrent launches never collide.
-    exec "$TMUX_BIN" -L "$TMUX_SERVER" -f "$TMUX_CONF" new-session "${TMUX_ENV_ARGS[@]}" -s "fp-${SAFE_CMD}-$$" -c "$PWD" "$@"
+    exec "$TMUX_BIN" -L "$TMUX_SERVER" -f "$TMUX_CONF" new-session "${TMUX_ENV_ARGS[@]}" -s "fp-${SAFE_CMD}-$$" -c "$PWD" "$@" ${TMUX_STYLE_ARGS[@]+"${TMUX_STYLE_ARGS[@]}"}
     ;;
 esac

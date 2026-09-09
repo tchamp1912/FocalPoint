@@ -1,4 +1,4 @@
-//! Session identity resolution (tty/pid) for the Claude Code and Codex
+//! Session identity resolution (tty/pid) for Claude Code, Codex, and Cursor
 //! adapters — moved here from bash `ps`-walking (see
 //! SESSION-IDENTITY-PERSISTENCE-PLAN.md Part 1) so there's exactly one
 //! implementation instead of two drifting copies. Invoked by the `focalpoint`
@@ -121,6 +121,25 @@ fn is_versioned_claude_binary(base: &str, args: &[String]) -> bool {
         })
 }
 
+/// Cursor GUI hooks run below an Electron helper whose ancestry normally
+/// continues to the main Cursor application. The outermost-match walk below
+/// therefore settles on the stable app process rather than a transient hook
+/// shell or extension-host child.
+fn process_matches_target(base: &str, args: &[String], target_comm: &str) -> bool {
+    match target_comm {
+        "cursor" => {
+            base == "Cursor"
+                || base.starts_with("Cursor Helper")
+                || args.iter().any(|arg| {
+                    arg.replace('\\', "/")
+                        .contains("/Cursor.app/Contents/MacOS/Cursor")
+                })
+        }
+        "claude" => base == "claude" || is_versioned_claude_binary(base, args),
+        _ => base == target_comm,
+    }
+}
+
 /// Walk from `start_pid` up through parents, remembering the OUTERMOST
 /// (nearest-to-terminal/login) ancestor whose comm matches `target_comm` —
 /// not the first hit climbing up — since transient helpers (Claude Code's
@@ -140,8 +159,7 @@ pub fn resolve_pid(source: &impl ProcessSource, start_pid: i32, target_comm: &st
         if let Some(comm) = source.comm(pid) {
             let base = comm.rsplit('/').next().unwrap_or(&comm);
             let args = source.cmd(pid).unwrap_or_default();
-            let target_matches = base == target_comm
-                || (target_comm == "claude" && is_versioned_claude_binary(base, &args));
+            let target_matches = process_matches_target(base, &args, target_comm);
             if target_matches {
                 let is_transient = args.join(" ").contains("daemon run");
                 if !is_transient {
@@ -423,7 +441,7 @@ pub fn remove_identity(session_id: &str) {
 }
 
 /// Resolve (or load the cached) identity for `session_id`. `target_comm` is
-/// the process name to search for (`"claude"`, `"codex"`). Claude's versioned
+/// the process name to search for (`"claude"`, `"codex"`, or `"cursor"`). Claude's versioned
 /// self-update binaries are recognized from their Claude-identifying argv;
 /// `refresh` forces
 /// a fresh walk + cache overwrite instead of trusting an existing cache —
@@ -643,6 +661,28 @@ mod tests {
         src.insert(2, Some(1), "zsh", &["-zsh"]);
 
         assert_eq!(resolve_pid(&src, 300, "claude"), Some(100));
+    }
+
+    #[test]
+    fn cursor_hook_resolves_outer_application_above_plugin_helper() {
+        let mut src = FakeProcessSource::default();
+        src.insert(400, Some(300), "focalpoint", &["focalpoint", "set-state"]);
+        src.insert(300, Some(200), "bash", &["bash", "cursor-hooks.sh"]);
+        src.insert(
+            200,
+            Some(100),
+            "Cursor Helper (Plugin)",
+            &["/Applications/Cursor.app/Contents/Frameworks/Cursor Helper (Plugin).app"],
+        );
+        src.insert(
+            100,
+            Some(2),
+            "Cursor",
+            &["/Applications/Cursor.app/Contents/MacOS/Cursor"],
+        );
+        src.insert(2, Some(1), "launchd", &["launchd"]);
+
+        assert_eq!(resolve_pid(&src, 400, "cursor"), Some(100));
     }
 
     #[test]

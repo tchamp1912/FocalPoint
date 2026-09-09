@@ -135,6 +135,8 @@ struct ManagedLaunchSpec: Equatable {
     var managerTaskID: String?
     var channelID: String?
     var workflow: WorkflowLaunchContext?
+    var terminalColor: String? = nil
+    var customLauncher: String? = nil
 
     var request: [String: Any] {
         var value: [String: Any] = [
@@ -142,6 +144,8 @@ struct ManagedLaunchSpec: Equatable {
             "provider": provider, "model": model, "cwd": cwd,
             "task_id": taskID, "title": title, "task": task, "role": role,
         ]
+        if let terminalColor { value["terminal_color"] = terminalColor }
+        if let customLauncher { value["custom_launcher"] = customLauncher }
         if let managerTaskID { value["manager_task_id"] = managerTaskID }
         if let channelID { value["channel_id"] = channelID }
         if let workflow {
@@ -360,6 +364,7 @@ struct SessionInfo: Identifiable, Equatable {
     /// straight from `meta["model"]` (PROTOCOL.md §4). Use `modelBadge` for
     /// display. Claude Code and Codex report it; Cursor currently does not.
     var model: String?
+    var customLauncher: String? = nil
     /// When this session was first seen (session registration), distinct
     /// from `lastChange` (last state transition). Used only for history's
     /// duration column — nothing in the live UI needs it.
@@ -491,6 +496,7 @@ struct SessionHistoryEntry: Identifiable, Codable, Equatable {
     /// Last concrete model reported by the provider. Resume itself delegates
     /// model/context restoration to the provider's exact session token.
     var model: String? = nil
+    var customLauncher: String? = nil
     var finalState: AgentState
     var startedAt: Date
     var endedAt: Date

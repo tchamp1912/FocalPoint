@@ -266,11 +266,16 @@ drives an age-based session removal.
   - A session that remains `compacting` beyond the 5-minute matching grace
     stays live. The grace only bounds fuzzy rekey matching; age alone is not
     evidence that the session ended, and front-ends may render it stale.
-- **Identity resolution (daemon-side).** For `claude` and `codex` sessions,
+- **Identity resolution (daemon-side).** For `claude`, `codex`, and local
+  Cursor GUI sessions,
   the `focalpoint` CLI resolves `meta.tty` and `meta.pid` automatically when
   `--kind` is passed — adapters no longer walk process ancestry themselves.
   Resolution walks from the calling process up through parents to the
-  outermost ancestor whose process name matches the kind (`claude`/`codex`),
+  outermost ancestor whose process name matches the kind. Cursor accepts its
+  Electron helper ancestry but prefers the outer `Cursor` application; its
+  verified process fingerprint is scoped by conversation id because several
+  chats can share one app process. This makes GUI conversations numbered and
+  focusable without confusing two chats in the same Cursor instance. The walk
   skipping transient helper processes (e.g. Claude Code's `claude daemon run
   --origin transient` subprocess). `tty` comes from the caller's controlling
   terminal (`/dev/tty`), not stdio fds. Results are cached per session at
@@ -278,8 +283,14 @@ drives an age-based session removal.
   `~/.local/state/focalpoint/sessions/…`); `--refresh-identity` forces a
   fresh walk + cache overwrite (adapters pass this on `SessionStart`). An
   explicit `--meta tty=`/`--meta pid=` from the caller skips auto-resolution
-  for that key. The cache is deleted on `end-session`. Cursor/generic/unknown
-  kinds skip the walk entirely — same as before.
+  for that key. The cache is deleted on `end-session`. Cursor CLI managed
+  sessions use their exact tmux attachment instead; generic/unknown kinds skip
+  the walk.
+- `get-diagnostics` returns coarse daemon/session health information suitable
+  for support reports: attachment type and identity-presence booleans, health
+  reason, probe count/age, adapter event/version, lifecycle timeouts, and
+  pending launch slots. It never includes prompts, transcripts, tool payloads,
+  labels, working directories, credentials, or raw configuration.
 - **Identity model.** `session` (the id) is the only field any daemon logic
   or front-end may treat as authoritative identity — it's what the adapter
   gets directly from its tool (Claude Code's `session_id`, Codex's
@@ -375,9 +386,14 @@ and its `SessionEnd` hook fires (which itself calls `end-session`); the daemon
 then closes the captured exact terminal session/tab and removes the session as
 an idempotent safety net once the process is gone. Terminal cleanup never uses
 cwd/title or generic application activation. For a session with no resolved
-`pid`, `quit-session` still closes a captured exact terminal endpoint; Cursor
-or an unverified session with neither pid nor terminal identity degrades to a
-plain `end-session`.
+`pid`, `quit-session` still closes a captured exact terminal endpoint; an
+unverified session with neither pid nor terminal identity degrades to a plain
+`end-session`. Unmanaged Cursor GUI conversations are rejected because their
+PID belongs to the shared editor; close the conversation in Cursor or use
+`end-session` to remove its FocalPoint row. If a provider refuses to exit, the
+daemon logs the failure and leaves its terminal and registry row intact. The
+immediate successful response acknowledges shutdown initiation, not completion.
+iTerm cleanup accepts the exact session ID or captured host TTY.
 
 `relaunch-managed-session`
 (`{"cmd":"relaunch-managed-session","session":"id"}`) is the explicit
@@ -513,7 +529,8 @@ accept a tail of 1–8000 and an optional bounded case-insensitive search, retur
 normalized user/assistant/tool messages, omit reasoning blocks and raw tool
 inputs, and resolve adapter-reported paths only within the provider's local
 transcript directory. Stop requests use the same graceful SIGINT-to-SIGTERM
-teardown as `quit-session`; they cannot target unrelated sessions. The preferred
+teardown and exact terminal cleanup as `quit-session`; they cannot target
+unrelated sessions. The preferred
 stop verb additionally requires the exact `confirmation: "user-confirmed"`
 field. The legacy unconfirmed `stop-orchestrated-session` verb decodes only to
 return an actionable fail-closed error.
@@ -954,3 +971,32 @@ control channel at a time:
   without a host-mode daemon (dumb charger) leaves BLE control unaffected.
 - The daemon deduplicates the two appearances of one device via the shared
   serial (DIS = iSerial) and MUST NOT hold both transports active at once.
+
+### Managed terminal appearance
+
+`launch-session` accepts optional `terminal_color` in `#RRGGBB` form. The launch
+receipt records it and retries with the same task ID must use the same color.
+The managed wrapper applies a status bar and pane-border accent while keeping
+agent output colors intact.
+
+`set-session-terminal-color` accepts `session` and `terminal_color`. It verifies
+the live session's exact pane and TTY on a private FocalPoint tmux server,
+applies the accent, and persists/broadcasts `meta.terminal_color`. Unmanaged,
+missing, or mismatched terminals return an error. Success uses `{"ok":true}`.
+
+### Custom Claude-compatible launchers
+
+`launch-session` accepts optional `custom_launcher`, an absolute path to an
+existing executable file, only with `provider: "claude"`. The script receives
+`--model MODEL PROMPT` as separate literal arguments. Model IDs remain explicit
+and may identify a gateway model; FocalPoint does not discover gateway models
+or read gateway credentials. The script owns its gateway setup and must forward
+arguments to Claude with the normal Claude hooks installed.
+
+The launcher path is recorded in the launch receipt, retry matching, and session
+metadata. History recovery and managed relaunch reuse it with `--resume SESSION`.
+`resume-session` also accepts `custom_launcher` for externally supplied history;
+a conflicting override of a saved launcher is rejected. A missing or no longer
+executable launcher fails explicitly, without falling back to ordinary Claude.
+Paths are executable identities, not shell command strings; arguments are quoted
+individually. Normal Claude launches omit this field and retain existing behavior.

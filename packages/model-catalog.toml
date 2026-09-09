@@ -362,3 +362,12 @@ provider = "cursor"
 complexity = "complex"
 agent_type = "test-verifier"
 model = "composer-2.5"
+
+# Additional explicit launcher choices; these do not change task recommendations.
+[[model]]
+provider = "codex"
+model = "gpt-6-astra"
+
+[[model]]
+provider = "claude"
+model = "claude-fable-5-1"

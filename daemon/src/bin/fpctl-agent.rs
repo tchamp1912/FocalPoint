@@ -27,6 +27,8 @@ struct Cli {
 enum AgentCommand {
     /// Read live sessions, provider usage, and daemon-owned attention order.
     Status,
+    /// Read bounded attachment, probe, and lifecycle diagnostics.
+    Diagnostics,
     /// Read recoverable disconnected sessions retained by the daemon.
     History,
     /// Read the daemon-owned attention order.
@@ -407,6 +409,7 @@ fn run(command: AgentCommand) -> Result<(), String> {
             json!({"sessions": sanitized_sessions(&sessions)?,
                    "usage": sanitized_usage(&usage)?, "attention_order": order})
         }
+        AgentCommand::Diagnostics => request(json!({"cmd": "get-diagnostics"}))?,
         AgentCommand::History => {
             let sessions = request(json!({"cmd": "list-sessions"}))?;
             sanitized_history(&sessions)?
@@ -523,6 +526,7 @@ mod tests {
         let help = Cli::command().render_long_help().to_string();
         for allowed in [
             "status",
+            "diagnostics",
             "history",
             "order",
             "focus",

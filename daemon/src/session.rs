@@ -396,9 +396,12 @@ fn attachment_from_meta(meta: &Map<String, Value>) -> Attachment {
     if let (Some(pid), Some(boot_time), Some(process_start_time), Some(executable)) =
         (pid, boot, start, executable)
     {
+        let scope = text("attachment_scope")
+            .map(|value| format!(":{}", bounded_attachment_component(value)))
+            .unwrap_or_default();
         let id = format!(
-            "process:{boot_time}:{pid}:{process_start_time}:{}",
-            bounded_attachment_component(executable)
+            "process:{boot_time}:{pid}:{process_start_time}:{}{scope}",
+            bounded_attachment_component(executable),
         );
         return Attachment::Process {
             id,
@@ -1447,6 +1450,68 @@ impl Registry {
                 self.default_state = Some(state);
             }
             Some(id) => {
+                let mut runtime_handoff_slot = None;
+                // A superseded thread remains internal bookkeeping so delayed
+                // hooks cannot recreate its row, including after a restart.
+                let registration = meta.as_ref()
+                    .and_then(|fields| fields.get("attachment_registration"))
+                    .and_then(Value::as_bool) == Some(true);
+                if !registration && self.tombstones.get(id).is_some_and(|tombstone|
+                    tombstone.session.meta.contains_key("_superseded_by"))
+                {
+                    return Vec::new();
+                }
+                // A CLI fork replaces the conversation shown in one terminal.
+                // Keep its predecessor in history, without merging provider
+                // ids/counters or assigning two focus keys to the same runtime.
+                // GUI hosts and separate processes can own many conversations;
+                // only a verified Codex terminal/pane is exclusive here.
+                if kind.as_deref() == Some("codex") {
+                    if let Some(fields) = meta.as_ref() {
+                        let incoming = attachment_from_meta(fields);
+                        let exclusive = matches!(incoming,
+                            Attachment::Managed { .. }
+                            | Attachment::Process { pane_tty: Some(_), .. });
+                        if exclusive {
+                            let predecessors: Vec<String> = self.sessions.values()
+                                .filter(|session| session.id != id
+                                    && session.kind.as_deref() == Some("codex")
+                                    && session.attachment_id() == Some(incoming.id())
+                                    && !self.managed_relaunches.contains_key(&session.id))
+                                .map(|session| session.id.clone())
+                                .collect();
+                            let registration = fields.get("attachment_registration")
+                                .and_then(Value::as_bool) == Some(true);
+                            // Late Stop/tool hooks from the previous thread
+                            // cannot reclaim a terminal after a fork switched it.
+                            if !registration && !predecessors.is_empty()
+                                && self.tombstones.contains_key(id)
+                            {
+                                return Vec::new();
+                            }
+                            if registration {
+                                for predecessor in predecessors {
+                                    runtime_handoff_slot = runtime_handoff_slot.or_else(||
+                                        self.sessions.get(&predecessor).and_then(|session| session.slot));
+                                    if let Some(previous) = self.sessions.get_mut(&predecessor) {
+                                        previous.meta.insert("_superseded_by".into(), id.into());
+                                    }
+                                    effects.extend(self.note_attachment_probe(
+                                        &predecessor, false,
+                                        Some("terminal switched to another Codex conversation".into()),
+                                        true, Duration::ZERO, now,
+                                    ).into_iter().map(|effect| match effect {
+                                        // AppModel moves ended rows into history;
+                                        // disconnected rows remain in its live list.
+                                        Effect::SessionDisconnected { id, slot } =>
+                                            Effect::SessionEnded { id, slot },
+                                        other => other,
+                                    }));
+                                }
+                            }
+                        }
+                    }
+                }
                 let relaunch_token = meta
                     .as_ref()
                     .and_then(|m| m.get("relaunch_id"))
@@ -1538,6 +1603,7 @@ impl Registry {
                             .and_then(|value| u8::try_from(value).ok())
                             .filter(|value| (1..=12).contains(value))
                     })
+                    .or(runtime_handoff_slot)
                     .filter(|requested| {
                         !self
                             .sessions
@@ -1646,6 +1712,7 @@ impl Registry {
                     });
 
                     if let Some((old_id, mut sess, was_tombstoned)) = recovered {
+                        sess.meta.remove("_superseded_by");
                         if was_tombstoned {
                             // A sweep explicitly freed this slot for reuse.
                             // Prefer the old slot only while it is still free;
@@ -2312,11 +2379,17 @@ impl Registry {
             .or_else(|| self.tombstones.get(id).map(|t| t.session.clone()))
     }
 
-    /// All current tombstones as `(old_id, session, reaped_at)` — for
-    /// persistence (`daemon.rs`'s `save_snapshot`) only, never part of any
-    /// visible API (a tombstone is invisible bookkeeping, not shown in
-    /// `list()`).
+    /// Disconnected rows exposed by list-sessions and subscriber snapshots.
+    /// A terminal handoff has already moved its predecessor into client history.
     pub fn tombstones_snapshot(&self) -> Vec<(String, Session, Instant)> {
+        self.persisted_tombstones_snapshot().into_iter()
+            .filter(|(_, session, _)| !session.meta.contains_key("_superseded_by"))
+            .collect()
+    }
+
+    /// All durable tombstones, including superseded threads retained only to
+    /// suppress late hooks and recover an explicit provider resume.
+    pub fn persisted_tombstones_snapshot(&self) -> Vec<(String, Session, Instant)> {
         self.tombstones
             .iter()
             .map(|(id, t)| (id.clone(), t.session.clone(), t.reaped_at))
@@ -2610,6 +2683,61 @@ mod tests {
     }
 
     #[test]
+    fn codex_fork_moves_terminal_to_new_conversation_without_merging_history() {
+        let mut registry = Registry::new(None);
+        let now = Instant::now();
+        let mut fields = authoritative_meta(101);
+        fields.insert("tty".into(), "/dev/ttys001".into());
+        fields.insert("attachment_registration".into(), true.into());
+        fields.insert("turns".into(), 12.into());
+        registry.set_state(Some("original"), State::Done, Some("codex".into()),
+            Some("Same title".into()), Some(fields.clone()), now);
+        registry.move_slot("original", 6).unwrap();
+        let slot = registry.sessions["original"].slot;
+        fields.insert("turns".into(), 0.into());
+        let handoff = registry.set_state(Some("fork"), State::Thinking, Some("codex".into()),
+            Some("Same title".into()), Some(fields.clone()), now);
+        assert!(handoff.iter().any(|effect| matches!(effect,
+            Effect::SessionEnded { id, .. } if id == "original")));
+        assert!(!handoff.iter().any(|effect| matches!(effect,
+            Effect::SessionDisconnected { id, .. } if id == "original")));
+        assert!(registry.tombstones_snapshot().is_empty());
+        assert_eq!(registry.persisted_tombstones_snapshot().len(), 1);
+        registry = Registry::restore(None, None, registry.list(),
+            registry.persisted_tombstones_snapshot());
+        assert!(registry.tombstones_snapshot().is_empty());
+        assert_eq!(registry.list().len(), 1);
+        assert_eq!(registry.sessions["fork"].slot, slot);
+        assert_eq!(registry.sessions["fork"].meta["turns"], 0);
+        assert_eq!(registry.tombstones["original"].session.meta["turns"], 12);
+        assert!(registry.tombstones["original"].session.attachment.is_none());
+        fields.remove("attachment_registration");
+        let late = registry.set_state(Some("original"), State::Done, Some("codex".into()),
+            None, Some(fields.clone()), now);
+        assert!(late.is_empty());
+        assert_eq!(registry.list().len(), 1);
+        fields.insert("attachment_registration".into(), true.into());
+        registry.set_state(Some("original"), State::Thinking, Some("codex".into()),
+            None, Some(fields), now);
+        assert_eq!(registry.list().len(), 1);
+        assert_eq!(registry.sessions["original"].slot, slot);
+    }
+
+    #[test]
+    fn codex_host_without_terminal_keeps_independent_conversations() {
+        let mut registry = Registry::new(None);
+        let now = Instant::now();
+        let mut fields = authoritative_meta(101);
+        fields.remove("tty");
+        fields.insert("attachment_registration".into(), true.into());
+        for id in ["one", "two"] {
+            registry.set_state(Some(id), State::Thinking, Some("codex".into()),
+                None, Some(fields.clone()), now);
+        }
+        assert_eq!(registry.list().len(), 2);
+    }
+
+    #[test]
     fn stale_attachment_events_cannot_overwrite_a_replacement() {
         let mut registry = Registry::new(None);
         let now = Instant::now();
@@ -2763,6 +2891,32 @@ mod tests {
             .iter()
             .any(|effect| matches!(effect, Effect::SessionDisconnected { .. })));
         assert_eq!(registry.list().len(), 1);
+    }
+
+    #[test]
+    fn process_attachment_scope_keeps_cursor_conversations_distinct() {
+        let base = Map::from_iter([
+            ("pid".into(), Value::from(42)),
+            ("process_boot_time".into(), Value::from(7)),
+            ("process_start_time".into(), Value::from(11)),
+            (
+                "provider_executable".into(),
+                Value::from("/Applications/Cursor.app/Contents/MacOS/Cursor"),
+            ),
+        ]);
+        let mut first = base.clone();
+        first.insert("attachment_scope".into(), Value::from("conversation-a"));
+        let mut second = base;
+        second.insert("attachment_scope".into(), Value::from("conversation-b"));
+
+        assert_ne!(
+            attachment_from_meta(&first).id(),
+            attachment_from_meta(&second).id()
+        );
+        assert!(matches!(
+            attachment_from_meta(&first),
+            Attachment::Process { .. }
+        ));
     }
 
     #[test]

@@ -3,12 +3,33 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-if ! command -v python3 >/dev/null 2>&1; then
-    echo "error: python3 (3.11 or newer) is required" >&2
+python_bin=""
+python_candidates=()
+[ -n "${FOCALPOINT_PYTHON:-}" ] && python_candidates+=("$FOCALPOINT_PYTHON")
+python_candidates+=(
+    "$(command -v python3 2>/dev/null || true)"
+    /opt/homebrew/opt/python@3.14/bin/python3.14
+    /opt/homebrew/opt/python@3.13/bin/python3.13
+    /opt/homebrew/opt/python@3.12/bin/python3.12
+    /opt/homebrew/opt/python@3.11/bin/python3.11
+    /usr/local/opt/python@3.14/bin/python3.14
+    /usr/local/opt/python@3.13/bin/python3.13
+    /usr/local/opt/python@3.12/bin/python3.12
+    /usr/local/opt/python@3.11/bin/python3.11
+)
+for candidate in "${python_candidates[@]}"; do
+    [ -n "$candidate" ] && [ -x "$candidate" ] || continue
+    if "$candidate" -c 'import sys; raise SystemExit(sys.version_info < (3, 11))' 2>/dev/null; then
+        python_bin="$candidate"
+        break
+    fi
+done
+[ -n "$python_bin" ] || {
+    echo "error: python3 3.11 or newer is required" >&2
     exit 2
-fi
+}
 
-exec python3 - "$script_dir" "$@" <<'PY'
+exec "$python_bin" - "$script_dir" "$@" <<'PY'
 from __future__ import annotations
 
 import re
@@ -243,12 +264,35 @@ def validate_agent(manifest: Path, data: dict) -> list[str]:
 
 def validate_catalog(manifest: Path, data: dict) -> list[str]:
     v = Validation(manifest)
-    v.only_keys(data, {"catalog", "resolution", "selection"}, "root")
+    v.only_keys(data, {"catalog", "resolution", "selection", "model"}, "root")
     catalog = v.table(data, "catalog", "[catalog]")
     if catalog is not None:
         v.only_keys(catalog, {"version"}, "catalog")
         if catalog.get("version") != 1:
             v.error("catalog.version must be 1")
+
+    models = data.get("model", [])
+    seen_models = set()
+    if not isinstance(models, list):
+        v.error("[[model]] must be an array of tables")
+    else:
+        for index, entry in enumerate(models):
+            label = f"model[{index}]"
+            if not isinstance(entry, dict):
+                v.error(f"{label} must be a table")
+                continue
+            v.only_keys(entry, {"provider", "model"}, label)
+            provider = v.nonempty_string(entry, "provider", f"{label}.provider")
+            model = v.nonempty_string(entry, "model", f"{label}.model")
+            if provider not in ALLOWED_PROVIDERS:
+                v.error(f"{label}.provider is unsupported")
+            if model is not None and (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/@:-]{0,127}", model) or model.lower() in FORBIDDEN_SELECTIONS):
+                v.error(f"{label}.model must be a concrete model ID")
+            if isinstance(provider, str) and isinstance(model, str):
+                key = (provider, model)
+                if key in seen_models:
+                    v.error(f"duplicate model choice: {provider}/{model}")
+                seen_models.add(key)
 
     resolutions = data.get("resolution")
     if not isinstance(resolutions, list) or not resolutions:

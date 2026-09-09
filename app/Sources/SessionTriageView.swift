@@ -5,6 +5,7 @@ import SwiftUI
 
 struct SessionTriageView: View {
     @ObservedObject var model: SessionTriageViewModel
+    var onColorChange: ((SessionTriageSession, String) -> Void)? = nil
     @State private var pendingStop: SessionTriageSession?
 
     var body: some View {
@@ -34,7 +35,7 @@ struct SessionTriageView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Session Triage").font(.title2.weight(.semibold))
+                Text("Live Sessions").font(.title2.weight(.semibold))
                 Text(summary)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -162,49 +163,71 @@ struct SessionTriageView: View {
     private func row(_ session: SessionTriageSession) -> some View {
         HStack(spacing: 11) {
             slotBadge(session.slot)
-            StateSwatch(state: session.state, color: defaultStyle(session.state).color, size: 12)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 7) {
                     Text(session.title).font(.body.weight(.medium)).lineLimit(1)
-                    if !session.isConnected {
-                        Label("Disconnected", systemImage: "bolt.slash")
-                            .labelStyle(.iconOnly).foregroundStyle(.red).help("Disconnected")
-                    }
                     if session.isManager {
                         Text("Manager").triageBadge(color: .purple)
                     }
-                    if session.isManaged {
-                        Text("Managed").triageBadge(color: .blue)
-                    }
                 }
-                HStack(spacing: 7) {
-                    Text(session.provider)
-                    Text(session.project)
-                    Text(session.workflow)
-                    Text(session.state.display)
+                HStack(spacing: 6) {
+                    Text(session.provider.capitalized)
+                    if session.project != "No project" && model.grouping != .project {
+                        Text("·")
+                        Text(session.project)
+                    }
+                    if session.workflow != "Independent" && model.grouping != .workflow {
+                        Text("·")
+                        Text(session.workflow)
+                    }
                 }
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 10)
-            Text(session.updatedAt, style: .relative)
-                .font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
-                .help("Last state change")
+            VStack(alignment: .trailing, spacing: 5) {
+                HStack(spacing: 5) {
+                    if session.isConnected {
+                        StateSwatch(state: session.state, color: defaultStyle(session.state).color, size: 8)
+                    } else {
+                        Image(systemName: "bolt.slash").foregroundStyle(.secondary)
+                    }
+                    Text(session.isConnected ? session.state.display : "Disconnected")
+                }
+                .font(.caption.weight(.medium))
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(Color.primary.opacity(0.05), in: Capsule())
+                Text(session.updatedAt, style: .relative)
+                    .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+                    .help("Last state change")
+            }
             Button { model.onFocus(session) } label: {
                 Label("Focus", systemImage: "scope")
             }
             .buttonStyle(.bordered).controlSize(.small)
             .disabled(!session.isConnected)
-            Button(role: .destructive) { pendingStop = session } label: {
-                Image(systemName: "stop.fill")
+            .help(session.isConnected ? "Focus \(session.title)" : "This session is disconnected; its window is no longer available.")
+            Menu {
+                if session.isManaged && session.isConnected, let onColorChange {
+                    ManagedTerminalColorMenu { color in onColorChange(session, color) }
+                    Divider()
+                }
+                Text(session.isManaged ? "Managed session" : "External session")
+                if let taskID = session.stableTaskID { Text("Task: \(taskID)") }
+                Divider()
+                Button("Stop Session…", role: .destructive) { pendingStop = session }
+            } label: {
+                Image(systemName: "ellipsis")
             }
-            .buttonStyle(.bordered).controlSize(.small)
-            .help("Stop \(session.title)…")
+            .menuStyle(.borderlessButton).menuIndicator(.hidden)
+            .frame(width: 24)
+            .help("More actions for \(session.title)")
+            .accessibilityLabel("More actions for \(session.title)")
         }
-        .padding(.horizontal, 11).padding(.vertical, 9)
+        .padding(.horizontal, 12).padding(.vertical, 11)
         .liquidGlass(.card, radius: Metrics.rowRadius,
                      tint: session.needsAttention ? .orange.opacity(0.08) : nil)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(session.title), slot \(session.slot.map(String.init) ?? "none"), \(session.state.display)")
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(session.title), slot \(session.slot.map(String.init) ?? "none"), \(session.isConnected ? session.state.display : "Disconnected")")
     }
 
     private func slotBadge(_ slot: Int?) -> some View {

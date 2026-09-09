@@ -71,6 +71,22 @@ final class SetupDiagnosticsController: ObservableObject {
         NSPasteboard.general.setString(report, forType: .string)
         actionMessage = "Copied redacted diagnostics. No secrets or raw configuration were included."
     }
+
+    func openGitHubIssue() async {
+        actionMessage = "Collecting and redacting recent operational logs…"
+        let setupResults = orderedResults
+        let report = await Task.detached(priority: .userInitiated) {
+            SupportDiagnosticsReport.collect(setupResults: setupResults)
+        }.value
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(report, forType: .string)
+        guard let url = SupportDiagnosticsReport.issueURL(report: report),
+              NSWorkspace.shared.open(url) else {
+            actionMessage = "Copied the redacted support report, but could not open GitHub."
+            return
+        }
+        actionMessage = "Opened a prefilled GitHub issue. The complete redacted report is on your clipboard."
+    }
 }
 
 @MainActor
@@ -119,7 +135,7 @@ struct SetupDiagnosticsView: View {
                     .font(.title2.bold())
                 Text(mode == .firstRun
                      ? "Let’s verify the local services and integrations. Nothing is changed unless you choose a fix."
-                     : "Check local setup, apply safe fixes, and copy a privacy-safe report.")
+                     : "Check local setup, apply safe fixes, and open a privacy-safe support issue.")
                     .foregroundStyle(.secondary)
                 Text(controller.readinessSummary)
                     .font(.caption.weight(.semibold))
@@ -154,6 +170,15 @@ struct SetupDiagnosticsView: View {
                 controller.copyReport()
             } label: {
                 Label("Copy redacted diagnostics", systemImage: "doc.on.doc")
+            }
+            if mode == .diagnostics {
+                Button {
+                    Task { await controller.openGitHubIssue() }
+                } label: {
+                    Label("Open GitHub issue", systemImage: "exclamationmark.bubble")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(controller.isRunning)
             }
             if mode == .firstRun {
                 Button("Finish") {

@@ -48,7 +48,7 @@ enum LocalSetupDiagnostics {
                         ])
                 }
                 defer { close(fd) }
-                guard let request = focalpointEncode(["cmd": "get-state"]),
+                guard let request = focalpointEncode(["cmd": "get-diagnostics"]),
                       focalpointSendLine(fd, request) else {
                     return SetupDiagnosticResult(
                         id: .daemon, status: .failed,
@@ -56,20 +56,31 @@ enum LocalSetupDiagnostics {
                         evidence: [.init("Socket", "Connected"), .init("Protocol handshake", "Failed")],
                         actions: [.init(.recheck, title: "Recheck", isPrimary: true)])
                 }
-                var receivedResponse = false
+                var response: [String: Any]?
                 focalpointReadLines(fd) { object in
-                    receivedResponse = object["ok"] != nil || object["state"] != nil
+                    response = object
                     return false
                 }
+                let receivedResponse = response?["ok"] as? Bool == true
+                let needingReview = (response?["sessions_needing_diagnostics"] as? NSNumber)?.intValue ?? 0
+                let live = (response?["live_sessions"] as? NSNumber)?.intValue ?? 0
+                let disconnected = (response?["disconnected_sessions"] as? NSNumber)?.intValue ?? 0
+                let status: SetupDiagnosticStatus = !receivedResponse ? .failed
+                    : (needingReview > 0 ? .warning : .passed)
                 return SetupDiagnosticResult(
                     id: .daemon,
-                    status: receivedResponse ? .passed : .failed,
-                    summary: receivedResponse
-                        ? "The local daemon accepted a protocol request."
-                        : "The daemon connected but did not return a valid response.",
+                    status: status,
+                    summary: !receivedResponse
+                        ? "The daemon connected but did not return valid diagnostics."
+                        : (needingReview > 0
+                           ? "The daemon is reachable; \(needingReview) session attachment\(needingReview == 1 ? "" : "s") need review."
+                           : "The local daemon and current session attachments look healthy."),
                     evidence: [
                         .init("Socket", "Connected at ~/…/focalpoint.sock"),
-                        .init("Protocol handshake", receivedResponse ? "Successful" : "No valid response")
+                        .init("Protocol handshake", receivedResponse ? "Successful" : "No valid response"),
+                        .init("Live sessions", "\(live)"),
+                        .init("Disconnected sessions", "\(disconnected)"),
+                        .init("Attachment warnings", "\(needingReview)")
                     ],
                     actions: [.init(.recheck, title: "Recheck")])
             }.value
@@ -92,9 +103,15 @@ enum LocalSetupDiagnostics {
                 let evidence = probes.map { provider, script, settings, marker -> SetupDiagnosticEvidence in
                     let scriptURL = config.appendingPathComponent(script)
                     let installed = FileManager.default.isExecutableFile(atPath: scriptURL.path)
-                    let configured = fileContainsMarker(settings, marker: marker)
+                    let markerPresent = fileContainsMarker(settings, marker: marker)
+                    let configured = provider == "Cursor"
+                        ? markerPresent && cursorSessionStartConfigured(settings, marker: marker)
+                        : markerPresent
                     let value: String
                     if installed && configured { value = "Installed and configured" }
+                    else if installed && provider == "Cursor" && markerPresent {
+                        value = "Adapter installed; sessionStart hook missing"
+                    }
                     else if installed { value = "Adapter installed; hook not configured" }
                     else { value = "Adapter not installed" }
                     return .init(provider, value)
@@ -332,6 +349,16 @@ private func fileContainsMarker(_ url: URL, marker: String) -> Bool {
     guard let data = try? handle.read(upToCount: 2 * 1024 * 1024),
           let text = String(data: data, encoding: .utf8) else { return false }
     return text.contains(marker)
+}
+
+private func cursorSessionStartConfigured(_ url: URL, marker: String) -> Bool {
+    guard let data = try? Data(contentsOf: url),
+          let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let hooks = root["hooks"] as? [String: Any],
+          let entries = hooks["sessionStart"] as? [[String: Any]] else { return false }
+    return entries.contains { entry in
+        (entry["command"] as? String)?.contains(marker) == true
+    }
 }
 
 private func commandSucceeded(_ executable: String, _ arguments: [String],

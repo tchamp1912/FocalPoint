@@ -988,3 +988,35 @@ fn tombstone_infinite_ttl_recovers_after_simulated_long_gap() {
         "must have recovered ancient's carried stats"
     );
 }
+
+#[test]
+fn superseded_threads_stay_out_of_visible_snapshots_after_restart() {
+    let snapshot = serde_json::json!({
+        "saved_at_unix_ms": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64,
+        "sessions": [],
+        "tombstones": [{
+            "session": "original", "kind": "codex", "label": "Same title",
+            "slot": 6, "state": "done",
+            "meta": {"_superseded_by": "fork", "turns": 12},
+            "elapsed_ms_since_reaped": 0
+        }],
+        "usage": {}
+    });
+    let mut daemon = TestDaemon::start_with(None, Some(&snapshot));
+    for _ in 0..2 {
+        assert!(daemon.cli_json(&["sessions", "--json"]).as_array().unwrap().is_empty());
+        assert!(!daemon.subscription_snapshot().iter().any(|event|
+            event["session"] == "original"));
+        // A late hook without registration cannot recreate the ended row.
+        daemon.cli_ok(&["set-state", "done", "--session", "original", "--kind", "codex"]);
+        assert!(daemon.cli_json(&["sessions", "--json"]).as_array().unwrap().is_empty());
+        // Force a normal persistence write and verify the suppression marker
+        // survives even though neither visible API returns the predecessor.
+        daemon.cli_ok(&["set-state", "idle"]);
+        let persisted: Value = serde_json::from_str(&std::fs::read_to_string(
+            daemon.dir.join("state/focalpoint/state.json")).unwrap()).unwrap();
+        assert_eq!(persisted["tombstones"][0]["meta"]["_superseded_by"], "fork");
+        daemon.restart();
+    }
+}

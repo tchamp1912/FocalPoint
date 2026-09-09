@@ -72,7 +72,7 @@ struct MainWindowView: View {
     private var sidebar: some View {
         List(selection: $selection) {
             Section("Sessions") {
-                Label("Session Triage", systemImage: "list.bullet.rectangle")
+                Label("Live Sessions", systemImage: "list.bullet.rectangle")
                     .tag(MainWindowSelection.triage)
                 Label("Workflow Runs", systemImage: "point.3.connected.trianglepath.dotted")
                     .tag(MainWindowSelection.runs)
@@ -122,7 +122,7 @@ struct MainWindowView: View {
         case .settings(let section):
             settingsDetail(section)
         case nil:
-            LiveWorkflowDashboardView(model: model)
+            LiveSessionTriageView(model: model)
         }
     }
 
@@ -311,7 +311,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
             let root = MainWindowView(
                 model: AppModel.shared,
                 store: store,
-                initialSelection: selection ?? .runs,
+                initialSelection: selection ?? .triage,
                 selectionRequests: selectionRequests
             )
             let window = NSWindow(contentViewController: NSHostingController(rootView: root))

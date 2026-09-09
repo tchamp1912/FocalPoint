@@ -340,6 +340,11 @@ struct MenuContentView: View {
 
     @ViewBuilder
     private func sessionContextMenu(_ s: SessionInfo) -> some View {
+        if s.isManaged && s.connected {
+            ManagedTerminalColorMenu { color in
+                model.setSessionTerminalColor(s, color: color)
+            }
+        }
         Button("Rename\u{2026}") { renamingID = s.id }
         // Manual placement (PROTOCOL.md §3/§4 move-slot + swap-slots):
         // free slots move (sparse placement — the gap is the point),
@@ -664,7 +669,7 @@ struct MenuContentView: View {
             Menu {
                 Button("Launch Managed Agent", action: onQuickLaunch)
                 Divider()
-                Button("Session Triage") { MainWindowController.shared.show(.triage) }
+                Button("Live Sessions") { MainWindowController.shared.show(.triage) }
                 Button("Workflow Runs") { MainWindowController.shared.show(.runs) }
                 Button("History Workspace") { MainWindowController.shared.show(.history) }
                 Divider()

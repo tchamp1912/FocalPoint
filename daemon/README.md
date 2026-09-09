@@ -65,6 +65,12 @@ focalpoint styles [--json]
 focalpoint set-style <state> <r> <g> <b> <solid|breathe|blink|strobe|off> [period_ms]
 ```
 
+`get-diagnostics` is also available over the socket and through the macOS
+Setup Diagnostics UI. It reports attachment/probe health and identity-presence
+booleans without prompts, transcripts, labels, working directories, or raw
+configuration. The UI can combine that snapshot with bounded redacted
+lifecycle-log tails and open a prefilled GitHub issue.
+
 Example driving the LEDs from an agent hook:
 
 ```sh

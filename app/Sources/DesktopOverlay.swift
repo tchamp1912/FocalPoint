@@ -501,6 +501,11 @@ struct DesktopWidgetView: View {
 
     @ViewBuilder
     private func sessionContextMenu(_ s: SessionInfo) -> some View {
+        if s.isManaged && s.connected {
+            ManagedTerminalColorMenu { color in
+                model.setSessionTerminalColor(s, color: color)
+            }
+        }
         Button("Rename\u{2026}") { renamingID = s.id }
         slotDestinationMenu(s)
         Divider()

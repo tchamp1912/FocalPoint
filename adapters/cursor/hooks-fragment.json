@@ -1,6 +1,12 @@
 {
   "version": 1,
   "hooks": {
+    "sessionStart": [
+      {
+        "command": "${HOME}/.config/focalpoint/adapters/cursor-hooks.sh",
+        "timeout": 5
+      }
+    ],
     "beforeSubmitPrompt": [
       {
         "command": "${HOME}/.config/focalpoint/adapters/cursor-hooks.sh",

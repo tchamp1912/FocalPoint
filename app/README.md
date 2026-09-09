@@ -232,9 +232,45 @@ denied, the app logs the failure and falls back to LaunchServices.
   daemon is down.
 - Against an older daemon that emits only aggregate `state` events, it degrades
   to an aggregate-only display ("no sessions" + aggregate).
-- Clicking a session row sends `inject key key<slot> tap` (focus/bounce).
+- Clicking a session row sends `focus-session` with its stable session ID, so
+  concurrent slot changes cannot send focus to a different session.
 - Renaming sends `rename-session`; the row updates optimistically and the
   daemon's `session` broadcast confirms it. Against a daemon too old to know
   the command, the rename simply reverts on the session's next state change.
 
 MIT License.
+
+## Launch Agent
+
+The launcher needs a project folder and task. Provider, agent type, and model
+are selected directly in the form; agent types come from installed packages in
+`~/.config/focalpoint/agents` (or `$XDG_CONFIG_HOME/focalpoint/agents`). The selected
+type's persona instructions accompany the task. Model choices use the bundled
+model catalog plus the user's catalog overrides. Custom model IDs remain available.
+
+Options contains an optional title, task-size override, and terminal accent.
+Leaving the title blank derives it from the task. Task IDs are generated
+internally. Command-Return launches directly; the form stays busy until the
+request is acknowledged, closes on success, and keeps your input on failure.
+Unchanged retries reuse the same request identity to avoid duplicate launches.
+
+Managed terminal colors can also be changed from a session's Terminal Color
+menu. The accent colors the tmux status bar and pane borders, preserving the
+terminal output background. Managed tmux supports mouse scrollback and macOS
+clipboard copying; see [the terminal guide](../orchestrator/README.md).
+
+The shared model catalog can also list `[[model]]` entries with `provider` and
+`model` for explicit dropdown choices without changing task recommendations.
+These include `claude-fable-5-1` for Claude and `gpt-6-astra` for Codex.
+
+Use **Saved folders** beside Project to reopen recent folders or pinned
+favorites. The star beside the path pins or unpins the current folder. Browsing
+to a folder or successfully launching there adds it to recent folders. The list
+survives app restarts, keeps up to 12 recent folders and 20 pins, and retains
+folders on temporarily unavailable drives. Clearing recents keeps pinned folders.
+
+For Otari or another Claude-compatible gateway, select **Claude → Launcher →
+Custom script**, browse to your executable launcher, and enter its model ID.
+FocalPoint remembers the script path without automatically enabling it for the
+next launch. The script receives normal Claude arguments (`--model`, the task,
+or `--resume` during recovery) and must forward them to your configured CLI.

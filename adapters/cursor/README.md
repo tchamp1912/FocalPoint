@@ -31,6 +31,7 @@ Cursor reloads `hooks.json` on save. Confirm the hooks are live under
 
 | Cursor hook | FocalPoint state |
 |---|---|
+| `sessionStart` | `thinking` + fresh Cursor process registration |
 | `beforeSubmitPrompt` | `thinking` |
 | `afterAgentThought` | `thinking` |
 | `preToolUse` | `running` |
@@ -45,6 +46,11 @@ Every call carries `--session <conversation_id> --kind cursor --cwd
 therefore start with the same label; rename either one from the FocalPoint
 app (or `focalpoint rename-session <id> "<name>"`) and the name sticks — the
 adapter only ever writes `label`, which never clobbers a user-set name.
+`sessionStart` also asks the CLI to resolve the outer Cursor application
+process. The process birth fingerprint is scoped to the conversation id, so
+each chat can safely claim a different numbered slot even though all of them
+share one Electron app. If startup resolution loses a race, the next hook
+retries automatically.
 
 Note that `aborted` — you pressed Cursor's stop button — reports `error`, not
 `done`. The distinction FocalPoint cares about is "finished cleanly" vs.
@@ -97,12 +103,17 @@ at one script for all agents:
 focus = { type = "shell", run = "~/.config/focalpoint/adapters/focus-session.sh" }
 ```
 
-`focus-cursor.sh` never launches Cursor from cold — if it isn't running there
-is no session window to raise. It prefers `cursor -r <workspace>` (reuse the
-existing window for that folder), falls back to `open -a Cursor --args -r`,
-and finishes with an `activate`. Every external call runs under a hard timeout
-(`FOCALPOINT_FOCUS_TIMEOUT`, default 3s) so a stuck call can't hang the
-daemon's dispatch. No Accessibility permission is required.
+`focus-cursor.sh` only targets an already-running Cursor. It opens the
+workspace with `cursor <workspace>`, resolving the bundled CLI when the
+GUI's PATH lacks the shell shim. It avoids `--reuse-window`, which can replace
+the last active window's workspace. The fallback sends the folder through
+`open -a Cursor <workspace>`; with no folder it activates the app. Failed
+routing is reported to the daemon. Every external call has a hard timeout
+(`FOCALPOINT_FOCUS_TIMEOUT`, default 3s). No Accessibility permission is required.
+
+Child composers (`task-*` ids, explicit parent ids, or subagent transcript
+paths) do not register independent sessions. Separate top-level chats remain
+separate, even when they share a workspace and Cursor application process.
 
 ## Performance
 
@@ -143,9 +154,16 @@ focalpoint sessions                # should list a `cursor` session
 focalpoint end-session test-1      # clean up
 ```
 
-If the session appears but never changes state, check that all seven events
+If the session appears but never changes state, check that all eight events
 are present in `~/.cursor/hooks.json` and that the command path there is
 absolute and executable.
+
+For attachment and hook-delivery failures, inspect the bounded local log at
+`~/.local/state/focalpoint/logs/cursor-hooks.log` and the daemon log at
+`~/Library/Logs/focalpoint/focalpointd.err.log`. The FocalPoint Setup
+Diagnostics window can collect, redact, copy, and place a bounded excerpt of
+these lifecycle-only logs into a prefilled GitHub issue. It excludes prompts,
+transcripts, tool content, labels, and working directories.
 
 ## Uninstall
 

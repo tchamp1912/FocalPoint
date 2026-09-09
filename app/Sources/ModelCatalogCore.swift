@@ -40,18 +40,21 @@ enum ModelCatalogResolution: Equatable {
 /// provider state or silently ignore a user pin.
 struct ModelCatalog: Equatable {
     private let selections: [ModelCatalogKey: String]
+    private let additionalModels: [WorkflowLaunchProvider: Set<String>]
     private let recommendations: [ModelCatalogResolutionKey: WorkflowLaunchProvider]
 
     static func load(bundledURL: URL, userOverrideURL: URL? = nil) -> ModelCatalogLoad {
         switch parse(url: bundledURL, label: "Bundled model catalog") {
         case .failure(let message): return .failure(message)
         case .success(let bundled):
+            var additionalModels = bundled.additionalModels
             var merged = bundled.selections
             var recommendations = bundled.recommendations
             if let userOverrideURL, FileManager.default.fileExists(atPath: userOverrideURL.path) {
                 switch parse(url: userOverrideURL, label: "User model catalog") {
                 case .failure(let message): return .failure(message)
                 case .success(let user):
+                    for (provider, models) in user.additionalModels { additionalModels[provider, default: []].formUnion(models) }
                     for (key, model) in user.selections { merged[key] = model }
                     for (key, provider) in user.recommendations { recommendations[key] = provider }
                 }
@@ -62,7 +65,7 @@ struct ModelCatalog: Equatable {
                     return .failure("\(label(userOverrideURL)) selects a provider with no concrete model entry.")
                 }
             }
-            return .success(.init(selections: merged, recommendations: recommendations))
+            return .success(.init(selections: merged, recommendations: recommendations, additionalModels: additionalModels))
         }
     }
 
@@ -84,6 +87,13 @@ struct ModelCatalog: Equatable {
         return .success(model)
     }
 
+    /// Concrete provider models across all cataloged roles, for explicit user selection.
+    func models(provider: WorkflowLaunchProvider) -> [String] {
+        Array(Set(selections.compactMap { key, model in
+            key.provider == provider ? model : nil
+        }).union(additionalModels[provider] ?? [])).sorted()
+    }
+
     static func userOverrideURL(fileManager: FileManager = .default) -> URL {
         let configHome = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"]
             .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
@@ -91,12 +101,17 @@ struct ModelCatalog: Equatable {
         return configHome.appendingPathComponent("focalpoint/model-catalog.toml")
     }
 
-    private init(selections: [ModelCatalogKey: String], recommendations: [ModelCatalogResolutionKey: WorkflowLaunchProvider]) {
+    private init(selections: [ModelCatalogKey: String], recommendations: [ModelCatalogResolutionKey: WorkflowLaunchProvider], additionalModels: [WorkflowLaunchProvider: Set<String>]) {
         self.selections = selections
+        self.additionalModels = additionalModels
         self.recommendations = recommendations
     }
 
-    private struct Parsed { let selections: [ModelCatalogKey: String]; let recommendations: [ModelCatalogResolutionKey: WorkflowLaunchProvider] }
+    private struct Parsed {
+        let selections: [ModelCatalogKey: String]
+        let recommendations: [ModelCatalogResolutionKey: WorkflowLaunchProvider]
+        let additionalModels: [WorkflowLaunchProvider: Set<String>]
+    }
     private enum ParsedLoad { case success(Parsed); case failure(String) }
     private static func label(_ url: URL?) -> String { url == nil ? "Bundled model catalog" : "User model catalog" }
 
@@ -110,6 +125,18 @@ struct ModelCatalog: Equatable {
               case .tableArray(let rows)? = root["selection"], !rows.isEmpty,
               case .tableArray(let resolutionRows)? = root["resolution"], !resolutionRows.isEmpty else {
             return .failure("\(label) is malformed or uses an unsupported version.")
+        }
+        var additionalModels: [WorkflowLaunchProvider: Set<String>] = [:]
+        if let extra = root["model"] {
+            guard case .tableArray(let models) = extra else { return .failure("\(label) has invalid model choices.") }
+            for row in models {
+                guard row.count == 2,
+                      case .string(let raw)? = row["provider"], let provider = WorkflowLaunchProvider(rawValue: raw),
+                      case .string(let id)? = row["model"], validModel(id),
+                      additionalModels[provider, default: []].insert(id).inserted else {
+                    return .failure("\(label) contains an invalid or duplicate model choice.")
+                }
+            }
         }
         var selections: [ModelCatalogKey: String] = [:]
         for row in rows {
@@ -140,7 +167,7 @@ struct ModelCatalog: Equatable {
             guard recommendations[key] == nil else { return .failure("\(label) duplicates a complexity/agent-type resolution.") }
             recommendations[key] = provider
         }
-        return .success(Parsed(selections: selections, recommendations: recommendations))
+        return .success(Parsed(selections: selections, recommendations: recommendations, additionalModels: additionalModels))
     }
 
     static func validAgentType(_ value: String) -> Bool {
