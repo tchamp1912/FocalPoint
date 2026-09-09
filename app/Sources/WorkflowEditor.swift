@@ -751,7 +751,7 @@ enum EditorValidation {
             errors.append("Choose at least one preferred provider")
         }
         for provider in type.prefer where !WorkflowEditorModel.knownProviders.contains(provider) {
-            errors.append("Unknown provider '\(provider)' (claude, codex, or cursor)")
+            errors.append("Unknown provider '\(provider)' (claude, codex, cursor, or gemini)")
         }
         let counts = Dictionary(grouping: type.prefer, by: { $0 })
         if counts.values.contains(where: { $0.count > 1 }) {
@@ -810,7 +810,7 @@ final class WorkflowEditorModel: ObservableObject {
     private var formationSnapshots: [String: EditableFormation] = [:]
     private var agentTypeSnapshots: [String: EditableAgentType] = [:]
 
-    nonisolated static let knownProviders = ["claude", "codex", "cursor"]
+    nonisolated static let knownProviders = ["claude", "codex", "cursor", "gemini"]
 
     nonisolated static var configRoot: URL {
         if let xdg = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"], !xdg.isEmpty {

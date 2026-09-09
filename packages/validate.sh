@@ -43,7 +43,7 @@ except ModuleNotFoundError:
     raise SystemExit(2)
 
 
-ALLOWED_PROVIDERS = {"claude", "codex", "cursor"}
+ALLOWED_PROVIDERS = {"claude", "codex", "cursor", "gemini"}
 COMPLEXITIES = {"focused", "substantial", "complex"}
 FORBIDDEN_SELECTIONS = {"auto", "default", "general", "provider-default"}
 

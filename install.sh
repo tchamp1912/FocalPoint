@@ -35,6 +35,8 @@ CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/focalpoint"
 ADAPTER_INSTALL_DIR="$CONFIG_DIR/adapters"
 CLAUDE_DIR="$HOME/.claude"
 CLAUDE_SETTINGS="$CLAUDE_DIR/settings.json"
+GEMINI_DIR="$HOME/.gemini"
+GEMINI_SETTINGS="$GEMINI_DIR/settings.json"
 CODEX_DIR="$HOME/.codex"
 CODEX_CONFIG="$CODEX_DIR/config.toml"
 CODEX_HOOKS="$CODEX_DIR/hooks.json"
@@ -140,6 +142,7 @@ check_tool() {
 }
 check_tool cargo  "install Rust via https://rustup.rs, or 'brew install rust'"
 check_tool jq     "install via 'brew install jq'"
+check_tool python3 "install via 'brew install python'"
 check_tool swiftc "install the Xcode command line tools: 'xcode-select --install'"
 
 if [ "$MISSING" -ne 0 ]; then
@@ -167,7 +170,7 @@ This will, all idempotently:
   - remove obsolete files previously recorded as FocalPoint-managed, plus
     stale managed binaries and duplicate FocalPoint app installations
   - merge FocalPoint's hooks into ~/.claude/settings.json and
-    ~/.cursor/hooks.json (each backed up first; skipped cleanly if already
+    ~/.cursor/hooks.json and ~/.gemini/settings.json (each backed up first; skipped cleanly if already
     merged)
   - register the identity-bound FocalPoint MCP server with Codex, Claude, and Cursor
   - build the exact multi-process iTerm focus helper
@@ -332,6 +335,7 @@ ADAPTER_FILES=(
   statusline-usage.sh
   codex-notify.sh
   codex-hooks.sh
+  gemini-hooks.sh
   cursor-hooks.sh
   focus-cursor.sh
   cursor-cli-focalpoint.sh
@@ -352,6 +356,7 @@ install_script "$ADAPTERS_DIR/claude-code/focus-session.sh" focus-session.sh
 install_script "$ADAPTERS_DIR/claude-code/statusline-usage.sh" statusline-usage.sh
 install_script "$ADAPTERS_DIR/codex-cli/notify.sh" codex-notify.sh
 install_script "$ADAPTERS_DIR/codex-cli/hooks.sh" codex-hooks.sh
+install_script "$ADAPTERS_DIR/gemini-cli/hooks.sh" gemini-hooks.sh
 install_script "$ADAPTERS_DIR/cursor/hooks.sh" cursor-hooks.sh
 install_script "$ADAPTERS_DIR/cursor/focus-cursor.sh" focus-cursor.sh
 install_script "$ADAPTERS_DIR/cursor-cli/wrap.sh" cursor-cli-focalpoint.sh
@@ -436,6 +441,27 @@ else
   CURSOR_STATUS="reconciled with the current hook catalog"
   ok "focalpoint cursor hooks $CURSOR_STATUS"
 fi
+
+# ---------------------------------------------------------------------------
+# 7c. Merge Gemini CLI hooks, preserving user settings and other hooks.
+# ---------------------------------------------------------------------------
+
+step "Gemini CLI integration"
+mkdir -p "$GEMINI_DIR"
+if [ ! -f "$GEMINI_SETTINGS" ]; then
+  printf '{}\n' > "$GEMINI_SETTINGS"
+fi
+MERGED="$("$ADAPTERS_DIR/gemini-cli/merge-hooks.sh" "$GEMINI_SETTINGS" \
+  "$ADAPTERS_DIR/gemini-cli/settings-fragment.json" "$ADAPTER_INSTALL_DIR/gemini-hooks.sh")"
+if [ "$("$ADAPTERS_DIR/gemini-cli/merge-hooks.sh" --normalize "$GEMINI_SETTINGS")" = "$MERGED" ]; then
+  GEMINI_STATUS="already current — skipped"
+else
+  BACKUP="$GEMINI_SETTINGS.bak-focalpoint-$(date +%Y%m%d%H%M%S)"
+  cp "$GEMINI_SETTINGS" "$BACKUP"
+  printf '%s\n' "$MERGED" > "$GEMINI_SETTINGS"
+  GEMINI_STATUS="hooks merged; original settings backed up"
+fi
+ok "focalpoint Gemini hooks $GEMINI_STATUS"
 
 # ---------------------------------------------------------------------------
 # 8. Merge Codex lifecycle hooks into ~/.codex/hooks.json
@@ -744,6 +770,7 @@ cat <<EOF
   adapter scripts    refreshed in $ADAPTER_INSTALL_DIR
   iTerm focus helper $ITERM_FOCUS_STATUS
   Claude Code hooks  $HOOKS_STATUS
+  Gemini CLI hooks   $GEMINI_STATUS
   Cursor hooks       $CURSOR_STATUS
   Codex CLI          $CODEX_STATUS
   coordination MCP   $MCP_STATUS_SUMMARY
@@ -760,6 +787,7 @@ echo "  - Use 'fpctl-agent prioritize SESSION_ID ...' to set the daemon's attent
 echo "  - Optionally run '$MANAGED_RUNNER claude' (or codex) for precise managed-session focus."
 echo "  - Restart any running Claude Code sessions so they pick up the new hooks."
 echo "  - Cursor reloads hooks.json on save; restart Cursor if the Hooks tab doesn't list them."
+echo "  - Restart Gemini CLI and inspect /hooks panel to verify its integration."
 echo "  - Restart Codex, then review and trust the FocalPoint lifecycle hooks with /hooks."
 echo "  - Run 'focalpoint watch' to see live events, or 'focalpoint ping' any time to check status."
 echo "  - Re-run ./install.sh any time — it's safe, everything above is idempotent."

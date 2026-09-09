@@ -125,6 +125,29 @@ fn is_versioned_claude_binary(base: &str, args: &[String]) -> bool {
 /// continues to the main Cursor application. The outermost-match walk below
 /// therefore settles on the stable app process rather than a transient hook
 /// shell or extension-host child.
+/// npm installs Gemini as a Node entrypoint. Inspect the script position,
+/// never prompt text: an unrelated Node tool may mention Gemini in its args.
+fn is_gemini_node_process(base: &str, args: &[String]) -> bool {
+    if !matches!(base, "node" | "nodejs") { return false; }
+    let flattened;
+    let argv: Vec<&str> = if args.len() == 1 {
+        flattened = args[0].split_whitespace().collect::<Vec<_>>();
+        flattened
+    } else {
+        args.iter().map(String::as_str).collect()
+    };
+    let mut script = None;
+    for arg in argv.iter().skip(1) {
+        if matches!(*arg, "-e" | "--eval" | "-p" | "--print") { return false; }
+        if !arg.starts_with('-') { script = Some(*arg); break; }
+    }
+    script.is_some_and(|script| {
+        let path = script.replace('\\', "/");
+        path.rsplit('/').next() == Some("gemini")
+            || path.ends_with("/@google/gemini-cli/dist/index.js")
+    })
+}
+
 fn process_matches_target(base: &str, args: &[String], target_comm: &str) -> bool {
     match target_comm {
         "cursor" => {
@@ -136,6 +159,7 @@ fn process_matches_target(base: &str, args: &[String], target_comm: &str) -> boo
                 })
         }
         "claude" => base == "claude" || is_versioned_claude_binary(base, args),
+        "gemini" => base == "gemini" || is_gemini_node_process(base, args),
         _ => base == target_comm,
     }
 }
@@ -441,7 +465,7 @@ pub fn remove_identity(session_id: &str) {
 }
 
 /// Resolve (or load the cached) identity for `session_id`. `target_comm` is
-/// the process name to search for (`"claude"`, `"codex"`, or `"cursor"`). Claude's versioned
+/// the process name to search for (`"claude"`, `"codex"`, `"gemini"`, or `"cursor"`). Claude's versioned
 /// self-update binaries are recognized from their Claude-identifying argv;
 /// `refresh` forces
 /// a fresh walk + cache overwrite instead of trusting an existing cache —
@@ -683,6 +707,31 @@ mod tests {
         src.insert(2, Some(1), "launchd", &["launchd"]);
 
         assert_eq!(resolve_pid(&src, 400, "cursor"), Some(100));
+    }
+
+    #[test]
+    fn gemini_identity_recognizes_npm_node_entrypoint_and_outermost_parent() {
+        let mut src = FakeProcessSource::default();
+        src.insert(400, Some(300), "focalpoint", &["focalpoint"]);
+        src.insert(300, Some(200), "bash", &["bash", "gemini-hooks.sh"]);
+        src.insert(200, Some(100), "node", &["node", "/opt/homebrew/lib/node_modules/@google/gemini-cli/dist/index.js"]);
+        src.insert(100, Some(2), "node", &["/opt/homebrew/bin/node", "/opt/homebrew/bin/gemini", "--model", "gemini-2.5-pro"]);
+        src.insert(2, Some(1), "launchd", &["launchd"]);
+        assert_eq!(resolve_pid(&src, 400, "gemini"), Some(100));
+        assert!(process_matches_target("node", &["node /opt/homebrew/bin/gemini --resume session".into()], "gemini"));
+        assert!(process_matches_target("gemini", &["gemini".into()], "gemini"));
+    }
+
+    #[test]
+    fn gemini_identity_rejects_unrelated_node_prompts_and_hooks() {
+        for args in [
+            vec!["node", "other.js", "/opt/homebrew/bin/gemini"],
+            vec!["node", "-e", "/opt/homebrew/bin/gemini"],
+            vec!["node", "/tmp/gemini-hooks.js"],
+            vec!["node", "/tmp/@google/gemini-cli-core/dist/index.js"],
+        ] {
+            assert!(!process_matches_target("node", &args.into_iter().map(str::to_owned).collect::<Vec<_>>(), "gemini"));
+        }
     }
 
     #[test]

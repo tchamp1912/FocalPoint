@@ -93,7 +93,7 @@ fn apply_identity(
     let (Some(session), Some(kind)) = (session, kind) else {
         return;
     };
-    if !matches!(kind, "claude" | "codex" | "cursor") {
+    if !matches!(kind, "claude" | "codex" | "gemini" | "cursor") {
         return;
     }
     let identity = crate::identity::resolve_identity(session, kind, refresh_identity);
@@ -364,9 +364,9 @@ pub fn re_register(
     if session.is_empty() || session.len() > 512 || session.chars().any(char::is_control) {
         return Err(CliError::new("--session must be a bounded printable id", 2));
     }
-    if !matches!(kind, "claude" | "codex" | "cursor" | "cursor-cli") {
+    if !matches!(kind, "claude" | "codex" | "gemini" | "cursor" | "cursor-cli") {
         return Err(CliError::new(
-            "--kind must be claude, codex, cursor, or cursor-cli",
+            "--kind must be claude, codex, gemini, cursor, or cursor-cli",
             2,
         ));
     }

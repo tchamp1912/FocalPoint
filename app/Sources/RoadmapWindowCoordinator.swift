@@ -214,7 +214,7 @@ enum RoadmapPresentation {
                 startedAt: entry.startedAt, endedAt: entry.endedAt,
                 usage: .init(tokensIn: Int(entry.stats[.tokensIn] ?? 0), tokensOut: Int(entry.stats[.tokensOut] ?? 0),
                              toolCalls: Int(entry.stats[.toolCalls] ?? 0), estimatedCostUSD: entry.stats[.cost]),
-                sourcePrompt: nil, resumeToken: ["claude", "codex"].contains(entry.kind.lowercased()) ? entry.sessionID : nil,
+                sourcePrompt: nil, resumeToken: provider.supportsResume ? entry.sessionID : nil,
                 isPinned: model.pinnedHistoryIDs.contains(entry.id)
             )
         }

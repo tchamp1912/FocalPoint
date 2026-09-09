@@ -24,7 +24,7 @@ enum ManagedQuickLaunchCatalogTests {
         precondition(!implementation.description.isEmpty)
         precondition(!implementation.personaPrompt.isEmpty)
         precondition(!implementation.preferredProviders.isEmpty)
-        for provider in [ManagedQuickLaunchProvider.claude, .codex] {
+        for provider in [ManagedQuickLaunchProvider.claude, .codex, .gemini] {
             let recommendation = valid.recommendation(provider: provider, agentType: "implementer", complexity: .standard)
             precondition(recommendation?.provider == provider)
             precondition(valid.models(provider: provider, agentType: "implementer").contains(recommendation!.model))
@@ -35,6 +35,9 @@ enum ManagedQuickLaunchCatalogTests {
         precondition(valid.models(provider: .codex, agentType: "not-installed").isEmpty)
         precondition(valid.recommendation(provider: nil, agentType: "planner", complexity: .complex)?.provider == .claude)
 
+        precondition(valid.models(provider: .gemini, agentType: "implementer").contains("gemini-3.1-pro-preview"))
+        precondition(!valid.models(provider: .codex, agentType: "implementer").contains("gemini-2.5-flash"))
+        precondition(valid.recommendation(provider: .gemini, agentType: "planner", complexity: .complex)?.model == "gemini-2.5-pro")
         precondition(valid.models(provider: .codex, agentType: "implementer").contains("gpt-6-astra"))
         precondition(!valid.models(provider: .claude, agentType: "implementer").contains("gpt-6-astra"))
         precondition(valid.models(provider: .claude, agentType: "implementer").contains("claude-fable-5-1"))

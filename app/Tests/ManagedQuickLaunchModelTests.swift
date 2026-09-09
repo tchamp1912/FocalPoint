@@ -209,6 +209,20 @@ enum ManagedQuickLaunchModelTests {
         precondition(ManagedQuickLaunchRules.validate(gatewayDraft, directoryExists: { _ in true }, launcherExists: { _ in true }).contains { $0.field == .customLauncher })
         gatewayDraft.provider = .claude
         precondition(ManagedQuickLaunchRules.validate(gatewayDraft, directoryExists: { _ in true }, launcherExists: { _ in false }).contains { $0.field == .customLauncher })
+        var gemini = ManagedQuickLaunchDraft(task: "Fix launch behavior", cwd: "/tmp", agentType: "implementer", provider: .gemini)
+        guard case .success(let geminiRequest) = ManagedQuickLaunchRules.request(from: gemini, directoryExists: { _ in true }) else {
+            fatalError("Gemini must launch with its own concrete suggestion")
+        }
+        precondition(geminiRequest.provider == .gemini)
+        precondition(geminiRequest.model == "gemini-2.5-flash")
+        precondition(geminiRequest.daemonPayload["provider"] as? String == "gemini")
+        gemini.complexity = .complex
+        precondition(ManagedQuickLaunchRules.recommendation(for: gemini).model == "gemini-2.5-pro")
+        for foreignModel in ["gpt-6-astra", "claude-fable-5-1", "composer-2.5"] {
+            gemini.model = foreignModel
+            guard case .failure(let issue) = ManagedQuickLaunchRules.request(from: gemini, directoryExists: { _ in true }) else { fatalError("Provider mismatch accepted") }
+            precondition(issue.issues.contains { $0.field == .model })
+        }
         print("ManagedQuickLaunchModelTests: PASS")
     }
 }

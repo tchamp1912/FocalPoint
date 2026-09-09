@@ -85,7 +85,7 @@ app and attention key follow that same daemon-owned order.
 
 With optional tmux support installed, start a managed agent using
 `~/.config/focalpoint/focalpoint-run.sh claude` (or replace `claude` with
-`codex`). See [the orchestrator guide](orchestrator/) for checkout usage and
+`codex` or `gemini`). See [the orchestrator guide](orchestrator/) for checkout usage and
 layout options.
 
 ### Try it without the hardware

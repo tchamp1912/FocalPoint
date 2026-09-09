@@ -8,6 +8,7 @@ enum HistoryProvider: String, CaseIterable, Codable, Hashable, Identifiable {
     case claude
     case codex
     case cursor
+    case gemini
 
     var id: String { rawValue }
 
@@ -16,6 +17,7 @@ enum HistoryProvider: String, CaseIterable, Codable, Hashable, Identifiable {
         case .claude: return "Claude"
         case .codex: return "Codex"
         case .cursor: return "Cursor"
+        case .gemini: return "Gemini"
         }
     }
 
@@ -24,8 +26,22 @@ enum HistoryProvider: String, CaseIterable, Codable, Hashable, Identifiable {
         case .claude: return "sparkles"
         case .codex: return "chevron.left.forwardslash.chevron.right"
         case .cursor: return "cursorarrow.rays"
+        case .gemini: return "sparkle"
         }
     }
+
+    var supportsResume: Bool { self != .cursor }
+
+    func resumeCommand(sessionID: String) -> String? {
+        let quotedID = "'" + sessionID.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        switch self {
+        case .claude: return "claude --resume \(quotedID)"
+        case .codex: return "codex resume \(quotedID)"
+        case .gemini: return "gemini --resume \(quotedID)"
+        case .cursor: return nil
+        }
+    }
+
 }
 
 enum HistoryRunState: String, CaseIterable, Codable, Hashable, Identifiable {
@@ -94,7 +110,7 @@ struct HistoryRecord: Identifiable, Codable, Hashable {
     var duration: TimeInterval { max(0, endedAt.timeIntervalSince(startedAt)) }
     var isResumeEligible: Bool {
         resumeToken?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-            && provider != .cursor
+            && provider.supportsResume
     }
     var isRerunEligible: Bool {
         sourcePrompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false

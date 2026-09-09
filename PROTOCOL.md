@@ -266,7 +266,7 @@ drives an age-based session removal.
   - A session that remains `compacting` beyond the 5-minute matching grace
     stays live. The grace only bounds fuzzy rekey matching; age alone is not
     evidence that the session ended, and front-ends may render it stale.
-- **Identity resolution (daemon-side).** For `claude`, `codex`, and local
+- **Identity resolution (daemon-side).** For `claude`, `codex`, `gemini`, and local
   Cursor GUI sessions,
   the `focalpoint` CLI resolves `meta.tty` and `meta.pid` automatically when
   `--kind` is passed — adapters no longer walk process ancestry themselves.
@@ -450,7 +450,7 @@ session in chronological numbered-slot order. Empty navigation sets paint the
 corresponding arrow black.
 
 `launch-session` is the daemon's narrow managed-process primitive. It accepts
-`claude`, `codex`, or `cursor`, an optional provider model id/alias, an existing
+`claude`, `codex`, `gemini`, or `cursor`, an optional provider model id/alias, an existing
 absolute working directory, a literal
 non-empty task of at most 16384 UTF-8 bytes, and a stable task id of 1–64
 letters, digits, dots, underscores, or dashes. The daemon makes duplicate
@@ -1000,3 +1000,12 @@ a conflicting override of a saved launcher is rejected. A missing or no longer
 executable launcher fails explicitly, without falling back to ordinary Claude.
 Paths are executable identities, not shell command strings; arguments are quoted
 individually. Normal Claude launches omit this field and retain existing behavior.
+
+### Gemini CLI adapter
+
+Gemini CLI uses `kind: "gemini"` and its exact `session_id`. Launch arguments
+are `--model MODEL --prompt-interactive TASK`; recovery uses `--resume ID`.
+The CLI resolves its Node entrypoint ancestry to a runtime process identity.
+Lifecycle hooks provide session state and managed-terminal metadata using
+`~/.gemini/settings.json`; no Gemini account quota or transcript-read API is
+provided by this adapter. See [adapter setup](adapters/gemini-cli/README.md).

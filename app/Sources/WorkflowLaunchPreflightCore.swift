@@ -8,7 +8,7 @@
 import Foundation
 
 enum WorkflowLaunchProvider: String, CaseIterable, Identifiable, Codable {
-    case claude, codex, cursor
+    case claude, codex, cursor, gemini
 
     var id: String { rawValue }
     var title: String {
@@ -16,6 +16,7 @@ enum WorkflowLaunchProvider: String, CaseIterable, Identifiable, Codable {
         case .claude: return "Claude Code"
         case .codex: return "Codex"
         case .cursor: return "Cursor"
+        case .gemini: return "Gemini CLI"
         }
     }
 }

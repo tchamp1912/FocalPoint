@@ -98,15 +98,24 @@ enum LocalSetupDiagnostics {
                     ("Codex", "codex-hooks.sh", home.appendingPathComponent(".codex/hooks.json"),
                      ".config/focalpoint/adapters/codex-hooks.sh"),
                     ("Cursor", "cursor-hooks.sh", home.appendingPathComponent(".cursor/hooks.json"),
-                     ".config/focalpoint/adapters/cursor-hooks.sh")
+                     ".config/focalpoint/adapters/cursor-hooks.sh"),
+                    ("Gemini CLI", "gemini-hooks.sh", home.appendingPathComponent(".gemini/settings.json"),
+                     ".config/focalpoint/adapters/gemini-hooks.sh")
                 ]
                 let evidence = probes.map { provider, script, settings, marker -> SetupDiagnosticEvidence in
                     let scriptURL = config.appendingPathComponent(script)
                     let installed = FileManager.default.isExecutableFile(atPath: scriptURL.path)
                     let markerPresent = fileContainsMarker(settings, marker: marker)
-                    let configured = provider == "Cursor"
-                        ? markerPresent && cursorSessionStartConfigured(settings, marker: marker)
-                        : markerPresent
+                    let configured: Bool
+                    if provider == "Cursor" {
+                        configured = markerPresent && cursorSessionStartConfigured(settings, marker: marker)
+                    } else if provider == "Gemini CLI" {
+                        configured = (try? Data(contentsOf: settings)).map {
+                            GeminiHookDiagnostics.sessionStartConfigured($0, marker: marker)
+                        } ?? false
+                    } else {
+                        configured = markerPresent
+                    }
                     let value: String
                     if installed && configured { value = "Installed and configured" }
                     else if installed && provider == "Cursor" && markerPresent {
@@ -236,8 +245,14 @@ enum LocalSetupDiagnostics {
                     ("Cursor", [
                         ("cursor-agent", ["status", "--format", "json"]),
                         ("cursor", ["agent", "status", "--format", "json"])
-                    ])
+                    ]),
+                    // Gemini has no noninteractive authentication-status
+                    // command. Presence alone must not claim authenticated.
+                    ("Gemini CLI", [("gemini", [])])
                 ]
+                let checkableCount = providers.filter { provider in
+                    provider.1.contains { !$0.1.isEmpty }
+                }.count
                 var installedCount = 0
                 var authenticatedCount = 0
                 let evidence = providers.map { name, commands -> SetupDiagnosticEvidence in
@@ -247,6 +262,9 @@ enum LocalSetupDiagnostics {
                         return .init(name, "CLI not found")
                     }
                     installedCount += 1
+                    guard !candidate.1.isEmpty else {
+                        return .init(name, "CLI installed; authentication not checked. Sign in from Gemini.")
+                    }
                     let authenticated = commandSucceeded(candidate.0.path, candidate.1, timeout: 4)
                     if authenticated { authenticatedCount += 1 }
                     return .init(name, authenticated
@@ -255,10 +273,10 @@ enum LocalSetupDiagnostics {
                 }
                 return SetupDiagnosticResult(
                     id: .providers,
-                    status: authenticatedCount == providers.count ? .passed
+                    status: authenticatedCount == checkableCount && installedCount == providers.count ? .passed
                         : (installedCount > 0 ? .warning : .failed),
                     summary: installedCount > 0
-                        ? "Authentication verified for \(authenticatedCount) of \(providers.count) supported providers."
+                        ? "\(installedCount) of \(providers.count) provider CLIs installed; authentication verified for \(authenticatedCount) of \(checkableCount) checkable providers."
                         : "No supported provider CLI was found on PATH.",
                     evidence: evidence,
                     actions: [

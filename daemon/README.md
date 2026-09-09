@@ -14,7 +14,7 @@ Four binaries, one crate:
 - **`fpctl-agent`** — the guarded orchestration client for managed launches,
   attention order, and channel fallback operations.
 - **`focalpoint-mcp`** — the identity-bound stdio MCP façade that gives Claude,
-  Codex, and Cursor structured workflow coordination tools.
+  Codex, Gemini CLI, and Cursor structured workflow coordination tools.
 
 ## Build
 
@@ -310,3 +310,17 @@ rather than misbehaving.
 ## License
 
 MIT.
+
+## Gemini CLI sessions
+
+Gemini uses `provider: "gemini"` and hook kind `gemini`. Managed launches pass
+`--model MODEL --prompt-interactive TASK`; recovery and managed relaunch use
+`--resume SESSION_ID`. The daemon resolves both the `gemini` executable process
+and the npm Node entrypoint, then uses the same exact terminal and private tmux
+identity checks for focus, stop, colors, and coordination as other CLI agents.
+Gemini does not accept the Claude-only `custom_launcher` option.
+
+The existing normalized transcript API currently supports Claude and Codex;
+Gemini transcript reads return an explicit unsupported-provider error. Gemini
+launch, state tracking, focus, stop, resume, and terminal appearance do not
+depend on transcript parsing.

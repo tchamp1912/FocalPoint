@@ -274,3 +274,19 @@ Custom script**, browse to your executable launcher, and enter its model ID.
 FocalPoint remembers the script path without automatically enabling it for the
 next launch. The script receives normal Claude arguments (`--model`, the task,
 or `--resume` during recovery) and must forward them to your configured CLI.
+
+## Gemini CLI
+
+Select **Gemini CLI** in Launch Agent. The catalog offers stable Gemini 2.5
+Flash/Pro and explicit Gemini 3 Flash / 3.1 Pro preview choices, plus custom
+model IDs. Preview availability depends on your Gemini account. Existing agent
+personas, saved folders, terminal colors, scrollback, and copying also apply.
+
+Install and authenticate Gemini CLI separately, then run the FocalPoint installer
+to merge its lifecycle hooks into `~/.gemini/settings.json`. FocalPoint launches
+with `--model MODEL --prompt-interactive TASK` and resumes the exact session
+with `--resume ID`. See [Gemini CLI arguments](https://geminicli.com/docs/cli/cli-reference/)
+and [model availability](https://geminicli.com/docs/get-started/gemini-3/).
+
+Session tracking and managed-terminal controls are supported. Gemini account
+quota and transcript retrieval are not implemented by this integration.

@@ -77,7 +77,7 @@ enum Cmd {
         /// Exact provider conversation/session id from the orphaned row.
         #[arg(long)]
         session: String,
-        /// claude | codex | cursor | cursor-cli
+        /// claude | codex | gemini | cursor | cursor-cli
         #[arg(long)]
         kind: String,
         /// Human-readable FocalPoint title.

@@ -166,6 +166,7 @@ enum ChannelCommand {
 enum Provider {
     Claude,
     Codex,
+    Gemini,
     Cursor,
 }
 
@@ -208,6 +209,7 @@ impl Provider {
         match self {
             Self::Claude => "claude",
             Self::Codex => "codex",
+            Self::Gemini => "gemini",
             Self::Cursor => "cursor",
         }
     }
@@ -597,6 +599,16 @@ mod tests {
             "--task-id", "review-2", "--transition-confirmation", "user-confirmed"
         ])
         .is_err());
+    }
+
+    #[test]
+    fn launch_accepts_gemini_provider() {
+        let parsed = Cli::try_parse_from([
+            "fpctl-agent", "launch", "--provider", "gemini", "--agent-type", "reviewer",
+            "--model", "gemini-2.5-pro", "--cwd", "/tmp", "--task", "Review it.", "--task-id", "gemini-review",
+        ]).unwrap();
+        assert!(matches!(parsed.command, AgentCommand::Launch { provider: Provider::Gemini, .. }));
+        assert_eq!(Provider::Gemini.name(), "gemini");
     }
 
     #[test]

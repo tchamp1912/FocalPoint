@@ -4,10 +4,10 @@
 import Foundation
 
 enum ManagedQuickLaunchProvider: String, CaseIterable, Codable, Identifiable {
-    case codex, claude, cursor
+    case codex, claude, cursor, gemini
 
     var id: String { rawValue }
-    var displayName: String { rawValue.capitalized }
+    var displayName: String { self == .gemini ? "Gemini CLI" : rawValue.capitalized }
 }
 
 enum ManagedQuickLaunchComplexity: String, CaseIterable, Codable, Identifiable {
@@ -156,6 +156,7 @@ enum ManagedQuickLaunchRules {
             case .standard, .infer: model = "claude-sonnet-5"
             }
         case .cursor: model = "composer-2.5"
+        case .gemini: model = suggested.complexity == .complex ? "gemini-2.5-pro" : "gemini-2.5-flash"
         }
         return .init(complexity: suggested.complexity, agentType: suggested.agentType,
                      provider: provider, model: model,
@@ -167,6 +168,7 @@ enum ManagedQuickLaunchRules {
         case .codex: return ["gpt-5.6-terra", "gpt-5.6-sol"]
         case .claude: return ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"]
         case .cursor: return ["composer-2.5"]
+        case .gemini: return ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-3-flash-preview", "gemini-3.1-pro-preview"]
         }
     }
 
@@ -246,8 +248,9 @@ enum ManagedQuickLaunchRules {
             }
         }
         let model = draft.model.trimmingCharacters(in: .whitespacesAndNewlines)
-        if (draft.provider == .claude && draft.customLauncher == nil && (model.hasPrefix("gpt-") || model.hasPrefix("composer-")))
-            || (draft.provider == .codex && (model.hasPrefix("claude-") || model.hasPrefix("composer-"))) {
+        if (draft.provider == .claude && draft.customLauncher == nil && (model.hasPrefix("gpt-") || model.hasPrefix("composer-") || model.hasPrefix("gemini-")))
+            || (draft.provider == .codex && (model.hasPrefix("claude-") || model.hasPrefix("composer-") || model.hasPrefix("gemini-")))
+            || (draft.provider == .gemini && (model.hasPrefix("claude-") || model.hasPrefix("gpt-") || model.hasPrefix("composer-"))) {
             issues.append(.init(field: .model, message: "This model belongs to another provider. Choose a model for the selected provider."))
         } else if !matches(model, pattern: #"[A-Za-z0-9][A-Za-z0-9._/@:-]{0,127}"#)
             || forbiddenModel(model) {

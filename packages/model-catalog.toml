@@ -371,3 +371,193 @@ model = "gpt-6-astra"
 [[model]]
 provider = "claude"
 model = "claude-fable-5-1"
+
+# Gemini CLI: stable task recommendations; previews remain explicit choices.
+
+[[selection]]
+provider = "gemini"
+complexity = "focused"
+agent_type = "codebase-scout"
+model = "gemini-2.5-flash"
+
+[[selection]]
+provider = "gemini"
+complexity = "substantial"
+agent_type = "codebase-scout"
+model = "gemini-2.5-flash"
+
+[[selection]]
+provider = "gemini"
+complexity = "complex"
+agent_type = "codebase-scout"
+model = "gemini-2.5-pro"
+
+[[selection]]
+provider = "gemini"
+complexity = "focused"
+agent_type = "correctness-reviewer"
+model = "gemini-2.5-flash"
+
+[[selection]]
+provider = "gemini"
+complexity = "substantial"
+agent_type = "correctness-reviewer"
+model = "gemini-2.5-flash"
+
+[[selection]]
+provider = "gemini"
+complexity = "complex"
+agent_type = "correctness-reviewer"
+model = "gemini-2.5-pro"
+
+[[selection]]
+provider = "gemini"
+complexity = "focused"
+agent_type = "implementer"
+model = "gemini-2.5-flash"
+
+[[selection]]
+provider = "gemini"
+complexity = "substantial"
+agent_type = "implementer"
+model = "gemini-2.5-flash"
+
+[[selection]]
+provider = "gemini"
+complexity = "complex"
+agent_type = "implementer"
+model = "gemini-2.5-pro"
+
+[[selection]]
+provider = "gemini"
+complexity = "focused"
+agent_type = "perf-reviewer"
+model = "gemini-2.5-flash"
+
+[[selection]]
+provider = "gemini"
+complexity = "substantial"
+agent_type = "perf-reviewer"
+model = "gemini-2.5-flash"
+
+[[selection]]
+provider = "gemini"
+complexity = "complex"
+agent_type = "perf-reviewer"
+model = "gemini-2.5-pro"
+
+[[selection]]
+provider = "gemini"
+complexity = "focused"
+agent_type = "planner"
+model = "gemini-2.5-flash"
+
+[[selection]]
+provider = "gemini"
+complexity = "substantial"
+agent_type = "planner"
+model = "gemini-2.5-flash"
+
+[[selection]]
+provider = "gemini"
+complexity = "complex"
+agent_type = "planner"
+model = "gemini-2.5-pro"
+
+[[selection]]
+provider = "gemini"
+complexity = "focused"
+agent_type = "security-reviewer"
+model = "gemini-2.5-flash"
+
+[[selection]]
+provider = "gemini"
+complexity = "substantial"
+agent_type = "security-reviewer"
+model = "gemini-2.5-flash"
+
+[[selection]]
+provider = "gemini"
+complexity = "complex"
+agent_type = "security-reviewer"
+model = "gemini-2.5-pro"
+
+[[selection]]
+provider = "gemini"
+complexity = "focused"
+agent_type = "synthesizer"
+model = "gemini-2.5-flash"
+
+[[selection]]
+provider = "gemini"
+complexity = "substantial"
+agent_type = "synthesizer"
+model = "gemini-2.5-flash"
+
+[[selection]]
+provider = "gemini"
+complexity = "complex"
+agent_type = "synthesizer"
+model = "gemini-2.5-pro"
+
+[[selection]]
+provider = "gemini"
+complexity = "focused"
+agent_type = "test-verifier"
+model = "gemini-2.5-flash"
+
+[[selection]]
+provider = "gemini"
+complexity = "substantial"
+agent_type = "test-verifier"
+model = "gemini-2.5-flash"
+
+[[selection]]
+provider = "gemini"
+complexity = "complex"
+agent_type = "test-verifier"
+model = "gemini-2.5-pro"
+
+[[selection]]
+provider = "gemini"
+complexity = "focused"
+agent_type = "threat-modeler"
+model = "gemini-2.5-flash"
+
+[[selection]]
+provider = "gemini"
+complexity = "substantial"
+agent_type = "threat-modeler"
+model = "gemini-2.5-flash"
+
+[[selection]]
+provider = "gemini"
+complexity = "complex"
+agent_type = "threat-modeler"
+model = "gemini-2.5-pro"
+
+[[selection]]
+provider = "gemini"
+complexity = "focused"
+agent_type = "workflow-orchestrator"
+model = "gemini-2.5-flash"
+
+[[selection]]
+provider = "gemini"
+complexity = "substantial"
+agent_type = "workflow-orchestrator"
+model = "gemini-2.5-flash"
+
+[[selection]]
+provider = "gemini"
+complexity = "complex"
+agent_type = "workflow-orchestrator"
+model = "gemini-2.5-pro"
+
+[[model]]
+provider = "gemini"
+model = "gemini-3-flash-preview"
+
+[[model]]
+provider = "gemini"
+model = "gemini-3.1-pro-preview"

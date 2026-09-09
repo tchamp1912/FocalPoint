@@ -206,3 +206,28 @@ struct SetupDiagnosticsReport {
         }
     }
 }
+
+/// Gemini's lifecycle hooks are nested command groups, with a separate
+/// global enable switch. A path mentioned elsewhere is not a wired hook.
+enum GeminiHookDiagnostics {
+    static func sessionStartConfigured(_ data: Data, marker: String) -> Bool {
+        // Gemini accepts comments in settings.json. Foundation's JSON5 reader
+        // understands them without treating comment-like text in strings as syntax.
+        guard let root = try? JSONSerialization.jsonObject(with: data, options: [.json5Allowed]) as? [String: Any],
+              let hooks = root["hooks"] as? [String: Any],
+              let groups = hooks["SessionStart"] as? [[String: Any]] else { return false }
+        let config = root["hooksConfig"] as? [String: Any]
+        guard config?["enabled"] as? Bool != false else { return false }
+        let disabled = Set(config?["disabled"] as? [String] ?? [])
+        return groups.contains { group in
+            guard let commands = group["hooks"] as? [[String: Any]] else { return false }
+            return commands.contains { hook in
+                guard hook["type"] as? String == "command",
+                      let command = hook["command"] as? String,
+                      command.contains(marker), !disabled.contains(command) else { return false }
+                if let name = hook["name"] as? String, disabled.contains(name) { return false }
+                return true
+            }
+        }
+    }
+}

@@ -1491,7 +1491,7 @@ final class AppModel: ObservableObject {
                 return HistoryActionEligibility(action: action, allowed: false,
                                                 reason: "This conversation is already live.")
             }
-            guard ["claude", "codex"].contains(entry.kind) else {
+            guard HistoryProvider(rawValue: entry.kind)?.supportsResume == true else {
                 return HistoryActionEligibility(action: action, allowed: false,
                                                 reason: "This provider cannot resume by session id.")
             }
@@ -1659,17 +1659,10 @@ final class AppModel: ObservableObject {
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
     }
 
-    /// The provider command that resumes a session's conversation, or nil
-    /// if its tool has no resume-by-id (Cursor/generic). Claude Code and Codex
-    /// both resume by the session id we already store: `claude --resume <id>`
-    /// / `codex resume <id>`. The id is single-quoted for the shell.
+    /// Resume the exact provider conversation; shell quoting is shared with
+    /// history presentation so copied commands and Resume use the same ids.
     func resumeCommand(for entry: SessionHistoryEntry) -> String? {
-        let quotedID = "'" + entry.sessionID.replacingOccurrences(of: "'", with: "'\\''") + "'"
-        switch entry.kind {
-        case "claude": return "claude --resume \(quotedID)"
-        case "codex":  return "codex resume \(quotedID)"
-        default:       return nil
-        }
+        HistoryProvider(rawValue: entry.kind)?.resumeCommand(sessionID: entry.sessionID)
     }
 
     /// Whether an unmanaged live row can be safely promoted right now. Resume
@@ -1677,12 +1670,12 @@ final class AppModel: ObservableObject {
     /// running, compacting, and error sessions are intentionally gated out.
     func canRelaunchAsManaged(_ session: SessionInfo) -> Bool {
         guard session.connected, !session.isManaged, !session.pendingReopen,
-              session.kind == "claude" || session.kind == "codex",
+              HistoryProvider(rawValue: session.kind)?.supportsResume == true,
               session.cwd != nil else { return false }
         return session.state == .idle || session.state == .waiting || session.state == .done
     }
 
-    /// Explicitly promote a live Claude/Codex conversation to the managed
+    /// Explicitly promote a live resumable conversation to the managed
     /// tmux transport. The daemon gracefully stops the old process; its
     /// `session-ended` event is the handoff point that starts the resume.
     func relaunchAsManaged(_ session: SessionInfo) {
@@ -1910,7 +1903,7 @@ final class AppModel: ObservableObject {
     /// running it in an unrelated shell fails closed.
     func reRegisterCommand(for session: SessionInfo) -> String? {
         guard session.managed,
-              ["claude", "codex", "cursor", "cursor-cli"].contains(session.kind)
+              ["claude", "codex", "cursor", "cursor-cli", "gemini"].contains(session.kind)
         else { return nil }
         func quoted(_ value: String) -> String {
             "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"

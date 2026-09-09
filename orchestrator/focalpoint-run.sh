@@ -64,7 +64,7 @@ LAUNCH_COMMAND="$(basename "$1" 2>/dev/null)"
 # the exact tombstone with this id and never a different same-cwd candidate.
 if [ -z "${FOCALPOINT_RESUME_SESSION_ID:-}" ]; then
   case "$(basename "$1" 2>/dev/null)" in
-    claude)
+    claude|gemini)
       if [ "${2:-}" = "--resume" ] && [ -n "${3:-}" ]; then
         export FOCALPOINT_RESUME_SESSION_ID="$3"
       fi

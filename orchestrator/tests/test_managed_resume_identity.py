@@ -77,6 +77,9 @@ class ManagedResumeIdentityTests(unittest.TestCase):
             "claude-session-3|||||",
         )
 
+    def test_gemini_resume_exports_exact_conversation_id(self) -> None:
+        self.assertEqual(self.run_wrapper("gemini", "--resume", "gemini-session-3"), "gemini-session-3|||||")
+
     def test_normal_launch_has_no_resume_identity(self) -> None:
         self.assertEqual(self.run_wrapper("codex"), "|||||")
 

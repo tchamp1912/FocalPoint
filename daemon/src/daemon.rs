@@ -690,15 +690,7 @@ fn launch_managed_resume(prepared: &ManagedResumeLaunch) -> Result<(), String> {
         .arg(&prepared.cwd)
         .arg("--")
         .arg(&prepared.provider);
-    match prepared.kind.as_str() {
-        "claude" => {
-            command.arg("--resume").arg(&prepared.source_session_id);
-        }
-        "codex" => {
-            command.arg("resume").arg(&prepared.source_session_id);
-        }
-        _ => return Err(format!("provider cannot be resumed: {}", prepared.kind)),
-    }
+    command.arg(provider_resume_flag(&prepared.kind)?).arg(&prepared.source_session_id);
     let output = command
         .output()
         .map_err(|e| format!("failed to start tmux: {e}"))?;
@@ -1037,7 +1029,7 @@ fn correlate_pending_managed_launch(
 fn channel_wake_target(recipient: &Session) -> Option<(String, String, String, String)> {
     if recipient.state != State::Idle
         || !meta_truthy(recipient.meta.get("managed"))
-        || !matches!(recipient.kind.as_deref(), Some("claude" | "codex"))
+        || !matches!(recipient.kind.as_deref(), Some("claude" | "codex" | "gemini"))
     {
         return None;
     }
@@ -1315,9 +1307,9 @@ fn validate_workflow_assignment_manifest(
             ));
         }
         required_launch_selection(Some(&assignment.agent_type), Some(&assignment.model))?;
-        if !matches!(assignment.provider.as_str(), "claude" | "codex" | "cursor") {
+        if !matches!(assignment.provider.as_str(), "claude" | "codex" | "gemini" | "cursor") {
             return Err(
-                "workflow assignment provider must be 'claude', 'codex', or 'cursor'".into(),
+                "workflow assignment provider must be 'claude', 'codex', 'gemini', or 'cursor'".into(),
             );
         }
         if !matches!(assignment.gate.as_str(), "authorized" | "confirm" | "auto") {
@@ -1851,11 +1843,23 @@ fn shell_quote(value: &str) -> String {
 }
 
 #[cfg(unix)]
-fn orchestrated_provider_command(provider_bin: &Path, model: Option<&str>, prompt: &str) -> String {
+fn provider_resume_flag(provider: &str) -> Result<&'static str, String> {
+    match provider {
+        "claude" | "gemini" => Ok("--resume"),
+        "codex" => Ok("resume"),
+        _ => Err(format!("provider cannot be resumed: {provider}")),
+    }
+}
+
+#[cfg(unix)]
+fn orchestrated_provider_command(provider: &str, provider_bin: &Path, model: Option<&str>, prompt: &str) -> String {
     let mut args = vec![provider_bin.display().to_string()];
     if let Some(model) = model {
         args.push("--model".into());
         args.push(model.into());
+    }
+    if provider == "gemini" {
+        args.push("--prompt-interactive".into());
     }
     args.push(prompt.into());
     args.iter()
@@ -2088,8 +2092,8 @@ fn launch_orchestrated_session(
 ) -> Result<serde_json::Value, String> {
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
-    if !matches!(provider, "claude" | "codex" | "cursor") {
-        return Err("provider must be 'claude', 'codex', or 'cursor'".into());
+    if !matches!(provider, "claude" | "codex" | "gemini" | "cursor") {
+        return Err("provider must be 'claude', 'codex', 'gemini', or 'cursor'".into());
     }
     if !valid_orchestrator_task_id(task_id) {
         return Err("task_id must be 1-64 letters, digits, dots, underscores, or dashes".into());
@@ -2271,7 +2275,7 @@ fn launch_orchestrated_session(
             .then_some(cursor_wrapper.as_path()),
         )?
     } else {
-        orchestrated_provider_command(&provider_bin, Some(model), &prompt)
+        orchestrated_provider_command(provider, &provider_bin, Some(model), &prompt)
     };
     let manager_export = manager_task_id
         .map(|id| format!("export FOCALPOINT_MANAGER_TASK_ID={}\n", shell_quote(id)))
@@ -2412,8 +2416,8 @@ fn resume_managed_session(
     custom_launcher: Option<&str>,
 ) -> Result<Value, String> {
     use std::os::unix::fs::OpenOptionsExt;
-    if !matches!(provider, "claude" | "codex") {
-        return Err("provider must be 'claude' or 'codex'".into());
+    if !matches!(provider, "claude" | "codex" | "gemini") {
+        return Err("provider must be 'claude', 'codex', or 'gemini'".into());
     }
     if session.is_empty() || session.len() > 256 || session.chars().any(char::is_control) {
         return Err("invalid provider session id".into());
@@ -2463,7 +2467,7 @@ fn resume_managed_session(
     file.sync_all().map_err(|e| e.to_string())?;
     let launcher = launchers.join(format!("resume-{provider}-{key}.command"));
     let provider_command = format!("{} {} {}", shell_quote(&provider_bin.display().to_string()),
-        if provider == "claude" { "--resume" } else { "resume" }, shell_quote(session));
+        provider_resume_flag(provider)?, shell_quote(session));
     let custom_export = custom_launcher.map(|path| format!("export FOCALPOINT_CUSTOM_LAUNCHER={}\n", shell_quote(path))).unwrap_or_default();
     let title_export = custom_export + &title
         .filter(|value| !value.is_empty())
@@ -2799,9 +2803,9 @@ fn orchestrated_session_target(
     }
     if !matches!(
         session.kind.as_deref(),
-        Some("claude" | "codex" | "cursor" | "cursor-cli")
+        Some("claude" | "codex" | "gemini" | "cursor" | "cursor-cli")
     ) {
-        return Err("managed stop supports only claude, codex, and cursor".into());
+        return Err("managed stop supports only claude, codex, gemini, and cursor".into());
     }
     Ok(session)
 }
@@ -2819,7 +2823,7 @@ fn channel_actor(registry: &Registry, task_id: &str) -> Result<Session, String> 
                 && session.has_authoritative_attachment()
                 && matches!(
                     session.kind.as_deref(),
-                    Some("claude" | "codex" | "cursor" | "cursor-cli")
+                    Some("claude" | "codex" | "gemini" | "cursor" | "cursor-cli")
                 )
                 && session
                     .meta
@@ -2927,7 +2931,7 @@ fn managed_channel_identity(registry: &Registry, session_id: &str) -> Option<Ses
             && meta_truthy(session.meta.get("managed"))
             && matches!(
                 session.kind.as_deref(),
-                Some("claude" | "codex" | "cursor" | "cursor-cli")
+                Some("claude" | "codex" | "gemini" | "cursor" | "cursor-cli")
             )
     })
 }
@@ -4872,7 +4876,7 @@ fn dispatch(
             if session.is_some()
                 && matches!(
                     kind.as_deref(),
-                    Some("claude" | "codex" | "cursor" | "cursor-cli")
+                    Some("claude" | "codex" | "gemini" | "cursor" | "cursor-cli")
                 )
             {
                 let fields = meta.get_or_insert_with(Map::new);
@@ -6705,6 +6709,7 @@ mod tests {
     fn orchestrated_launch_passes_model_before_prompt() {
         assert_eq!(
             orchestrated_provider_command(
+                "claude",
                 Path::new("/opt/homebrew/bin/claude"),
                 Some("sonnet"),
                 "Task:\nInspect it."
@@ -6713,12 +6718,38 @@ mod tests {
         );
         assert_eq!(
             orchestrated_provider_command(
+                "codex",
                 Path::new("/opt/homebrew/bin/codex"),
                 None,
                 "Task:\nInspect it."
             ),
             "'/opt/homebrew/bin/codex' 'Task:\nInspect it.'"
         );
+    }
+
+    #[test]
+    fn gemini_launch_and_resume_use_interactive_cli_flags() {
+        assert_eq!(orchestrated_provider_command("gemini", Path::new("/opt/homebrew/bin/gemini"), Some("gemini-2.5-pro"), "Review this task"),
+            "'/opt/homebrew/bin/gemini' '--model' 'gemini-2.5-pro' '--prompt-interactive' 'Review this task'");
+        assert_eq!(provider_resume_flag("gemini").unwrap(), "--resume");
+        assert_eq!(provider_resume_flag("claude").unwrap(), "--resume");
+        assert_eq!(provider_resume_flag("codex").unwrap(), "resume");
+        assert!(custom_launcher_path("gemini", Some("/tmp/custom.sh")).is_err());
+        assert_eq!(managed_launch_provider_kind(Some("gemini")), Some("gemini"));
+    }
+
+    #[test]
+    fn gemini_managed_controls_require_the_matching_task() {
+        let mut registry = Registry::new(None);
+        registry.set_state(Some("gemini-owned"), State::Idle, Some("gemini".into()), None,
+            Some(Map::from_iter([
+                ("managed".into(), json!(true)), ("orchestrator_task_id".into(), json!("gemini-task")),
+                ("mux_server".into(), json!("fp-gemini-12")), ("mux_session".into(), json!("owned")),
+                ("mux_pane".into(), json!("%1")), ("tty".into(), json!("/dev/ttys001")),
+            ])), Instant::now());
+        let session = orchestrated_session_target(&registry, "gemini-owned", "gemini-task").unwrap();
+        assert!(channel_wake_target(&session).is_some());
+        assert!(orchestrated_session_target(&registry, "gemini-owned", "other-task").is_err());
     }
 
     #[test]
@@ -6895,7 +6926,7 @@ mod tests {
         assert!(custom_launcher_path("claude", Some(directory.to_str().unwrap())).is_err());
         let marker = directory.join("must-not-execute");
         let prompt = format!("Review $(touch {}); 'quoted' task", shell_quote(&marker.display().to_string()));
-        let command = orchestrated_provider_command(&launcher, Some("gateway/open-model@v2"), &prompt);
+        let command = orchestrated_provider_command("claude", &launcher, Some("gateway/open-model@v2"), &prompt);
         assert!(Command::new("/bin/sh").args(["-c", &command]).status().unwrap().success());
         assert_eq!(std::fs::read(&args_file).unwrap(), format!("--model\0gateway/open-model@v2\0{prompt}\0").as_bytes());
         assert!(!marker.exists());

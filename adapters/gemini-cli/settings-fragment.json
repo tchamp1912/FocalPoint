@@ -1,0 +1,95 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "focalpoint-gemini-SessionStart",
+            "type": "command",
+            "command": "gemini-hooks.sh",
+            "timeout": 2000
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "focalpoint-gemini-SessionEnd",
+            "type": "command",
+            "command": "gemini-hooks.sh",
+            "timeout": 2000
+          }
+        ]
+      }
+    ],
+    "BeforeAgent": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "focalpoint-gemini-BeforeAgent",
+            "type": "command",
+            "command": "gemini-hooks.sh",
+            "timeout": 2000
+          }
+        ]
+      }
+    ],
+    "AfterAgent": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "focalpoint-gemini-AfterAgent",
+            "type": "command",
+            "command": "gemini-hooks.sh",
+            "timeout": 2000
+          }
+        ]
+      }
+    ],
+    "BeforeTool": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "focalpoint-gemini-BeforeTool",
+            "type": "command",
+            "command": "gemini-hooks.sh",
+            "timeout": 2000
+          }
+        ]
+      }
+    ],
+    "AfterTool": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "focalpoint-gemini-AfterTool",
+            "type": "command",
+            "command": "gemini-hooks.sh",
+            "timeout": 2000
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "ToolPermission",
+        "hooks": [
+          {
+            "name": "focalpoint-gemini-Notification",
+            "type": "command",
+            "command": "gemini-hooks.sh",
+            "timeout": 2000
+          }
+        ]
+      }
+    ]
+  }
+}

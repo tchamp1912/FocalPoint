@@ -1017,8 +1017,8 @@ impl Registry {
             .get(id)
             .cloned()
             .ok_or_else(|| format!("unknown live session: {id}"))?;
-        if !matches!(source.kind.as_deref(), Some("claude" | "codex")) {
-            return Err("managed relaunch requires a claude or codex session".into());
+        if !matches!(source.kind.as_deref(), Some("claude" | "codex" | "gemini")) {
+            return Err("managed relaunch requires a claude, codex, or gemini session".into());
         }
         let already_managed = source
             .meta
@@ -4391,6 +4391,16 @@ mod tests {
             Some(m),
             now,
         );
+    }
+
+    #[test]
+    fn gemini_session_can_begin_managed_relaunch_when_idle() {
+        let mut registry = Registry::new(None);
+        let now = t0();
+        resumable_session(&mut registry, "gemini-source", State::Idle, now);
+        registry.sessions.get_mut("gemini-source").unwrap().kind = Some("gemini".into());
+        let (source, _) = registry.begin_managed_relaunch("gemini-source", "launch-gemini", now).unwrap();
+        assert_eq!(source.kind.as_deref(), Some("gemini"));
     }
 
     #[test]
