@@ -41,8 +41,7 @@ struct ManagedQuickLaunchView: View {
         var initial = ManagedQuickLaunchDraft()
         initial.cwd = initialCwd.isEmpty ? folderStore.recent.first ?? folderStore.pinned.first ?? "" : initialCwd
         initial.provider = .codex
-        initial.agentType = catalog.agents.first(where: { $0.id == "implementer" })?.id
-            ?? catalog.agents.first?.id ?? ""
+        initial.agentType = ""
         _draft = State(initialValue: initial)
         _catalog = State(initialValue: catalog)
     }
@@ -52,6 +51,10 @@ struct ManagedQuickLaunchView: View {
     private var launcherName: String { isCustomLauncher ? "Custom Agent" : provider.displayName }
     private var suggestion: ManagedQuickLaunchRecommendation? {
         guard !isCustomLauncher else { return nil }
+        if draft.agentType.isEmpty {
+            let recommendation = ManagedQuickLaunchRules.recommendation(for: draft)
+            return catalog.models(provider: provider).contains(recommendation.model) ? recommendation : nil
+        }
         return catalog.recommendation(provider: provider, agentType: draft.agentType,
                                complexity: ManagedQuickLaunchRules.effectiveComplexity(for: draft))
     }
@@ -218,7 +221,7 @@ struct ManagedQuickLaunchView: View {
 
             if provider == .claude { customLauncherFields }
 
-            Picker("Agent type", selection: Binding(
+            Picker("Agent instructions", selection: Binding(
                 get: { draft.agentType },
                 set: { agentType in
                     // Keep the currently shown model, including a suggestion,
@@ -229,11 +232,10 @@ struct ManagedQuickLaunchView: View {
                     draft.agentType = agentType
                 }
             )) {
-                if catalog.agents.isEmpty { Text("No agent types installed").tag("") }
+                Text("No added instructions").tag("")
                 ForEach(catalog.agents) { Text($0.displayName).tag($0.id) }
             }
             .pickerStyle(.menu)
-            .disabled(catalog.agents.isEmpty)
 
             if let agent = catalog.agents.first(where: { $0.id == draft.agentType }) {
                 Text(agent.description).font(.caption).foregroundStyle(.secondary)
@@ -346,7 +348,7 @@ struct ManagedQuickLaunchView: View {
                 Button("Launch \(launcherName)") { launch() }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(isLaunching || !isConnected || catalog.agents.isEmpty)
+                    .disabled(isLaunching || !isConnected)
             }
         }
         .padding(.horizontal, 24).padding(.vertical, 16)
@@ -401,7 +403,7 @@ struct ManagedQuickLaunchView: View {
         let previousModel = selectedModel
         catalog = .load()
         if !catalog.agents.contains(where: { $0.id == draft.agentType }) {
-            draft.agentType = catalog.agents.first?.id ?? ""
+            draft.agentType = ""
         }
         if !isCustomLauncher && !useCustomModel {
             draft.model = catalog.models(provider: provider).contains(previousModel) ? previousModel : ""
@@ -417,10 +419,6 @@ struct ManagedQuickLaunchView: View {
             issues = [.init(field: .model, message: isCustomLauncher ? "Enter the model ID accepted by your launcher." : "Choose a model or enter a custom model ID.")]
             return
         }
-        guard let agent = catalog.agents.first(where: { $0.id == draft.agentType }) else {
-            issues = [.init(field: .agentType, message: "Choose an installed agent type.")]
-            return
-        }
         guard !draft.task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             issues = [.init(field: .task, message: "Describe what the agent should do.")]
             taskFocused = true
@@ -429,7 +427,7 @@ struct ManagedQuickLaunchView: View {
         if resolved.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             resolved.title = ManagedQuickLaunchRules.suggestedTitle(for: draft.task)
         }
-        switch ManagedQuickLaunchRules.request(from: resolved, personaPrompt: agent.personaPrompt) {
+        switch catalog.request(from: resolved) {
         case .failure(let failure): issues = failure.issues
         case .success(let validated):
             let request = validated.withLaunchIdentity(previous: lastAttemptRequest)

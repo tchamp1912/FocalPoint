@@ -129,6 +129,54 @@ enum ManagedQuickLaunchCatalogTests {
             precondition(unsafe.models(provider: provider) == valid.models(provider: provider))
         }
 
+        precondition(fresh.issues.isEmpty, "Missing optional agents are normal on a fresh install")
+        var directDraft = ManagedQuickLaunchDraft(task: "Fix the launch button", cwd: temporary.path,
+                                                  provider: .codex, model: "gpt-5.6-terra")
+        for provider in ManagedQuickLaunchProvider.allCases {
+            directDraft.provider = provider
+            directDraft.model = fresh.models(provider: provider).first!
+            guard case .success(let request) = fresh.request(from: directDraft) else {
+                fatalError("A complete direct launch must work without installing any agent types")
+            }
+            precondition(request.agentType == "direct")
+            precondition(request.task == directDraft.task, "Direct launch must not inject a persona")
+            precondition(request.daemonPayload["agent_type"] as? String == "direct")
+            precondition(request.daemonPayload["model"] as? String == directDraft.model)
+        }
+        let gatewayScript = temporary.appendingPathComponent("gateway-launcher")
+        try "#!/bin/sh\nexit 0\n".write(to: gatewayScript, atomically: true, encoding: .utf8)
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: gatewayScript.path)
+        directDraft.provider = .claude
+        directDraft.model = "gateway/open-model"
+        directDraft.customLauncher = gatewayScript.path
+        guard case .success(let gatewayRequest) = fresh.request(from: directDraft) else {
+            fatalError("A custom launcher must also work without agent packages")
+        }
+        precondition(gatewayRequest.customLauncher == gatewayScript.path)
+        precondition(gatewayRequest.agentType == "direct")
+        precondition(gatewayRequest.task == directDraft.task)
+        directDraft.customLauncher = nil
+        directDraft.provider = .codex
+        directDraft.model = "gpt-5.6-terra"
+        directDraft.agentType = "implementer"
+        guard case .success(let personaRequest) = valid.request(from: directDraft) else {
+            fatalError("Installed personas remain optional launch choices")
+        }
+        precondition(personaRequest.task.contains(implementation.personaPrompt))
+        precondition(personaRequest.agentType == "implementer")
+        guard case .failure(let unavailable) = fresh.request(from: directDraft) else {
+            fatalError("An explicitly selected missing persona must not silently turn into a direct session")
+        }
+        precondition(unavailable.issues.contains { $0.field == .agentType })
+        directDraft.agentType = ""
+        directDraft.model = ""
+        guard case .failure(let missingModel) = fresh.request(from: directDraft) else { fatalError("An explicit model is required") }
+        precondition(missingModel.issues.contains { $0.field == .model })
+        directDraft.model = "gpt-5.6-terra"
+        directDraft.task = ""
+        guard case .failure(let missingTask) = fresh.request(from: directDraft) else { fatalError("An empty task is invalid") }
+        precondition(missingTask.issues.contains { $0.field == .task })
+
         let absent = ManagedQuickLaunchCatalog.load(configRoot: temporary.appendingPathComponent("missing"),
                                                     bundledCatalogURL: temporary.appendingPathComponent("missing.toml"))
         precondition(absent.agents.isEmpty)

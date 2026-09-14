@@ -33,9 +33,10 @@ struct ManagedQuickLaunchCatalog {
         var issues: [String] = []
         var agents: [ManagedQuickLaunchAgentOption] = []
         do {
-            let directories = try FileManager.default.contentsOfDirectory(
+            let directories = FileManager.default.fileExists(atPath: agentsDirectory.path)
+                ? try FileManager.default.contentsOfDirectory(
                 at: agentsDirectory, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
-            ).sorted { $0.lastPathComponent < $1.lastPathComponent }
+                ).sorted { $0.lastPathComponent < $1.lastPathComponent } : []
             for directory in directories {
                 guard (try? directory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
                 do {
@@ -46,9 +47,6 @@ struct ManagedQuickLaunchCatalog {
             }
         } catch {
             issues.append("Installed agents could not be read at \(agentsDirectory.path).")
-        }
-        if agents.isEmpty {
-            issues.append("No installed agents are available. Install an agent from Settings → Workflows.")
         }
         agents.sort {
             let comparison = $0.displayName.localizedCaseInsensitiveCompare($1.displayName)
@@ -105,6 +103,26 @@ struct ManagedQuickLaunchCatalog {
         return .init(complexity: resolvedComplexity, agentType: agentType,
                      provider: selectedProvider, model: model,
                      rationale: "Selected from your model catalog for this agent and task complexity.")
+    }
+
+    /// A direct session needs no installed persona. Keep an explicit transport
+    /// type for daemon/workflow bookkeeping without inventing agent instructions.
+    func request(from draft: ManagedQuickLaunchDraft) -> Result<ManagedQuickLaunchRequest, ManagedQuickLaunchValidationFailure> {
+        guard !draft.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return .failure(.init(issues: [.init(field: .model, message: "Choose a model or enter a custom model ID.")]))
+        }
+        var resolved = draft
+        let persona: String?
+        if draft.agentType.isEmpty {
+            resolved.agentType = "direct"
+            persona = nil
+        } else if let agent = agents.first(where: { $0.id == draft.agentType }) {
+            persona = agent.personaPrompt
+        } else {
+            return .failure(.init(issues: [.init(field: .agentType,
+                message: "The selected agent type is unavailable. Choose another type or No added instructions.")]))
+        }
+        return ManagedQuickLaunchRules.request(from: resolved, personaPrompt: persona)
     }
 
     private static func loadAgent(directory: URL) throws -> ManagedQuickLaunchAgentOption {

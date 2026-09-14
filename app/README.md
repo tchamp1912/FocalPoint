@@ -243,8 +243,10 @@ MIT License.
 ## Launch Agent
 
 The launcher needs a project folder and task. Provider, agent type, and model
-are selected directly in the form; agent types come from installed packages in
-`~/.config/focalpoint/agents` (or `$XDG_CONFIG_HOME/focalpoint/agents`). The selected
+are selected directly in the form. Agent instructions are optional: **No added
+instructions** launches the provider with your task, without requiring any
+installed agent packages. Optional agent types come from
+`~/.config/focalpoint/agents` (or `$XDG_CONFIG_HOME/focalpoint/agents`); a selected
 type's persona instructions accompany the task. Model choices use the bundled
 model catalog plus the user's catalog overrides. Model choices depend only on
 the provider and remain available when no agent types are installed. Changing
@@ -292,3 +294,7 @@ and [model availability](https://geminicli.com/docs/get-started/gemini-3/).
 
 Session tracking and managed-terminal controls are supported. Gemini account
 quota and transcript retrieval are not implemented by this integration.
+
+Direct Quick Launch sessions use the internal `agent_type` value `direct` in
+the daemon request. This requires no agent package and adds no persona prompt.
+Workflow launches retain their explicit agent assignments.
