@@ -153,6 +153,11 @@ final class DaemonClient: @unchecked Sendable {
         }
     }
 
+    /// Synchronous transport; schedule UI callers dispatch off the main actor.
+    func scheduleRequest(_ payload: [String: Any]) -> [String: Any]? {
+        request(payload, timeout: 30)
+    }
+
     /// Typed managed-launch seam used by roadmap surfaces. The spec's request
     /// always carries agent type, provider, model selection, cwd, and task id.
     func launch(_ spec: ManagedLaunchSpec, timeout: Double = 5) -> [String: Any]? {

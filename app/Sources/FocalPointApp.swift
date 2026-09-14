@@ -158,6 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showQuickLaunch() { roadmapWC.showQuickLaunch() }
+    func showSchedules() { roadmapWC.showSchedules() }
     func showDiagnostics() { roadmapWC.showDiagnostics() }
 }
 
@@ -197,6 +198,7 @@ struct FocalPointApp: App {
         MenuBarExtra {
             MenuContentView(model: model, onSettings: { appDelegate.showSettings() },
                             onQuickLaunch: { appDelegate.showQuickLaunch() },
+                            onSchedules: { appDelegate.showSchedules() },
                             onDiagnostics: { appDelegate.showDiagnostics() })
         } label: {
             MenuBarLabel(model: model)

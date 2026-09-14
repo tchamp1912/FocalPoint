@@ -12,6 +12,7 @@ struct MenuContentView: View {
     @ObservedObject var model: AppModel
     var onSettings: () -> Void
     var onQuickLaunch: () -> Void
+    var onSchedules: () -> Void
     var onDiagnostics: () -> Void
 
     /// Session currently being renamed inline, if any.
@@ -668,6 +669,7 @@ struct MenuContentView: View {
             }
             Menu {
                 Button("Launch Managed Agent", action: onQuickLaunch)
+                Button("Schedules", action: onSchedules)
                 Divider()
                 Button("Live Sessions") { MainWindowController.shared.show(.triage) }
                 Button("Workflow Runs") { MainWindowController.shared.show(.runs) }

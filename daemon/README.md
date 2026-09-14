@@ -324,3 +324,39 @@ The existing normalized transcript API currently supports Claude and Codex;
 Gemini transcript reads return an explicit unsupported-provider error. Gemini
 launch, state tracking, focus, stop, resume, and terminal appearance do not
 depend on transcript parsing.
+
+
+## Scheduled prompts
+
+`fpctl-agent schedule` manages recurring local launches; no provider-side cron
+feature is needed. In the app, choose **Schedule** in Launch Agent, or open
+**Schedules** to edit, pause, resume, or delete saved prompts.
+
+```sh
+fpctl-agent schedule save --id daily-review --name 'Daily review' \
+  --cron '0 9 * * 1-5' --timezone local \
+  --provider codex --model gpt-5.6-terra --cwd /absolute/project \
+  --task-file /absolute/prompts/review.md
+fpctl-agent schedule list
+fpctl-agent schedule pause daily-review
+fpctl-agent schedule resume daily-review
+fpctl-agent schedule delete daily-review
+```
+
+Use `--task` instead of `--task-file` for a literal inline prompt, `--paused`
+to save a draft, and the same `--id` to update it. The prompt is snapshotted on
+save, including any supplied persona instructions. `--agent-type` defaults to
+`direct`. Claude-compatible custom scripts use `--custom-launcher /path/script`.
+The five-field numeric cron supports lists/ranges/steps; timezone is `local` or
+`UTC`. The UI provides hourly, daily, weekday, and weekly presets.
+
+The daemon runs independently of the app and saves jobs under its state directory
+in `schedules.json`. The Mac must be awake/logged in; missed occurrences coalesce
+into one catch-up attempt. A previous active run suppresses overlap; completed
+interactive terminals may remain open. Pause/delete does not terminate an
+existing session. `last_runs` records up to 20 launch attempts; `launched` means
+the terminal launch was acknowledged, not that the agent completed the task.
+Provider authentication and approval requirements still apply. Both the daemon
+and controller/app must be updated to use this feature. See
+[the wire contract](../PROTOCOL.md#local-scheduled-prompts) and
+[the agent skill](../skills/focalpoint-orchestrator/references/schedules.md).

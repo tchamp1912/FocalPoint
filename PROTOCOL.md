@@ -1009,3 +1009,63 @@ The CLI resolves its Node entrypoint ancestry to a runtime process identity.
 Lifecycle hooks provide session state and managed-terminal metadata using
 `~/.gemini/settings.json`; no Gemini account quota or transcript-read API is
 provided by this adapter. See [adapter setup](adapters/gemini-cli/README.md).
+
+
+### Local scheduled prompts
+
+The daemon advertises `get-capabilities.features.scheduled_launches: true`.
+Schedules are daemon-owned, independent of the app window and provider process.
+Commands:
+
+```json
+{"cmd":"schedule-list"}
+{"cmd":"schedule-save","schedule":{"id":"weekday-review","name":"Weekday review","cron":"0 9 * * 1-5","timezone":"local","enabled":true,"launch":{"provider":"codex","agent_type":"direct","model":"gpt-5.6-terra","cwd":"/absolute/project","task":"Review recent changes and write findings.","title":"Weekday review"}}}
+{"cmd":"schedule-set-enabled","id":"weekday-review","enabled":false}
+{"cmd":"schedule-delete","id":"weekday-review"}
+```
+
+`save` upserts by id and returns `{ok:true,schedule:JOB}`; set-enabled returns
+that same shape. List returns `{ok:true,schedules:[JOB]}`, and delete returns
+`{ok:true}`. Errors use the standard `{ok:false,error:STRING}` response.
+`JOB` flattens the saved schedule and adds `next_run_at` (Unix seconds),
+`active_task_id` (nullable), and `last_runs` (at most 20, newest first). Ignore
+`next_run_at` while paused. Each history record contains `task_id`,
+`scheduled_at`, `attempted_at`, `finished_at` (nullable; launch acknowledgement,
+not task completion), `status`, and nullable `error`. Status values are
+`launching`, `launched`, `error`, `skipped`, and `interrupted`.
+
+There are at most 100 schedules. IDs use 1–32 letters/digits/dots/underscores/
+dashes, starting alphanumeric. Names are printable nonempty strings up to 256
+UTF-8 bytes. Launch fields mirror the ordinary managed-launch primitive, with
+literal saved `task` (1–16384 UTF-8 bytes), explicit provider/agent_type/model,
+absolute existing cwd, and printable title. Optional `custom_launcher`,
+`terminal_color`, and `cursor_mode` have normal launch validation. Launch fields
+do not accept task identity, workflow grants, managers, channels, or arbitrary
+shell commands. `direct` requires no persona package. The UI snapshots persona
+instructions into the task on save; the daemon does not resolve packages at
+execution time. Removing a project folder later creates a per-run error rather
+than discarding the schedule store.
+
+Cron uses five numeric fields with stars, lists, ranges, and steps; Sunday is
+0 or 7. Restricted day-of-month/day-of-week fields use OR matching. Only `local`
+and `UTC` timezones are supported. Local means the host's current timezone;
+spring gaps are skipped, repeated autumn minutes are distinct occurrences.
+The daemon checks every 5 seconds using wall-clock occurrences and persists
+claims and the next future time before launching. Sleep/downtime coalesces into
+at most one catch-up attempt per job. A prior working/waiting session suppresses
+overlap; Done allows a future run even with its terminal open. Unregistered
+launches use receipt/private-tmux ownership conservatively. Resuming or editing
+recalculates the next future occurrence. Pausing/deleting prevents unstarted
+attempts after acknowledgement, but does not terminate existing sessions.
+
+Schedules persist atomically in `$XDG_STATE_HOME/focalpoint/schedules.json`
+(fallback `~/.local/state/focalpoint/schedules.json`) with owner-only permissions
+and a lifetime exclusive `schedules.lock`. A second scheduler cannot claim the
+same store. Failed writes do not launch or advance in-memory schedules. A crash
+between claim and acknowledgement leaves an `interrupted` record and never
+replays that occurrence. Corrupt/unreadable state disables scheduling and
+returns an error, preserving other daemon functionality and the original file.
+Subscribers may receive `{"event":"schedule-changed"}` as an invalidation hint;
+clients should re-read the list, including periodically while viewing history.
+The daemon must run in an awake logged-in user session; this does not wake or
+boot the host, supply provider authentication, or bypass provider approvals.

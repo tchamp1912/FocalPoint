@@ -180,6 +180,10 @@ pub enum Request {
     },
     FocusNextAttention,
     FocusPrevAttention,
+    ScheduleList,
+    ScheduleSave { schedule: crate::schedule::ScheduleSpec },
+    ScheduleSetEnabled { id: String, enabled: bool },
+    ScheduleDelete { id: String },
     LaunchSession {
         provider: String,
         cwd: String,
@@ -2757,6 +2761,9 @@ struct EventCtx {
     /// transaction so concurrent hook connections cannot publish B before A
     /// after the registry itself committed A before B.
     transition: Arc<Mutex<()>>,
+    /// Separate from the session snapshot: a failed schedule write must never
+    /// start a process or interfere with normal session tracking.
+    schedules: Arc<Mutex<Result<crate::schedule::ScheduleStore, String>>>,
 }
 
 #[cfg(unix)]
@@ -4621,6 +4628,9 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
         shared: shared.clone(),
         host_tx: host_tx.clone(),
         transition: Arc::new(Mutex::new(())),
+        schedules: Arc::new(Mutex::new(crate::schedule::ScheduleStore::load(
+            crate::paths::daemon_state_dir().join("schedules.json"),
+        ))),
     };
 
     // Launch the device thread (real or mock).
@@ -4726,6 +4736,24 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
         UnixListener::bind(&path).map_err(|e| format!("failed to bind {}: {e}", path.display()))?;
     eprintln!("[daemon] listening on {}", path.display());
 
+    // All timer work (including terminal opening) stays off Tokio's socket
+    // workers. One awaited tick prevents concurrent claims within this daemon.
+    {
+        let ctx = ctx.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(Duration::from_secs(5));
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                tick.tick().await;
+                let ctx = ctx.clone();
+                if let Err(error) = tokio::task::spawn_blocking(move || run_schedule_tick(&ctx)).await {
+                    eprintln!("[schedule] worker failed: {error}");
+                    break;
+                }
+            }
+        });
+    }
+
     loop {
         match listener.accept().await {
             Ok((stream, _addr)) => {
@@ -4744,6 +4772,155 @@ pub async fn run(opts: DaemonOpts) -> Result<(), String> {
 }
 
 /// Outcome of dispatching one request line.
+#[cfg(unix)]
+fn validate_scheduled_launch(launch: &crate::schedule::ScheduleLaunch) -> Result<(), String> {
+    required_launch_selection(Some(&launch.agent_type), Some(&launch.model))?;
+    custom_launcher_path(&launch.provider, launch.custom_launcher.as_deref())?;
+    orchestrator_session_title(Some(&launch.title), "scheduled")?;
+    if !Path::new(&launch.cwd).is_absolute() || !Path::new(&launch.cwd).is_dir() {
+        return Err("cwd must be an existing absolute directory".into());
+    }
+    if launch.terminal_color.as_deref().is_some_and(|color| !valid_terminal_color(color)) {
+        return Err("terminal_color must be a six-digit hex color such as #6C8CFF".into());
+    }
+    Ok(())
+}
+
+/// Reuse the normal managed launch validation, reservation, and receipt path.
+/// A schedule cannot manufacture workflow grants or inherit an agent's manager.
+#[cfg(unix)]
+fn scheduled_launch_request(claim: &crate::schedule::ScheduleClaim) -> Value {
+    let launch = &claim.launch;
+    json!({"cmd":"launch-session", "provider":launch.provider,
+        "agent_type":launch.agent_type, "model":launch.model, "cwd":launch.cwd,
+        "task":launch.task, "title":launch.title, "task_id":claim.task_id,
+        "role":"worker", "custom_launcher":launch.custom_launcher,
+        "terminal_color":launch.terminal_color, "cursor_mode":launch.cursor_mode})
+}
+
+#[cfg(unix)]
+fn scheduled_task_is_active(task_id: &str, ctx: &EventCtx) -> bool {
+    {
+        let state = ctx.shared.lock().unwrap();
+        let owned: Vec<_> = state.registry.list().into_iter().filter(|session| {
+            session.meta.get("orchestrator_task_id").and_then(Value::as_str) == Some(task_id)
+        }).collect();
+        if !owned.is_empty() {
+            // A completed prompt may leave an interactive terminal open. That
+            // does not block tomorrow's run; waiting/approval still does.
+            return owned.iter().any(|session| scheduled_session_is_active(session));
+        }
+    }
+    let receipt_path = crate::paths::daemon_state_dir().join("launches").join(format!("{task_id}.json"));
+    let receipt = match std::fs::read(&receipt_path) {
+        Ok(data) => match serde_json::from_slice::<Value>(&data) {
+            Ok(value) => value,
+            Err(_) => return true, // Uncertain ownership must not duplicate a run.
+        },
+        Err(error) => return error.kind() != std::io::ErrorKind::NotFound,
+    };
+    // An accepted terminal-open request may not have created its tmux server
+    // yet. Keep it reserved while its launcher is pending or within hook grace.
+    if crate::paths::daemon_state_dir().join("launchers").join(format!("{task_id}.command")).exists()
+        || receipt.get("accepted_at_unix_ms").and_then(Value::as_u64)
+            .is_some_and(|at| unix_ms_now().saturating_sub(at) < 120_000) {
+        return true;
+    }
+    let Some(tmux) = executable_named("tmux") else { return true; };
+    let uid = unsafe { libc::geteuid() };
+    let mut directories = vec![PathBuf::from(format!("/tmp/tmux-{uid}"))];
+    if let Some(tmp) = std::env::var_os("TMPDIR") {
+        directories.push(PathBuf::from(tmp).join(format!("tmux-{uid}")));
+    }
+    if let Some(tmp) = std::env::var_os("TMUX_TMPDIR") {
+        directories.push(PathBuf::from(tmp).join(format!("tmux-{uid}")));
+    }
+    let prefix = format!("fp-{task_id}-");
+    for directory in directories {
+        let entries = match std::fs::read_dir(directory) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => return true,
+        };
+        for entry in entries.flatten() {
+            if !entry.file_name().to_string_lossy().starts_with(&prefix) { continue; }
+            match Command::new(&tmux).arg("-S").arg(entry.path()).arg("list-sessions").output() {
+                Ok(output) if !output.status.success() => {},
+                _ => return true,
+            }
+        }
+    }
+    false
+}
+
+#[cfg(unix)]
+fn scheduled_session_is_active(session: &Session) -> bool {
+    session.state != State::Done && !(matches!(session.state, State::Idle | State::Waiting)
+        && session.meta.get("schedule_turn_completed").and_then(Value::as_bool) == Some(true))
+}
+
+#[cfg(unix)]
+fn schedule_completion_marker(previous: Option<&Session>, state: State) -> bool {
+    match state {
+        State::Done => true,
+        State::Idle | State::Waiting => previous.is_some_and(|session| {
+            session.state == State::Done || session.meta.get("schedule_turn_completed").and_then(Value::as_bool) == Some(true)
+        }),
+        _ => false,
+    }
+}
+
+#[cfg(unix)]
+fn run_schedule_tick(ctx: &EventCtx) {
+    run_schedule_tick_with(ctx, unix_ms_now() / 1000,
+        |task| scheduled_task_is_active(task, ctx),
+        |claim| match dispatch(&scheduled_launch_request(claim).to_string(), &ctx.shared, ctx, &ctx.host_tx) {
+            Dispatch::Reply(Response::Json(value)) if value.get("ok").and_then(Value::as_bool) == Some(true) => None,
+            Dispatch::Reply(Response::Error { error, .. }) => Some(error),
+            _ => Some("Managed launcher did not acknowledge the schedule".into()),
+        });
+}
+
+#[cfg(unix)]
+fn run_schedule_tick_with(
+    ctx: &EventCtx, now: u64, is_active: impl FnMut(&str) -> bool,
+    launch: impl Fn(&crate::schedule::ScheduleClaim) -> Option<String>,
+) {
+    let claims = {
+        let mut schedules = ctx.schedules.lock().unwrap();
+        let Ok(store) = schedules.as_mut() else { return; };
+        let before = store.jobs().to_vec();
+        match store.claim_due(now, is_active) {
+            Ok(claims) => {
+                if store.jobs() != before { ctx.broadcast("{\"event\":\"schedule-changed\"}"); }
+                claims
+            },
+            Err(error) => {
+                eprintln!("[schedule] cannot persist due claims: {}", diagnostic_text(&error));
+                return;
+            }
+        }
+    };
+    for claim in claims {
+        // Serialize launch with edits/pause/delete. Once a pause acknowledgement
+        // returns, none of the claimed-but-unstarted occurrences can open.
+        let mut schedules = ctx.schedules.lock().unwrap();
+        let Ok(store) = schedules.as_mut() else { return; };
+        let still_current = store.jobs().iter().any(|job| job.spec.id == claim.id
+            && job.spec.enabled && job.spec == claim.spec
+            && job.active_task_id.as_deref() == Some(claim.task_id.as_str()));
+        let error = if !still_current {
+            Some("Schedule changed before launch; occurrence cancelled".to_string())
+        } else {
+            launch(&claim)
+        };
+        if let Err(error) = store.finish(&claim.id, &claim.task_id, now, error) {
+            eprintln!("[schedule] cannot record launch result: {}", diagnostic_text(&error));
+        }
+        ctx.broadcast("{\"event\":\"schedule-changed\"}");
+    }
+}
+
 #[cfg(unix)]
 enum Dispatch {
     Reply(Response),
@@ -4770,7 +4947,17 @@ async fn handle_client(
         if line.trim().is_empty() {
             continue;
         }
-        match dispatch(&line, &shared, &ctx, &host_tx) {
+        // Dispatch can open terminals or wait for the scheduler's durable
+        // mutation lock. Keep socket workers available for provider hooks and
+        // Cursor's registration handshake while those operations are pending.
+        let request_shared = shared.clone();
+        let request_ctx = ctx.clone();
+        let request_host_tx = host_tx.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            dispatch(&line, &request_shared, &request_ctx, &request_host_tx)
+        }).await;
+        let Ok(result) = result else { return; };
+        match result {
             Dispatch::Reply(value) => {
                 let mut out = serde_json::to_string(&value).expect("response DTO must serialize");
                 out.push('\n');
@@ -4865,6 +5052,49 @@ fn dispatch(
         Err(e) => return err(&format!("invalid request: {e}")),
     };
     match request {
+        Request::ScheduleList => {
+            let schedules = ctx.schedules.lock().unwrap();
+            match schedules.as_ref() {
+                Ok(store) => Dispatch::Reply(Response::Json(json!({"ok":true,"schedules":store.jobs()}))),
+                Err(message) => err(&format!("Scheduler unavailable: {message}")),
+            }
+        }
+        Request::ScheduleSave { schedule } => {
+            if let Err(message) = validate_scheduled_launch(&schedule.launch) { return err(&message); }
+            let mut schedules = ctx.schedules.lock().unwrap();
+            let result = schedules.as_mut().map_err(|e| e.clone())
+                .and_then(|store| store.upsert(schedule, unix_ms_now() / 1000));
+            match result {
+                Ok(job) => {
+                    ctx.broadcast("{\"event\":\"schedule-changed\"}");
+                    Dispatch::Reply(Response::Json(json!({"ok":true,"schedule":job})))
+                }
+                Err(message) => err(&message),
+            }
+        }
+        Request::ScheduleSetEnabled { id, enabled } => {
+            let mut schedules = ctx.schedules.lock().unwrap();
+            let result = schedules.as_mut().map_err(|e| e.clone())
+                .and_then(|store| store.set_enabled(&id, enabled, unix_ms_now() / 1000));
+            match result {
+                Ok(job) => {
+                    ctx.broadcast("{\"event\":\"schedule-changed\"}");
+                    Dispatch::Reply(Response::Json(json!({"ok":true,"schedule":job})))
+                }
+                Err(message) => err(&message),
+            }
+        }
+        Request::ScheduleDelete { id } => {
+            let mut schedules = ctx.schedules.lock().unwrap();
+            let result = schedules.as_mut().map_err(|e| e.clone()).and_then(|store| store.delete(&id));
+            match result {
+                Ok(()) => {
+                    ctx.broadcast("{\"event\":\"schedule-changed\"}");
+                    Dispatch::Reply(Response::Ok { ok: true })
+                }
+                Err(message) => err(&message),
+            }
+        }
         Request::SetState {
             state: name,
             session,
@@ -4919,6 +5149,14 @@ fn dispatch(
             }
             let (effects, channel_changed) = {
                 let mut shared = shared.lock().unwrap();
+                if let Some(id) = session.as_deref() {
+                    // Claude emits idle_prompt after Stop. Preserve completion
+                    // through that passive notification, but clear it as soon
+                    // as a new turn/tool/approval/error begins. Clients cannot
+                    // supply this daemon-derived lifecycle marker.
+                    let completed = schedule_completion_marker(shared.registry.session_or_tombstone(id).as_ref(), state);
+                    meta.get_or_insert_with(Map::new).insert("schedule_turn_completed".into(), completed.into());
+                }
                 let effects = shared.registry.set_state(
                     session.as_deref(),
                     state,
@@ -4984,8 +5222,9 @@ fn dispatch(
             session,
             kind,
             label,
-            meta,
+            mut meta,
         } => {
+            meta.remove("schedule_turn_completed");
             let _transition = ctx.transition.lock().unwrap();
             let joining_channel = meta
                 .get("channel_id")
@@ -5083,6 +5322,7 @@ fn dispatch(
             "protocol": {"major": crate::protocol::PROTO_MAJOR, "minor": crate::protocol::PROTO_MINOR},
             "features": {
                 "managed_launch": true,
+                "scheduled_launches": true,
                 "explicit_launch_identity": true,
                 "confirmed_stop": true,
                 "workflow_observation": true,
@@ -6349,6 +6589,72 @@ pub async fn run(_opts: DaemonOpts) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scheduled_completion_survives_idle_notification_but_not_a_new_turn() {
+        let mut registry = Registry::new(None);
+        for (state, expected_active) in [(State::Thinking, true), (State::Waiting, true),
+            (State::Done, false), (State::Waiting, false), (State::Idle, false),
+            (State::Thinking, true), (State::Waiting, true), (State::Done, false),
+            (State::Approval, true)] {
+            let completed = schedule_completion_marker(registry.session_or_tombstone("scheduled").as_ref(), state);
+            registry.set_state(Some("scheduled"), state, Some("claude".into()), None,
+                Some(Map::from_iter([("schedule_turn_completed".into(), completed.into())])), Instant::now());
+            assert_eq!(scheduled_session_is_active(&registry.session_or_tombstone("scheduled").unwrap()), expected_active);
+        }
+    }
+
+    #[test]
+    fn scheduled_dispatch_and_timer_use_durable_managed_launches() {
+        use crate::schedule::{ScheduleSpec, ScheduleStore};
+        use std::cell::RefCell;
+        let dir = std::env::temp_dir().join(format!("fp-schedule-dispatch-{}-{}", std::process::id(), new_relaunch_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (evt_tx, _keep) = tokio::sync::broadcast::channel(16);
+        let (host_tx, _host_rx) = tokio::sync::mpsc::unbounded_channel();
+        let ctx = EventCtx {
+            evt_tx, host_tx, config: Arc::new(Config::default()), transition: Arc::new(Mutex::new(())),
+            shared: Arc::new(Mutex::new(Shared {
+                registry: Registry::new(None), usage: HashMap::new(), styles: StyleTable::default(),
+                channels: Channels::default(), channel_wake_last: HashMap::new(), device_present: false,
+            })),
+            schedules: Arc::new(Mutex::new(ScheduleStore::load(dir.join("schedules.json")))),
+        };
+        let spec: ScheduleSpec = serde_json::from_value(json!({
+            "id":"nightly", "name":"Nightly review", "cron":"* * * * *", "timezone":"UTC", "enabled":true,
+            "launch":{"provider":"codex","agent_type":"direct","model":"explicit-model", "cwd":dir,
+                "task":"Review literal `code` and $(text).\nReport findings.", "title":"Nightly review"}
+        })).unwrap();
+        let command = json!({"cmd":"schedule-save","schedule":spec}).to_string();
+        assert!(matches!(dispatch(&command,&ctx.shared,&ctx,&ctx.host_tx), Dispatch::Reply(Response::Json(v)) if v["ok"] == true));
+        // Use an explicit clock for timer integration; this launches no process.
+        ctx.schedules.lock().unwrap().as_mut().unwrap().delete("nightly").unwrap();
+        ctx.schedules.lock().unwrap().as_mut().unwrap().upsert(spec, 60).unwrap();
+        let attempts = RefCell::new(Vec::new());
+        let launch = |claim: &crate::schedule::ScheduleClaim| {
+            let wire = scheduled_launch_request(claim);
+            let request: Request = serde_json::from_value(wire.clone()).unwrap();
+            assert!(matches!(request, Request::LaunchSession { role: Some(role), manager_task_id: None, workflow_id: None, .. } if role == "worker"));
+            attempts.borrow_mut().push(wire);
+            None
+        };
+        run_schedule_tick_with(&ctx, 600, |_| false, &launch);
+        run_schedule_tick_with(&ctx, 600, |_| false, &launch);
+        assert_eq!(attempts.borrow().len(), 1);
+        assert_eq!(attempts.borrow()[0]["task"], "Review literal `code` and $(text).\nReport findings.");
+        run_schedule_tick_with(&ctx, 660, |_| true, &launch);
+        assert_eq!(attempts.borrow().len(), 1, "active previous run must skip overlap");
+        run_schedule_tick_with(&ctx, 720, |_| false, |_| Some("Provider unavailable".into()));
+        let listed = dispatch("{\"cmd\":\"schedule-list\"}", &ctx.shared,&ctx,&ctx.host_tx);
+        assert!(matches!(listed, Dispatch::Reply(Response::Json(v)) if v["schedules"][0]["last_runs"][0]["error"] == "Provider unavailable"));
+        let pause = "{\"cmd\":\"schedule-set-enabled\",\"id\":\"nightly\",\"enabled\":false}";
+        assert!(matches!(dispatch(pause,&ctx.shared,&ctx,&ctx.host_tx), Dispatch::Reply(Response::Json(v)) if v["schedule"]["enabled"] == false));
+        run_schedule_tick_with(&ctx, 900, |_| false, |_| panic!("paused schedule launched"));
+        assert!(matches!(dispatch("{\"cmd\":\"schedule-delete\",\"id\":\"nightly\"}",&ctx.shared,&ctx,&ctx.host_tx), Dispatch::Reply(Response::Ok { ok: true })));
+        drop(ctx);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
 
     #[test]
     fn replay_includes_all_navigation_states() {

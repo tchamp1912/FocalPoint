@@ -25,6 +25,11 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum AgentCommand {
+    /// Save and manage user-authorized recurring prompts in the local daemon.
+    Schedule {
+        #[command(subcommand)]
+        command: ScheduleCommand,
+    },
     /// Read live sessions, provider usage, and daemon-owned attention order.
     Status,
     /// Read bounded attachment, probe, and lifecycle diagnostics.
@@ -119,6 +124,87 @@ enum AgentCommand {
         #[arg(long)]
         search: Option<String>,
     },
+}
+
+#[derive(Subcommand, Debug)]
+enum ScheduleCommand {
+    /// List saved prompts, next occurrences, and recent launch attempts.
+    List,
+    /// Create or replace a schedule by stable id. The prompt is saved verbatim.
+    Save {
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        name: String,
+        /// Five numeric cron fields: minute hour day-of-month month day-of-week.
+        #[arg(long)]
+        cron: String,
+        #[arg(long, default_value = "local", value_parser = ["local", "UTC"])]
+        timezone: String,
+        #[arg(long)]
+        paused: bool,
+        #[arg(long)]
+        provider: Provider,
+        #[arg(long, default_value = "direct")]
+        agent_type: String,
+        #[arg(long)]
+        model: String,
+        #[arg(long)]
+        cwd: PathBuf,
+        #[arg(long, required_unless_present = "task_file", conflicts_with = "task_file")]
+        task: Option<String>,
+        /// Read the prompt now; future runs use this saved snapshot.
+        #[arg(long)]
+        task_file: Option<PathBuf>,
+        #[arg(long)]
+        title: Option<String>,
+        /// Executable custom Claude-compatible launcher script.
+        #[arg(long)]
+        custom_launcher: Option<PathBuf>,
+        #[arg(long)]
+        terminal_color: Option<String>,
+        #[arg(long, value_enum)]
+        cursor_mode: Option<CursorLaunchMode>,
+    },
+    /// Prevent future attempts; an already started session keeps running.
+    Pause { id: String },
+    /// Resume at the next future occurrence, without replaying paused time.
+    Resume { id: String },
+    /// Remove the saved prompt and schedule; running sessions are unaffected.
+    Delete { id: String },
+}
+
+fn schedule_request(command: ScheduleCommand) -> Result<Value, String> {
+    Ok(match command {
+        ScheduleCommand::List => json!({"cmd":"schedule-list"}),
+        ScheduleCommand::Pause { id } => json!({"cmd":"schedule-set-enabled","id":id,"enabled":false}),
+        ScheduleCommand::Resume { id } => json!({"cmd":"schedule-set-enabled","id":id,"enabled":true}),
+        ScheduleCommand::Delete { id } => json!({"cmd":"schedule-delete","id":id}),
+        ScheduleCommand::Save { id, name, cron, timezone, paused, provider, agent_type, model,
+            cwd, task, task_file, title, custom_launcher, terminal_color, cursor_mode } => {
+            let task = match (task, task_file) {
+                (Some(task), None) => task,
+                (None, Some(path)) => {
+                    use std::io::Read;
+                    let mut text = String::new();
+                    std::fs::File::open(&path).and_then(|file| file.take(16_385).read_to_string(&mut text))
+                        .map_err(|e| format!("cannot read prompt file {}: {e}", path.display()))?;
+                    text
+                }
+                _ => return Err("provide exactly one of --task or --task-file".into()),
+            };
+            if task.trim().is_empty() || task.len() > 16_384 || task.contains('\0') {
+                return Err("task must contain 1-16384 UTF-8 bytes".into());
+            }
+            json!({"cmd":"schedule-save","schedule":{
+                "id":id,"name":name,"cron":cron,"timezone":timezone,"enabled":!paused,
+                "launch":{"provider":provider.name(),"agent_type":agent_type,"model":model,
+                    "cwd":cwd,"task":task,"title":title.unwrap_or_else(|| name.clone()),
+                    "custom_launcher":custom_launcher,"terminal_color":terminal_color,
+                    "cursor_mode":cursor_mode.map(CursorLaunchMode::name)}
+            }})
+        }
+    })
 }
 
 #[derive(Subcommand, Debug)]
@@ -233,7 +319,7 @@ fn request(command: Value) -> Result<Value, String> {
     let path = socket_path()?;
     let mut stream = UnixStream::connect(&path)
         .map_err(|e| format!("cannot connect to daemon at {} ({e})", path.display()))?;
-    let timeout = Some(Duration::from_secs(5));
+    let timeout = Some(Duration::from_secs(if command["cmd"].as_str().is_some_and(|cmd| cmd.starts_with("schedule-")) { 30 } else { 5 }));
     stream
         .set_read_timeout(timeout)
         .map_err(|e| e.to_string())?;
@@ -404,6 +490,7 @@ fn sanitized_usage(response: &Value) -> Result<Value, String> {
 
 fn run(command: AgentCommand) -> Result<(), String> {
     let response = match command {
+        AgentCommand::Schedule { command } => request(schedule_request(command)?)?,
         AgentCommand::Status => {
             let sessions = request(json!({"cmd": "list-sessions"}))?;
             let usage = request(json!({"cmd": "get-usage"}))?;
@@ -522,6 +609,46 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn schedule_cli_preserves_literal_prompt_and_defaults_to_direct() {
+        let parsed = Cli::try_parse_from(["fpctl-agent", "schedule", "save", "--id", "nightly",
+            "--name", "Nightly review", "--cron", "0 9 * * 1-5", "--provider", "claude",
+            "--model", "sonnet", "--cwd", "/tmp", "--task", "Review `code` and $(literal).\nReport."]).unwrap();
+        let AgentCommand::Schedule { command } = parsed.command else { panic!("schedule"); };
+        let wire = schedule_request(command).unwrap();
+        assert_eq!(wire["schedule"]["launch"]["agent_type"], "direct");
+        assert_eq!(wire["schedule"]["launch"]["task"], "Review `code` and $(literal).\nReport.");
+        assert_eq!(wire["schedule"]["timezone"], "local");
+        assert_eq!(wire["schedule"]["enabled"], true);
+        let _: focalpoint::daemon::Request = serde_json::from_value(wire).unwrap();
+        for (verb, cmd, enabled) in [("pause", "schedule-set-enabled", Some(false)), ("resume", "schedule-set-enabled", Some(true)), ("delete", "schedule-delete", None)] {
+            let parsed = Cli::try_parse_from(["fpctl-agent", "schedule", verb, "nightly"]).unwrap();
+            let AgentCommand::Schedule { command } = parsed.command else { panic!("schedule"); };
+            let wire = schedule_request(command).unwrap();
+            assert_eq!(wire["cmd"], cmd);
+            assert_eq!(wire["enabled"].as_bool(), enabled);
+        }
+    }
+
+    #[test]
+    fn schedule_requires_exactly_one_prompt_source() {
+        let base = ["fpctl-agent", "schedule", "save", "--id", "nightly", "--name", "Review", "--cron", "0 9 * * *", "--provider", "codex", "--model", "model", "--cwd", "/tmp"];
+        assert!(Cli::try_parse_from(base).is_err());
+        let mut args = base.to_vec();
+        args.extend(["--task", "Review", "--task-file", "/tmp/prompt"]);
+        assert!(Cli::try_parse_from(args).is_err());
+        let path = std::env::temp_dir().join(format!("fp-schedule-prompt-{}", std::process::id()));
+        std::fs::write(&path, "A saved prompt\nwith newlines.").unwrap();
+        let mut args = base.to_vec(); args.extend(["--task-file", path.to_str().unwrap(), "--paused"]);
+        let parsed = Cli::try_parse_from(args).unwrap();
+        let AgentCommand::Schedule { command } = parsed.command else { panic!("schedule"); };
+        let wire = schedule_request(command).unwrap();
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(wire["schedule"]["launch"]["task"], "A saved prompt\nwith newlines.");
+        assert_eq!(wire["schedule"]["enabled"], false);
+    }
+
 
     #[test]
     fn command_surface_has_no_dangerous_or_obsolete_verbs() {

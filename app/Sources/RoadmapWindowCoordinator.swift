@@ -18,14 +18,36 @@ final class RoadmapWindowCoordinator {
     func showQuickLaunch() {
         show("quick-launch", title: "Launch Agent", size: NSSize(width: 620, height: 580)) { [weak self] in
             guard let self else { return AnyView(EmptyView()) }
-            return AnyView(LiveQuickLaunchView(model: self.model, onCancel: { [weak self] in self?.close("quick-launch") }))
+            return AnyView(LiveQuickLaunchView(model: self.model, onCancel: { [weak self] in self?.close("quick-launch") }, onSchedules: { [weak self] in self?.showSchedules() }))
+        }
+    }
+
+    func showSchedules() {
+        show("schedules", title: "Schedules", size: NSSize(width: 760, height: 650)) { [weak self] in
+            guard let self else { return AnyView(EmptyView()) }
+            return AnyView(ScheduledPromptsView(model: self.model,
+                onNew: { [weak self] in self?.showScheduleEditor(nil) },
+                onEdit: { [weak self] schedule in self?.showScheduleEditor(schedule) }))
+        }
+    }
+
+    private func showScheduleEditor(_ schedule: ScheduledPrompt?) {
+        let key = "schedule-editor-" + (schedule?.id ?? "new")
+        // Closing with the title-bar button must not retain a stale schedule
+        // snapshot after a later pause or external edit.
+        if let window = windows[key]?.window, !window.isVisible { close(key) }
+        show(key, title: schedule == nil ? "New Schedule" : "Edit Schedule", size: NSSize(width: 640, height: 750)) { [weak self] in
+            guard let self else { return AnyView(EmptyView()) }
+            return AnyView(LiveQuickLaunchView(model: self.model,
+                onCancel: { [weak self] in self?.close(key) },
+                onSchedules: { [weak self] in self?.showSchedules() }, schedule: schedule, startScheduled: true))
         }
     }
 
     // Session Triage, History, and the workflow-runs dashboard live in the
     // unified main window (MainWindowController); the Live* views below are
-    // shared with it. Quick Launch and Diagnostics stay standalone windows:
-    // both are modal-ish task flows, not browsing surfaces.
+    // shared with it. Quick Launch, Schedules, and Diagnostics stay standalone
+    // windows so editing a scheduled prompt does not replace the live workspace.
 
     func showDiagnostics() {
         show("diagnostics", title: "FocalPoint Setup Diagnostics", size: NSSize(width: 720, height: 700)) { [weak self] in
@@ -62,12 +84,17 @@ final class RoadmapWindowCoordinator {
 private struct LiveQuickLaunchView: View {
     @ObservedObject var model: AppModel
     let onCancel: () -> Void
+    var onSchedules: () -> Void
+    var schedule: ScheduledPrompt? = nil
+    var startScheduled = false
 
     var body: some View {
         ManagedQuickLaunchView(initialCwd: RoadmapPresentation.preferredCwd(from: model.sessions),
                                recentProjects: model.sessions.compactMap(\.cwd),
                                isConnected: model.connected,
-                               actions: .init(launch: { await model.launchManagedQuickSession($0) }, cancel: onCancel))
+                               actions: .init(launch: { await model.launchManagedQuickSession($0) }, cancel: onCancel,
+                                              saveSchedule: { await model.saveSchedule($0) }, showSchedules: onSchedules),
+                               schedule: schedule, startScheduled: startScheduled)
     }
 }
 

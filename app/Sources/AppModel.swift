@@ -100,6 +100,11 @@ enum DesktopWidgetOrientation: String, CaseIterable, Identifiable {
 
 @MainActor
 final class AppModel: ObservableObject {
+    @Published var scheduledPrompts: [ScheduledPrompt] = []
+    @Published var scheduleError: String?
+    @Published var schedulesLoading = false
+    var scheduleRefreshGeneration: UInt64 = 0
+
     static let shared = AppModel()
 
     // Connection

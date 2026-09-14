@@ -298,3 +298,36 @@ quota and transcript retrieval are not implemented by this integration.
 Direct Quick Launch sessions use the internal `agent_type` value `direct` in
 the daemon request. This requires no agent package and adds no persona prompt.
 Workflow launches retain their explicit agent assignments.
+
+## Scheduled prompts
+
+Choose **On a schedule** in Launch Agent, give the schedule a name, and select
+hourly, daily, weekdays, weekly, or a custom five-field cron expression. Set
+**Local** to follow this Mac's time zone or **UTC** for a fixed UTC schedule.
+The folder, provider, explicit model, prompt, custom launcher, and terminal
+color use the same form as a normal launch. **Save schedule** stores the prompt
+in the daemon; it does not launch immediately. Command-Return submits the
+selected action.
+
+Open **Schedules** from the menu-bar workspace menu or the launcher footer.
+Each schedule shows its configuration, next run, recent launch attempts, and
+errors. **Pause** stops future occurrences and **Resume** schedules the next
+future time. **Edit** reopens the launcher with the complete saved prompt,
+including any original persona instructions. **Delete** requires confirmation
+and removes future runs while leaving an already active session running.
+
+Schedules run locally while the Mac is awake and `focalpointd` is running; the
+menu-bar app can be closed. After sleep or daemon downtime, missed occurrences
+combine into one run. A previous run that is still active skips its next
+occurrence; a completed run permits the next session. Agent authentication and
+permission prompts still use each CLI's normal behavior. Updating an older app
+without its daemon displays an actionable compatibility message instead of
+silently dropping schedules.
+
+Schedule transport and form regressions can be run independently of the UI:
+
+```sh
+swiftc Sources/ManagedQuickLaunchModel.swift Sources/ScheduledPromptModel.swift \
+  Tests/ScheduledPromptTests.swift -o /tmp/focalpoint-schedule-tests
+/tmp/focalpoint-schedule-tests
+```

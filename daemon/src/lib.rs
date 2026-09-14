@@ -13,5 +13,6 @@ pub mod identity;
 pub mod paths;
 pub mod protocol;
 pub mod session;
+pub mod schedule;
 pub mod styles;
 pub mod transcript;

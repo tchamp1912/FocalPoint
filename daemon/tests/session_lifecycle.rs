@@ -1020,3 +1020,39 @@ fn superseded_threads_stay_out_of_visible_snapshots_after_restart() {
         daemon.restart();
     }
 }
+
+
+#[test]
+fn scheduled_prompt_cli_round_trip_persists_without_launching() {
+    let mut daemon = TestDaemon::start();
+    let prompt = daemon.dir.join("prompt.txt");
+    std::fs::write(&prompt, "Inspect literal `code` and $(text).\nWrite findings.").unwrap();
+    let agent = |daemon: &TestDaemon, args: &[&str]| -> Value {
+        let output = Command::new(env!("CARGO_BIN_EXE_fpctl-agent"))
+            .args(args).env("XDG_RUNTIME_DIR", daemon.dir.join("runtime"))
+            .env("XDG_STATE_HOME", daemon.dir.join("state"))
+            .env("XDG_CONFIG_HOME", daemon.dir.join("config"))
+            .output().unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        serde_json::from_slice(&output.stdout).unwrap()
+    };
+    let saved = agent(&daemon, &["schedule", "save", "--id", "test-prompt", "--name", "Test prompt",
+        "--cron", "0 0 1 1 *", "--timezone", "UTC", "--paused", "--provider", "codex",
+        "--model", "explicit-test-model", "--cwd", daemon.dir.to_str().unwrap(),
+        "--task-file", prompt.to_str().unwrap()]);
+    assert_eq!(saved["schedule"]["enabled"], false);
+    std::fs::remove_file(prompt).unwrap();
+    daemon.restart();
+    let jobs = agent(&daemon, &["schedule", "list"]);
+    assert_eq!(jobs["schedules"][0]["launch"]["task"], "Inspect literal `code` and $(text).\nWrite findings.");
+    assert_eq!(jobs["schedules"][0]["last_runs"], serde_json::json!([]));
+    assert_eq!(jobs["schedules"][0]["launch"]["agent_type"], "direct");
+    let caps = daemon.socket_json(serde_json::json!({"cmd":"get-capabilities"}));
+    assert_eq!(caps["features"]["scheduled_launches"], true);
+    // Remain paused throughout; timer effects are covered with fake launchers
+    // in daemon unit tests, never a real authenticated agent here.
+    agent(&daemon, &["schedule", "pause", "test-prompt"]);
+    agent(&daemon, &["schedule", "delete", "test-prompt"]);
+    assert_eq!(agent(&daemon, &["schedule", "list"])["schedules"], serde_json::json!([]));
+    assert!(daemon.socket_json(serde_json::json!({"cmd":"list-sessions"}))["sessions"].as_array().unwrap().is_empty());
+}

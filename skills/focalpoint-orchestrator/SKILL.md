@@ -1,6 +1,6 @@
 ---
 name: focalpoint-orchestrator
-description: Safely inspect, prioritize, launch, resume, and route attention across FocalPoint coding-agent sessions.
+description: Inspect, prioritize, launch, resume, and schedule saved prompts across FocalPoint coding-agent sessions.
 ---
 
 # FocalPoint Orchestrator
@@ -106,6 +106,17 @@ to the channel or a member with `--to`. A non-workflow worker joins at the
 channel's current tail, so include its assignment in the launch task or send it
 after the worker has joined. Close manually created channels when the work
 group is finished.
+
+## Scheduled prompts
+
+For user-requested recurring work, use the daemon's `fpctl-agent schedule`
+commands. Read [references/schedules.md](references/schedules.md) for saving a
+prompt, choosing a local or UTC cadence, and inspecting or pausing attempts.
+A schedule authorizes future launches of its saved prompt; resolve the user's
+intended task, folder, model, and timing before enabling it. Do not create a
+recurring job merely to monitor your current work. The app and provider CLI do
+not need to remain open; the local FocalPoint daemon and an awake, logged-in Mac
+do. Saved schedules persist through daemon restarts.
 
 ## Launch
 

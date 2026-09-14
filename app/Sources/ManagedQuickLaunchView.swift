@@ -7,6 +7,8 @@ import AppKit
 struct ManagedQuickLaunchActions {
     var launch: (ManagedQuickLaunchRequest) async -> String?
     var cancel: () -> Void
+    var saveSchedule: ((ScheduledPrompt) async -> String?)? = nil
+    var showSchedules: (() -> Void)? = nil
 }
 
 struct ManagedQuickLaunchView: View {
@@ -18,6 +20,9 @@ struct ManagedQuickLaunchView: View {
     @State private var recentFolders: [String]
     @State private var folderError: String?
 
+    private let editingSchedule: ScheduledPrompt?
+    @State private var isScheduled: Bool
+    @State private var scheduleDraft: ScheduledPromptDraft
     @State private var draft: ManagedQuickLaunchDraft
     @State private var catalog: ManagedQuickLaunchCatalog
     @State private var issues: [ManagedQuickLaunchValidationIssue] = []
@@ -31,10 +36,13 @@ struct ManagedQuickLaunchView: View {
 
     init(initialCwd: String = "", recentProjects: [String] = [], isConnected: Bool = true,
          actions: ManagedQuickLaunchActions, catalog: ManagedQuickLaunchCatalog = .load(),
-         folderStore: ManagedProjectFolders = .init()) {
+         folderStore: ManagedProjectFolders = .init(), schedule: ScheduledPrompt? = nil, startScheduled: Bool = false) {
         self.recentProjects = Array(Set(recentProjects.filter { !$0.isEmpty })).sorted()
         self.isConnected = isConnected
         self.actions = actions
+        self.editingSchedule = schedule
+        _isScheduled = State(initialValue: schedule != nil || startScheduled)
+        _scheduleDraft = State(initialValue: schedule.map(ScheduledPromptDraft.init) ?? .init())
         self.folderStore = folderStore
         _pinnedFolders = State(initialValue: folderStore.pinned)
         _recentFolders = State(initialValue: folderStore.recent)
@@ -42,6 +50,8 @@ struct ManagedQuickLaunchView: View {
         initial.cwd = initialCwd.isEmpty ? folderStore.recent.first ?? folderStore.pinned.first ?? "" : initialCwd
         initial.provider = .codex
         initial.agentType = ""
+        if let schedule { initial = schedule.launch.draft }
+        _useCustomModel = State(initialValue: schedule.map { !catalog.models(provider: $0.launch.provider).contains($0.launch.model) } ?? false)
         _draft = State(initialValue: initial)
         _catalog = State(initialValue: catalog)
     }
@@ -64,6 +74,15 @@ struct ManagedQuickLaunchView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    if actions.saveSchedule != nil {
+                        if editingSchedule == nil {
+                            Picker("When", selection: $isScheduled) {
+                                Text("Run now").tag(false)
+                                Text("On a schedule").tag(true)
+                            }.pickerStyle(.segmented)
+                        }
+                        if isScheduled { scheduleFields }
+                    }
                     projectField
                     taskField
                     agentFields
@@ -97,7 +116,54 @@ struct ManagedQuickLaunchView: View {
         .frame(minWidth: 580, idealWidth: 620, minHeight: 540)
         .onAppear { taskFocused = true }
         .onChange(of: draft) { _, _ in issues = []; launchError = nil }
+        .onChange(of: scheduleDraft) { _, _ in launchError = nil }
         .onChange(of: draft.cwd) { _, _ in folderError = nil }
+    }
+
+    private var scheduleFields: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            TextField("Schedule name", text: $scheduleDraft.name).textFieldStyle(.roundedBorder)
+                .accessibilityLabel("Schedule name")
+            Picker("Repeat", selection: $scheduleDraft.cadence) {
+                ForEach(ScheduledPromptCadence.allCases) { Text($0.label).tag($0) }
+            }.pickerStyle(.menu)
+            if scheduleDraft.cadence == .custom {
+                TextField("minute hour day month weekday", text: $scheduleDraft.customCron)
+                    .textFieldStyle(.roundedBorder).font(.system(.body, design: .monospaced))
+                    .accessibilityLabel("Cron expression")
+                Text("Five fields, for example 0 9 * * 1-5 for weekdays at 09:00.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                HStack {
+                    if scheduleDraft.cadence == .weekly {
+                        Picker("Day", selection: $scheduleDraft.weekday) {
+                            ForEach(0..<7) { day in Text(["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][day]).tag(day) }
+                        }.pickerStyle(.menu)
+                    }
+                    if scheduleDraft.cadence != .hourly {
+                        Picker("Hour", selection: $scheduleDraft.hour) {
+                            ForEach(0..<24) { Text(String(format: "%02d", $0)).tag($0) }
+                        }.pickerStyle(.menu)
+                    }
+                    Picker("Minute", selection: $scheduleDraft.minute) {
+                        ForEach(0..<60) { Text(String(format: "%02d", $0)).tag($0) }
+                    }.pickerStyle(.menu)
+                }
+            }
+            Picker("Time zone", selection: $scheduleDraft.timezone) {
+                Text("Local (\(TimeZone.current.identifier))").tag("local")
+                Text("UTC").tag("UTC")
+                if !["local", "UTC"].contains(scheduleDraft.timezone) {
+                    Text(scheduleDraft.timezone).tag(scheduleDraft.timezone)
+                }
+            }.pickerStyle(.menu)
+            Text("Runs on this Mac while it is awake and the daemon is running. After downtime, missed runs are combined into one; a previous run that is still active skips the next occurrence.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if editingSchedule != nil {
+                Text("The saved prompt below includes any original agent instructions.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
     }
 
     private var projectField: some View {
@@ -332,7 +398,7 @@ struct ManagedQuickLaunchView: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 10) {
             if !isConnected {
-                Label("FocalPoint is offline. Reconnect the daemon to launch an agent.", systemImage: "bolt.slash")
+                Label("FocalPoint is offline. Reconnect the daemon to launch or save a schedule.", systemImage: "bolt.slash")
                     .font(.callout).foregroundStyle(.secondary)
             }
             ForEach(issues) { Text($0.message).font(.callout).foregroundStyle(.red) }
@@ -340,12 +406,15 @@ struct ManagedQuickLaunchView: View {
             HStack(spacing: 10) {
                 Button("Cancel", action: actions.cancel).disabled(isLaunching)
                     .keyboardShortcut(.cancelAction)
+                if let showSchedules = actions.showSchedules {
+                    Button("Schedules…", action: showSchedules).disabled(isLaunching)
+                }
                 Spacer()
                 if isLaunching {
                     ProgressView().controlSize(.small)
-                    Text("Opening \(launcherName)…").font(.callout).foregroundStyle(.secondary)
+                    Text(isScheduled ? "Saving…" : "Opening \(launcherName)…").font(.callout).foregroundStyle(.secondary)
                 }
-                Button("Launch \(launcherName)") { launch() }
+                Button(isScheduled ? "Save schedule" : "Launch \(launcherName)") { launch() }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.return, modifiers: .command)
                     .disabled(isLaunching || !isConnected)
@@ -412,6 +481,7 @@ struct ManagedQuickLaunchView: View {
 
     private func launch() {
         guard !isLaunching, isConnected else { return }
+        if isScheduled, let error = scheduleDraft.validationError { launchError = error; return }
         rememberCustomLauncher()
         var resolved = draft
         resolved.model = isCustomLauncher || useCustomModel ? draft.model : selectedModel
@@ -436,13 +506,19 @@ struct ManagedQuickLaunchView: View {
             launchError = nil
             isLaunching = true
             Task { @MainActor in
-                let failure = await actions.launch(request)
+                let failure: String?
+                if isScheduled, let saveSchedule = actions.saveSchedule {
+                    let schedule = scheduleDraft.schedule(request: request, existing: editingSchedule,
+                                                          preserveAgentType: draft.agentType.isEmpty)
+                    failure = await saveSchedule(schedule)
+                } else { failure = await actions.launch(request) }
                 isLaunching = false
                 if let failure { launchError = failure }
                 else {
                     _ = folderStore.remember(request.cwd)
                     synchronizeFolders()
                     actions.cancel()
+                    if isScheduled { actions.showSchedules?() }
                 }
             }
         }
