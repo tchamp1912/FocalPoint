@@ -61,53 +61,16 @@ final class CodexUsageMonitor {
     }
 
     private static func readRateLimits() -> [String: Double]? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["codex", "app-server"]
-        let input = Pipe()
-        let output = Pipe()
-        process.standardInput = input
-        process.standardOutput = output
-        process.standardError = Pipe()
-        do {
-            try process.run()
-        } catch {
+        guard let executable = CodexAppServerTransport.executable() else {
+            log("codex usage refresh skipped reason=executable-unavailable")
             return nil
         }
-        defer {
-            if process.isRunning { process.terminate() }
+        switch CodexAppServerTransport.readRateLimits(executable: executable) {
+        case .success(let limits): return normalize(limits)
+        case .failure(let failure):
+            log("codex usage refresh failed reason=\(failure.rawValue)")
+            return nil
         }
-
-        let requests: [[String: Any]] = [
-            ["method": "initialize", "id": 0,
-             "params": ["clientInfo": ["name": "focalpoint", "title": "FocalPoint", "version": "0.1"]]],
-            ["method": "initialized", "params": [:]],
-            ["method": "account/rateLimits/read", "id": 1],
-        ]
-        for request in requests {
-            guard let data = try? JSONSerialization.data(withJSONObject: request),
-                  let line = String(data: data, encoding: .utf8) else { return nil }
-            input.fileHandleForWriting.write(Data((line + "\n").utf8))
-        }
-
-        let reader = output.fileHandleForReading
-        let deadline = Date().addingTimeInterval(5)
-        var buffered = Data()
-        while Date() < deadline {
-            let data = reader.availableData
-            guard !data.isEmpty else { break }
-            buffered.append(data)
-            while let newline = buffered.firstIndex(of: 0x0A) {
-                let line = buffered.prefix(upTo: newline)
-                buffered.removeSubrange(...newline)
-                guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
-                      (object["id"] as? NSNumber)?.intValue == 1,
-                      let result = object["result"] as? [String: Any],
-                      let limits = result["rateLimits"] as? [String: Any] else { continue }
-                return normalize(limits)
-            }
-        }
-        return nil
     }
 
     private static func normalize(_ limits: [String: Any]) -> [String: Double]? {

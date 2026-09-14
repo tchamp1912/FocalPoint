@@ -107,7 +107,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        log("FocalPoint launched (socket: \(focalpointSocketPath()))")
+        log("FocalPoint launched pid=\(ProcessInfo.processInfo.processIdentifier) (socket: \(focalpointSocketPath()))")
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        log("FocalPoint normal termination pid=\(ProcessInfo.processInfo.processIdentifier)")
     }
 
     /// Refresh additive dashboard/diagnostic/workflow summaries when the user
