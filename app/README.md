@@ -246,7 +246,9 @@ The launcher needs a project folder and task. Provider, agent type, and model
 are selected directly in the form; agent types come from installed packages in
 `~/.config/focalpoint/agents` (or `$XDG_CONFIG_HOME/focalpoint/agents`). The selected
 type's persona instructions accompany the task. Model choices use the bundled
-model catalog plus the user's catalog overrides. Custom model IDs remain available.
+model catalog plus the user's catalog overrides. Model choices depend only on
+the provider and remain available when no agent types are installed. Changing
+the agent type preserves the selected model. Custom model IDs remain available.
 
 Options contains an optional title, task-size override, and terminal accent.
 Leaving the title blank derives it from the task. Task IDs are generated

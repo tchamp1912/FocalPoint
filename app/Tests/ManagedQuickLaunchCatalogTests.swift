@@ -27,21 +27,20 @@ enum ManagedQuickLaunchCatalogTests {
         for provider in [ManagedQuickLaunchProvider.claude, .codex, .gemini] {
             let recommendation = valid.recommendation(provider: provider, agentType: "implementer", complexity: .standard)
             precondition(recommendation?.provider == provider)
-            precondition(valid.models(provider: provider, agentType: "implementer").contains(recommendation!.model))
+            precondition(valid.models(provider: provider).contains(recommendation!.model))
         }
-        precondition(valid.models(provider: .cursor, agentType: "implementer") == ["composer-2.5"], "provider model choices must not require an unrelated role to be installed")
+        precondition(valid.models(provider: .cursor) == ["composer-2.5"], "provider model choices must not require an unrelated role to be installed")
         precondition(valid.recommendation(provider: .cursor, agentType: "implementer", complexity: .standard) == nil)
         precondition(valid.recommendation(provider: .codex, agentType: "not-installed", complexity: .standard) == nil)
-        precondition(valid.models(provider: .codex, agentType: "not-installed").isEmpty)
         precondition(valid.recommendation(provider: nil, agentType: "planner", complexity: .complex)?.provider == .claude)
 
-        precondition(valid.models(provider: .gemini, agentType: "implementer").contains("gemini-3.1-pro-preview"))
-        precondition(!valid.models(provider: .codex, agentType: "implementer").contains("gemini-2.5-flash"))
+        precondition(valid.models(provider: .gemini).contains("gemini-3.1-pro-preview"))
+        precondition(!valid.models(provider: .codex).contains("gemini-2.5-flash"))
         precondition(valid.recommendation(provider: .gemini, agentType: "planner", complexity: .complex)?.model == "gemini-2.5-pro")
-        precondition(valid.models(provider: .codex, agentType: "implementer").contains("gpt-6-astra"))
-        precondition(!valid.models(provider: .claude, agentType: "implementer").contains("gpt-6-astra"))
-        precondition(valid.models(provider: .claude, agentType: "implementer").contains("claude-fable-5-1"))
-        precondition(!valid.models(provider: .codex, agentType: "implementer").contains("claude-fable-5-1"))
+        precondition(valid.models(provider: .codex).contains("gpt-6-astra"))
+        precondition(!valid.models(provider: .claude).contains("gpt-6-astra"))
+        precondition(valid.models(provider: .claude).contains("claude-fable-5-1"))
+        precondition(!valid.models(provider: .codex).contains("claude-fable-5-1"))
         precondition(valid.recommendation(provider: .codex, agentType: "implementer", complexity: .standard)?.model == "gpt-5.6-terra",
                      "additional choices must not change recommendations")
 
@@ -64,8 +63,8 @@ enum ManagedQuickLaunchCatalogTests {
         precondition(overlaid.issues.isEmpty)
         precondition(overlaid.recommendation(provider: .claude, agentType: "implementer", complexity: .standard)?.model == "claude-custom-tier")
         precondition(overlaid.recommendation(provider: nil, agentType: "implementer", complexity: .standard)?.model == "claude-custom-tier")
-        precondition(overlaid.models(provider: .claude, agentType: "implementer").contains("claude-custom-tier"))
-        precondition(overlaid.models(provider: .claude, agentType: "implementer").contains("claude-fable-5-1"),
+        precondition(overlaid.models(provider: .claude).contains("claude-custom-tier"))
+        precondition(overlaid.models(provider: .claude).contains("claude-fable-5-1"),
                      "existing user overrides must retain additional bundled choices")
         let duplicateChoice = override + "\n[[model]]\nprovider = \"codex\"\nmodel = \"gpt-6-astra\"\n[[model]]\nprovider = \"codex\"\nmodel = \"gpt-6-astra\"\n"
         try duplicateChoice.write(to: overrideURL, atomically: true, encoding: .utf8)
@@ -73,7 +72,7 @@ enum ManagedQuickLaunchCatalogTests {
         try "broken toml".write(to: overrideURL, atomically: true, encoding: .utf8)
         let brokenOverlay = ManagedQuickLaunchCatalog.load(configRoot: root, bundledCatalogURL: bundledCatalog)
         precondition(!brokenOverlay.issues.isEmpty)
-        precondition(brokenOverlay.models(provider: .codex, agentType: "implementer").isEmpty,
+        precondition(brokenOverlay.models(provider: .codex).isEmpty,
                      "broken override must not silently fall back to bundled models")
         precondition(brokenOverlay.recommendation(provider: .claude, agentType: "implementer", complexity: .complex) == nil)
         try fm.removeItem(at: overrideURL)
@@ -119,11 +118,22 @@ enum ManagedQuickLaunchCatalogTests {
         precondition(unsafe.issues.count == malformedCases.count + 5)
         precondition(unsafe.issues.contains { $0.contains("Quick Launch cannot guarantee") })
 
+        // A new machine has no installed personas, but its bundled provider
+        // models must still be selectable. Broken personas cannot hide models.
+        let fresh = ManagedQuickLaunchCatalog.load(configRoot: temporary.appendingPathComponent("fresh"),
+                                                   bundledCatalogURL: bundledCatalog)
+        precondition(fresh.agents.isEmpty)
+        for provider in ManagedQuickLaunchProvider.allCases {
+            precondition(!fresh.models(provider: provider).isEmpty)
+            precondition(fresh.models(provider: provider) == valid.models(provider: provider))
+            precondition(unsafe.models(provider: provider) == valid.models(provider: provider))
+        }
+
         let absent = ManagedQuickLaunchCatalog.load(configRoot: temporary.appendingPathComponent("missing"),
                                                     bundledCatalogURL: temporary.appendingPathComponent("missing.toml"))
         precondition(absent.agents.isEmpty)
         precondition(!absent.issues.isEmpty)
-        precondition(absent.models(provider: .codex, agentType: "implementer").isEmpty)
+        precondition(absent.models(provider: .codex).isEmpty)
         let home = URL(fileURLWithPath: "/Users/example")
         precondition(ManagedQuickLaunchCatalog.configRoot(environment: [:], homeDirectory: home).path == "/Users/example/.config/focalpoint")
         precondition(ManagedQuickLaunchCatalog.configRoot(environment: ["XDG_CONFIG_HOME": "/tmp/custom"], homeDirectory: home).path == "/tmp/custom/focalpoint")

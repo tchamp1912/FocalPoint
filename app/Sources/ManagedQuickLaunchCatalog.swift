@@ -70,10 +70,9 @@ struct ManagedQuickLaunchCatalog {
         return Self(agents: agents, issues: issues, modelCatalog: modelCatalog)
     }
 
-    /// Offer all explicit provider choices while keeping task recommendations separate.
-    func models(provider: ManagedQuickLaunchProvider, agentType: String) -> [String] {
-        guard agents.contains(where: { $0.id == agentType }),
-              let catalog = modelCatalog,
+    /// Model availability belongs to the provider, independent of agent packages.
+    func models(provider: ManagedQuickLaunchProvider) -> [String] {
+        guard let catalog = modelCatalog,
               let workflowProvider = WorkflowLaunchProvider(rawValue: provider.rawValue) else { return [] }
         return catalog.models(provider: workflowProvider)
     }

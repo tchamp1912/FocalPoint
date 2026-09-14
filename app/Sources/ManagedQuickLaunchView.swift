@@ -220,7 +220,14 @@ struct ManagedQuickLaunchView: View {
 
             Picker("Agent type", selection: Binding(
                 get: { draft.agentType },
-                set: { draft.agentType = $0; if !isCustomLauncher { resetModel() } }
+                set: { agentType in
+                    // Keep the currently shown model, including a suggestion,
+                    // when changing the persona. Custom input stays untouched.
+                    if draft.model.isEmpty && !useCustomModel && !isCustomLauncher {
+                        draft.model = selectedModel
+                    }
+                    draft.agentType = agentType
+                }
             )) {
                 if catalog.agents.isEmpty { Text("No agent types installed").tag("") }
                 ForEach(catalog.agents) { Text($0.displayName).tag($0.id) }
@@ -248,7 +255,7 @@ struct ManagedQuickLaunchView: View {
                     }
                 )) {
                     Text(suggestion.map { "Suggested · \($0.model)" } ?? "Choose a model") .tag("")
-                    ForEach(catalog.models(provider: provider, agentType: draft.agentType), id: \.self) {
+                    ForEach(catalog.models(provider: provider), id: \.self) {
                         Text($0).tag($0)
                     }
                     Divider()
@@ -352,7 +359,7 @@ struct ManagedQuickLaunchView: View {
             useCustomModel = true
             return
         }
-        draft.model = suggestion == nil ? catalog.models(provider: provider, agentType: draft.agentType).first ?? "" : ""
+        draft.model = suggestion == nil ? catalog.models(provider: provider).first ?? "" : ""
         useCustomModel = false
     }
 
@@ -391,11 +398,14 @@ struct ManagedQuickLaunchView: View {
     }
 
     private func reloadCatalog() {
+        let previousModel = selectedModel
         catalog = .load()
         if !catalog.agents.contains(where: { $0.id == draft.agentType }) {
             draft.agentType = catalog.agents.first?.id ?? ""
         }
-        resetModel()
+        if !isCustomLauncher && !useCustomModel {
+            draft.model = catalog.models(provider: provider).contains(previousModel) ? previousModel : ""
+        }
     }
 
     private func launch() {
