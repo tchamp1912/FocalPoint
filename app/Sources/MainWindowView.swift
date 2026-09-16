@@ -156,16 +156,22 @@ private struct WorkflowsPage: View {
     @State private var confirmingDelete = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            VStack(spacing: 0) {
-                packageList
+        // Keep both panes sized to the viewport when a package's content changes.
+        // A tall preview must scroll internally, not resize the catalog beside it.
+        GeometryReader { viewport in
+            HStack(spacing: 0) {
+                VStack(spacing: 0) {
+                    packageList
+                    Divider()
+                    bottomControls
+                }
+                .frame(width: 232)
                 Divider()
-                bottomControls
+                WorkflowEditorDetailView(store: store)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(width: 232)
-            Divider()
-            WorkflowEditorDetailView(store: store)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(width: viewport.size.width, height: viewport.size.height, alignment: .topLeading)
+            .clipped()
         }
         .alert("Move to Trash?", isPresented: $confirmingDelete) {
             Button("Move to Trash", role: .destructive) {

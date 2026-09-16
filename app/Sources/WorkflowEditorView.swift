@@ -23,6 +23,8 @@ struct WorkflowEditorDetailView: View {
 
     var body: some View {
         detail
+            // Reset only the detail's scroll state; keep the catalog at its current row.
+            .id(store.selection)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .alert(item: $bundledInstall) { request in
                 Alert(
@@ -149,29 +151,35 @@ private struct BundledFormationView: View {
     let install: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Metrics.settingsCardRhythm) {
-            SettingsPageHeader(
-                title: formation.name,
-                subtitle: formation.description,
-                symbol: "shippingbox"
-            )
-            EditorCard(title: "Will install") {
-                Text("Workflow: \(formation.name)")
-                Text("Agent types: \(formation.referencedAgentTypes.joined(separator: ", "))")
-                Text("Installation requires confirmation and refuses every name collision; it never overwrites installed packages.")
-                    .font(.caption).foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: Metrics.settingsCardRhythm) {
+                    SettingsPageHeader(
+                        title: formation.name,
+                        subtitle: formation.description,
+                        symbol: "shippingbox"
+                    )
+                    EditorCard(title: "Will install") {
+                        Text("Workflow: \(formation.name)")
+                        Text("Agent types: \(formation.referencedAgentTypes.joined(separator: ", "))")
+                        Text("Installation requires confirmation and refuses every name collision; it never overwrites installed packages.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    EditorCard(title: "Graph",
+                               caption: "Phases, gates, and fan-out as the orchestrator will sequence them.") {
+                        let graph = WorkflowGraphModel.make(input: WorkflowGraphInput(draft: formation))
+                        WorkflowGraphView(graph: graph)
+                            .frame(height: min(max(graph.contentSize.height + 8, 140), 340))
+                    }
+                }
+                .settingsPageLayout()
             }
-            EditorCard(title: "Graph",
-                       caption: "Phases, gates, and fan-out as the orchestrator will sequence them.") {
-                let graph = WorkflowGraphModel.make(input: WorkflowGraphInput(draft: formation))
-                WorkflowGraphView(graph: graph)
-                    .frame(height: min(max(graph.contentSize.height + 8, 140), 340))
-            }
+            Divider()
             Button("Install bundled workflow…", action: install)
                 .buttonStyle(.borderedProminent)
-            Spacer()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(Metrics.settingsPageInset)
         }
-        .settingsPageLayout()
     }
 }
 
@@ -180,22 +188,28 @@ private struct BundledAgentTypeView: View {
     let install: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Metrics.settingsCardRhythm) {
-            SettingsPageHeader(
-                title: type.name,
-                subtitle: type.description,
-                symbol: "shippingbox"
-            )
-            EditorCard(title: "Will install") {
-                Text("\(type.prefer.joined(separator: " › ")) · \(type.model)")
-                Text("Installing requires confirmation and refuses existing package directories; it never overwrites them.")
-                    .font(.caption).foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: Metrics.settingsCardRhythm) {
+                    SettingsPageHeader(
+                        title: type.name,
+                        subtitle: type.description,
+                        symbol: "shippingbox"
+                    )
+                    EditorCard(title: "Will install") {
+                        Text("\(type.prefer.joined(separator: " › ")) · \(type.model)")
+                        Text("Installing requires confirmation and refuses existing package directories; it never overwrites them.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .settingsPageLayout()
             }
+            Divider()
             Button("Install bundled agent type…", action: install)
                 .buttonStyle(.borderedProminent)
-            Spacer()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(Metrics.settingsPageInset)
         }
-        .settingsPageLayout()
     }
 }
 
