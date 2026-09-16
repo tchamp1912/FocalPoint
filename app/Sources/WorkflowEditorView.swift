@@ -84,17 +84,29 @@ struct WorkflowEditorDetailView: View {
                 placeholder("Select a workflow or agent type")
             }
         case nil:
-            placeholder("Select a workflow or agent type")
+            if store.formations.isEmpty && store.agentTypes.isEmpty && store.broken.isEmpty {
+                placeholder("No workflows installed", message:
+                    store.bundledFormations.isEmpty && store.bundledAgentTypes.isEmpty
+                    ? "Use + to create a workflow or agent type. Reload to check for available packages."
+                    : "Select a package from the Bundled Catalog to preview and install it, or use + to create your own.")
+            } else {
+                placeholder("Select a workflow or agent type")
+            }
         }
     }
 
-    private func placeholder(_ text: String) -> some View {
+    private func placeholder(_ text: String, message: String? = nil) -> some View {
         VStack(spacing: 8) {
             Image(systemName: "person.3.sequence")
                 .font(.system(size: 28))
                 .foregroundStyle(.tertiary)
             Text(text)
                 .font(.headline)
+            if let message {
+                Text(message)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
             Text("Packages live under \(WorkflowEditorModel.configRoot.path)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)

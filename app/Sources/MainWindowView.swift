@@ -178,19 +178,20 @@ private struct WorkflowsPage: View {
     }
 
     private var packageList: some View {
-        List(selection: $store.selection) {
+        // Explicit buttons keep package selection local. A selection-bound List
+        // inside the outer NavigationSplitView participates in its navigation
+        // and can replace the detail with an unresolved EditorSelection.
+        List {
             Section("Workflows") {
                 ForEach(store.formations) { formation in
                     packageRow(title: formation.name,
                                detail: formationDetail(formation),
                                symbol: "person.3.sequence",
-                               dirty: store.isDirty(formation))
-                        .tag(EditorSelection.formation(formation.id))
+                               dirty: store.isDirty(formation), selection: EditorSelection.formation(formation.id))
                 }
                 ForEach(store.broken.filter { $0.kind == .formation }) { package in
                     packageRow(title: package.id, detail: "Malformed", symbol: "exclamationmark.triangle",
-                               dirty: false, tint: .orange)
-                        .tag(EditorSelection.broken(.formation, package.id))
+                               dirty: false, tint: .orange, selection: EditorSelection.broken(.formation, package.id))
                 }
             }
             Section("Agent Types") {
@@ -198,25 +199,21 @@ private struct WorkflowsPage: View {
                     packageRow(title: type.name,
                                detail: type.prefer.joined(separator: " › "),
                                symbol: "person.crop.square",
-                               dirty: store.isDirty(type))
-                        .tag(EditorSelection.agentType(type.id))
+                               dirty: store.isDirty(type), selection: EditorSelection.agentType(type.id))
                 }
                 ForEach(store.broken.filter { $0.kind == .agentType }) { package in
                     packageRow(title: package.id, detail: "Malformed", symbol: "exclamationmark.triangle",
-                               dirty: false, tint: .orange)
-                        .tag(EditorSelection.broken(.agentType, package.id))
+                               dirty: false, tint: .orange, selection: EditorSelection.broken(.agentType, package.id))
                 }
             }
             Section("Bundled Catalog") {
                 ForEach(store.bundledFormations) { formation in
                     packageRow(title: formation.name, detail: formationDetail(formation),
-                               symbol: "shippingbox", dirty: false, tint: .accentColor)
-                        .tag(EditorSelection.bundledFormation(formation.id))
+                               symbol: "shippingbox", dirty: false, tint: .accentColor, selection: EditorSelection.bundledFormation(formation.id))
                 }
                 ForEach(store.bundledAgentTypes) { type in
                     packageRow(title: type.name, detail: type.prefer.joined(separator: " › "),
-                               symbol: "shippingbox", dirty: false, tint: .accentColor)
-                        .tag(EditorSelection.bundledAgentType(type.id))
+                               symbol: "shippingbox", dirty: false, tint: .accentColor, selection: EditorSelection.bundledAgentType(type.id))
                 }
             }
         }
@@ -256,27 +253,35 @@ private struct WorkflowsPage: View {
     }
 
     private func packageRow(title: String, detail: String, symbol: String,
-                            dirty: Bool, tint: Color? = nil) -> some View {
-        HStack(spacing: 7) {
-            Image(systemName: symbol)
-                .font(.system(size: 11))
-                .foregroundStyle(tint ?? Color.secondary)
-                .frame(width: 16)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.callout).lineLimit(1)
-                if !detail.isEmpty {
-                    Text(detail).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                            dirty: Bool, tint: Color? = nil, selection: EditorSelection) -> some View {
+        Button { store.selection = selection } label: {
+            HStack(spacing: 7) {
+                Image(systemName: symbol)
+                    .font(.system(size: 11))
+                    .foregroundStyle(tint ?? Color.secondary)
+                    .frame(width: 16)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(.callout).lineLimit(1)
+                    if !detail.isEmpty {
+                        Text(detail).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 4)
+                if dirty {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 6, height: 6)
+                        .help("Unsaved changes")
                 }
             }
-            Spacer(minLength: 4)
-            if dirty {
-                Circle()
-                    .fill(Color.orange)
-                    .frame(width: 6, height: 6)
-                    .help("Unsaved changes")
-            }
+            .padding(.vertical, 6)
+            .padding(.horizontal, 6)
+            .contentShape(Rectangle())
+            .background(store.selection == selection ? Color.accentColor.opacity(0.16) : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 6))
         }
-        .padding(.vertical, 2)
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(store.selection == selection ? [.isSelected] : [])
     }
 
     private func formationDetail(_ formation: EditableFormation) -> String {
@@ -345,10 +350,9 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         store.reload()
     }
 
-    /// The "Workflow Editor…" menu item's landing: the Workflows page when
-    /// a package is (or was last) selected, else the runs dashboard.
+    /// Open the package manager even on a fresh installation with no selection.
     func showWorkflows() {
-        show(store.selection != nil ? .workflows : .runs)
+        show(.workflows)
     }
 
     func windowWillClose(_ notification: Notification) {
