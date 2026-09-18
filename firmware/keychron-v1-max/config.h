@@ -3,6 +3,15 @@
  */
 #pragma once
 
+/* Require 10 ms of stable contact on both press and release. Keep this
+ * paired with sym_defer_pk in rules.mk so chatter restarts the timer.
+ * Override the board default explicitly (it may be defined upstream).
+ */
+#ifdef DEBOUNCE
+#    undef DEBOUNCE
+#endif
+#define DEBOUNCE 10
+
 /* The stock Keychron raw HID endpoint already uses QMK's default
  * RAW_USAGE_PAGE 0xFF60 / RAW_USAGE_ID 0x61 and 32-byte reports, which is
  * exactly what PROTOCOL.md 2 and focalpointd require. Nothing to override here;

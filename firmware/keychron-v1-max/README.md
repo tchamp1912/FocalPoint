@@ -162,6 +162,38 @@ disturbed.
 
 ---
 
+## Repeated letters / switch chatter
+
+The keymap now explicitly selects `sym_defer_pk` with `DEBOUNCE = 10`.
+Each key must remain stable for 10 ms before a press or release is reported.
+This adds approximately 10 ms of debounce latency per edge and filters short
+contact chatter independently for each key. It does not filter repeated
+letters in macOS or change FocalPoint's shortcut handling.
+
+This fix resolved ordinary letters registering twice on the connected V1 Max
+in a user typing test on 2026-09-18. That result is not a hardware diagnosis. Test over USB in Cable mode first. If only a particular
+key continues to repeat, swap its switch with a known-good switch (on the
+hot-swap V1 Max) and check whether the problem follows the switch. A contact
+that remains unstable longer than the debounce interval may still misbehave.
+
+The tested image is in `build/debounce/`; the older images directly under
+`build/` retain their original eager debounce behavior as a fallback. Flash
+only to **Keychron V1 Max ANSI with encoder**. Installing stock firmware would
+remove the FocalPoint integration; the debounce build preserves the custom keymap.
+The build passed simulated-input validation, was flashed successfully over
+STM32 DFU, and restarted as a Keychron V1 Max. The user confirmed that the
+repeated-letter issue was fixed on 2026-09-18.
+
+Run the deterministic chatter test against the actual Keychron QMK source:
+
+```bash
+bash firmware/keychron-v1-max/tests/debounce-test.sh /path/to/qmk_firmware
+```
+
+The test covers chatter during press and release, overlapping keys, and an
+intentional repeated keypress. See [QMK's debounce documentation](https://docs.qmk.fm/feature_debounce_type)
+for the difference between eager and deferred algorithms.
+
 ## Build
 
 Requires the QMK CLI + ARM toolchain and Keychron's fork (the V1 Max is **not**
@@ -184,10 +216,11 @@ make git-submodule            # or: qmk git-submodule
 qmk compile -kb keychron/v1_max/ansi_encoder -km focalpoint
 ```
 
-The artifact is `keychron_v1_max_ansi_encoder_focalpoint.bin`. A prebuilt copy
-(plus `.hex`, `.elf`) and its SHA256 are in [`build/`](build/).
+The artifact is `keychron_v1_max_ansi_encoder_focalpoint.bin`. The debounce
+build and its SHA256 are in [`build/debounce/`](build/debounce/). The older
+prebuilt image (plus `.hex`, `.elf`) remains in [`build/`](build/) as a fallback.
 
-Verified build (QMK CLI 1.2.0, arm-none-eabi-gcc 14.3.1, Keychron fork
+Original pre-debounce build (QMK CLI 1.2.0, arm-none-eabi-gcc 14.3.1, Keychron fork
 `wireless_playground`):
 
 ```
@@ -224,10 +257,9 @@ The V1 Max uses an STM32 (ARM) MCU in DFU bootloader mode.
 3. Unplug/replug. The keyboard boots as a plain keyboard; FocalPoint features light
    up once `focalpointd` attaches over USB.
 
-> The checked-in files under `build/` are an older reference build and do not
-> include changes made after July 26, 2026 (including the native Option/Alt
-> behavior). Build from the current source with the command above before
-> flashing until replacement artifacts are published.
+> Use the tested image under `build/debounce/` for the chatter fix. Files
+> directly under `build/` are the older reference build and do not include
+> changes made after July 26, 2026 (including the native Option/Alt behavior).
 
 > Verify the exact bootloader gesture for your unit against Keychron's current
 > instructions — some batches document holding Esc, others a reset key. The

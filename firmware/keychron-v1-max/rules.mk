@@ -6,6 +6,10 @@
 # VIA. (See README.)
 VIA_ENABLE = no
 
+# Filter switch chatter on press and release independently for each key.
+# Unlike eager debouncing, a transient edge is not immediately sent to USB.
+DEBOUNCE_TYPE = sym_defer_pk
+
 # Raw HID transport for the FocalPoint protocol (usage page 0xFF60 / usage 0x61).
 # Also enabled data-driven via info.json ("raw": true); set explicitly for
 # clarity and in case this keymap is copied to a board without that flag.
